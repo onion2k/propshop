@@ -1,6 +1,6 @@
 # Risk limits and the regulator
 
-State: building, part 1 of 3.
+State: landed on main at 1c66ea3, 2026-11-02.
 
 ## Context
 
