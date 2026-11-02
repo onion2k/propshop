@@ -1,6 +1,6 @@
 # Order types and book depth
 
-State: building, part 1 of 2.
+State: landed on main at 067bc98, 2026-11-02.
 
 ## Context
 
