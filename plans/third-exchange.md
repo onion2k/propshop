@@ -1,6 +1,6 @@
 # A third exchange, and racks at more than one
 
-State: building, part 1 of 3.
+State: landed on main at 12f022b, 2026-11-02.
 
 ## Context
 
