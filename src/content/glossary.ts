@@ -149,7 +149,8 @@ export const GLOSSARY: GlossaryEntry[] = [
     long:
       'Light in fibre runs at two thirds of its speed in air, and fibre routes follow roads and railways. A chain ' +
       'of microwave towers in a straight line beats it by a third or more. The firms that built them between ' +
-      'Chicago and New Jersey spent fortunes to shave a few milliseconds.',
+      'Chicago and New Jersey spent fortunes to shave a few milliseconds, and then laid lasers between rooftops ' +
+      'to shave the microseconds after that. Each link has weather it cannot cross, so the slower ones stay.',
   },
   {
     id: 'news',

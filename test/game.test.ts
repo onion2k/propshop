@@ -34,7 +34,7 @@ describe('Game', () => {
     expect(s.blocks.find((b) => b.id === 'arbitrage')?.enabled).toBe(true);
     expect(s.fills).toEqual([]);
     expect(s.latency.HARBOR).toBe(44);
-    expect(s.shop.length).toBe(13);
+    expect(s.shop.length).toBe(14);
     expect(s.competitors.map((c) => c.name)).toEqual([
       'Midtown Capital',
       'Lakeside Partners',

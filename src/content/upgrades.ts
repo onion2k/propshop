@@ -97,6 +97,17 @@ export const NETWORKS: NetworkSpec[] = [
       'Towers in a straight line between the cities. Through air the signal is faster than through fibre, and the ' +
       'path is straighter. Rain degrades it; that is what the fibre is still for.',
   },
+  {
+    id: 'laser',
+    name: 'Laser link',
+    price: 400 * K,
+    factor: 0.5,
+    overhead: 0.3,
+    explain:
+      'Free-space optics: a beam between rooftops, straighter than towers and faster than air through a ' +
+      'waveguide. The last few hundred microseconds between your racks, and fog takes it down, so the ' +
+      'microwave and the fibre stay as the fallbacks. From here there is nothing left to buy but a better idea.',
+  },
 ];
 
 export const COMPUTERS: ComputerSpec[] = [
