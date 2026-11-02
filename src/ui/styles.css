@@ -545,3 +545,23 @@ code {
 .mine {
   color: var(--accent);
 }
+
+.pages {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 16px 0;
+  flex-wrap: wrap;
+}
+.pages > button {
+  padding: 5px 14px;
+  font-weight: 600;
+}
+.pages .hint {
+  margin-left: auto;
+  font-weight: normal;
+  font-size: 13px;
+}
+.layout.single {
+  grid-template-columns: 1fr;
+}

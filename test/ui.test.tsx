@@ -5,6 +5,11 @@ import { TICK_MS } from '../src/sim';
 import { App } from '../src/ui/App';
 import { createStore, PROGRESS_KEY, SAVE_KEY, type Storage } from '../src/ui/store';
 
+/** The page switcher under the top bar. */
+function goTo(page: 'Market' | 'Strategy' | 'Reports') {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${page}`) }));
+}
+
 function memory(): Storage & { data: Map<string, string> } {
   const data = new Map<string, string>();
   return {
@@ -31,6 +36,7 @@ describe('App', () => {
   it('changes a block parameter in the game from its slider, and toggles a block', () => {
     const store = createStore(CONTENT, null, 2);
     render(<App store={store} />);
+    goTo('Strategy');
     const slider = screen.getByLabelText('Cross-exchange arbitrage Size');
     fireEvent.change(slider, { target: { value: '500' } });
     expect(store.game.firm.blocks.find((b) => b.id === 'arbitrage')?.params.size).toBe(500);
@@ -55,6 +61,7 @@ describe('App', () => {
     render(<App store={store} />);
     fireEvent.click(screen.getAllByText('fair')[0]!);
     expect(screen.getByRole('tab', { name: 'Learn' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: /^Reports/ })).toHaveAttribute('aria-current', 'page');
     expect(document.getElementById('learn-fair-value')).toHaveAttribute('open');
   });
 
@@ -90,6 +97,8 @@ describe('App', () => {
     const storage = memory();
     const store = createStore(CONTENT, storage, 8);
     render(<App store={store} />);
+    expect(screen.getByRole('button', { name: /^First week: See two exchanges disagree/ })).toBeInTheDocument();
+    goTo('Reports');
     expect(screen.getByRole('tab', { name: /First week/ })).toHaveAttribute('aria-selected', 'true');
     expect(document.querySelectorAll('.lesson.done')).toHaveLength(0);
     expect(document.querySelector('.lesson.current strong')?.textContent).toBe('See two exchanges disagree');
@@ -117,6 +126,7 @@ describe('App', () => {
     store.setBlock('arbitrage', { enabled: false });
     store.setBlock('script', { enabled: true });
     render(<App store={store} />);
+    goTo('Strategy');
     const source = screen.getByLabelText('Script source');
     fireEvent.change(source, { target: { value: 'log("hello from", symbols.length, "stocks")' } });
     fireEvent.click(screen.getByText('Apply'));
@@ -141,6 +151,7 @@ describe('App', () => {
   it('shows the day report after a close, and marks the tab new', () => {
     const store = createStore(CONTENT, null, 11);
     render(<App store={store} />);
+    goTo('Reports');
     fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
     expect(screen.getByText(/No day has closed yet/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'News' }));
@@ -162,6 +173,7 @@ describe('App', () => {
   it('sets the risk limits, and shows the halt when the day goes past them', () => {
     const store = createStore(CONTENT, null, 12);
     render(<App store={store} />);
+    goTo('Strategy');
     fireEvent.change(screen.getByLabelText('Daily loss limit'), { target: { value: '50000' } });
     fireEvent.change(screen.getByLabelText('Leverage'), { target: { value: '2' } });
     expect(store.game.firm.risk).toEqual({ dailyLossLimit: 50_000, maxLeverage: 2 });
@@ -185,7 +197,7 @@ describe('App', () => {
   it('shows data latency apart from order latency for racks at more than one exchange', () => {
     const store = createStore(CONTENT, null, 13);
     render(<App store={store} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Shop' }));
+    goTo('Strategy');
     const dual = screen.getByText('Racks at HARBOR and LAKESIDE').parentElement?.textContent ?? '';
     // Over the consumer line the firm starts on: twelve of overhead, and seven more of link for the data.
     expect(dual).toMatch(/LAKESIDE orders 12.1ms, data 19ms/);
@@ -237,7 +249,7 @@ describe('App', () => {
     store.game.version++;
     store.publish();
     render(<App store={store} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Shop' }));
+    goTo('Strategy');
     expect(screen.getByText('Colocation at HARBOR')).toBeInTheDocument();
     const buttons = screen.getAllByRole('button', { name: /\$120\.0k/ });
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
