@@ -2,7 +2,7 @@
 // puts it in use at once; what was bought before stays owned and can be switched back to for nothing.
 
 import type { Firm } from './firm';
-import { latencyTo } from './latency';
+import { dataLatencyTo, latencyTo } from './latency';
 import type { ComputerSpec, Content, Infrastructure, LocationSpec, NetworkSpec } from './types';
 
 export type UpgradeKind = 'location' | 'network' | 'computer';
@@ -13,8 +13,9 @@ export interface UpgradeOffer {
   owned: boolean;
   inUse: boolean;
   affordable: boolean;
-  /** Latency to each exchange were this in use, so the shop can show before and after. */
+  /** Order and data latency to each exchange were this in use, so the shop can show before and after. */
   latency: Record<string, number>;
+  dataLatency: Record<string, number>;
 }
 
 export function infrastructureFrom(
@@ -42,7 +43,11 @@ export function catalogue(content: Content, firm: Firm, owned: ReadonlySet<strin
     for (const spec of specs) {
       const infra = withUpgrade(firm.infra, kind, spec);
       const latency: Record<string, number> = {};
-      for (const e of Object.keys(firm.infra.location.distance)) latency[e] = latencyTo(infra, e);
+      const dataLatency: Record<string, number> = {};
+      for (const e of Object.keys(firm.infra.location.distance)) {
+        latency[e] = latencyTo(infra, e);
+        dataLatency[e] = dataLatencyTo(infra, e);
+      }
       out.push({
         kind,
         spec,
@@ -50,6 +55,7 @@ export function catalogue(content: Content, firm: Firm, owned: ReadonlySet<strin
         inUse: firm.infra[kind].id === spec.id,
         affordable: owned.has(spec.id) || firm.cash >= spec.price,
         latency,
+        dataLatency,
       });
     }
   };

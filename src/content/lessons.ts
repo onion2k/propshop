@@ -54,17 +54,19 @@ export const LESSONS: Lesson[] = [
   {
     id: 'cost',
     title: 'Count what being slow costs',
-    task: 'Keep arbitrage running until it has made twenty fills. Look at the realised figure in the firm panel’s heading.',
-    watch: 'Fills marked as scratching a leftover leg, each with a small loss, and the fees under each.',
+    task: 'Keep arbitrage running until the Orders list has twenty finished races in it. Count the beaten against the won.',
+    watch: 'Which exchange the beaten ones were on. PACIFIC is down the road; the other two are across the country.',
     terms: ['fill', 'maker-taker'],
     done: (s) => {
-      const fills = fillsFor(s, 'arbitrage');
-      return fills.length >= 20 && netOf(fills) < 0;
+      const resolved = s.orders.filter((o) => o.ioc && o.ackAt !== null);
+      const won = resolved.filter((o) => o.filled >= o.size).length;
+      const beaten = resolved.filter((o) => o.beatenBy.length > 0).length;
+      return resolved.length >= 20 && beaten > won;
     },
     lesson:
-      'When one leg fills and the other misses, you are left holding stock you did not want, and the block ' +
-      'gets flat again at the best price it can see: paying the spread, plus a fee on every fill. Arbitrage ' +
-      'from here loses a little, steadily. The fast firms earn the cents you are paying.',
+      'More lost than won. The gaps you win are on the exchange fifteen milliseconds away; the ones you lose ' +
+      'are forty away, where a leg fills and the other misses and the block gets flat again at the spread, ' +
+      'plus a fee on every fill. Being slow has a price per race, and it is paid to whoever was faster.',
   },
   {
     id: 'home',

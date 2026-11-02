@@ -10,22 +10,23 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'home',
     name: 'Home office',
     price: 0,
-    distance: { HARBOR: 32, LAKESIDE: 24 },
+    distance: { HARBOR: 32, LAKESIDE: 24, PACIFIC: 3 },
     explain:
-      'A desk in a spare room, a long way from either exchange. Every order travels across the country and back.',
+      'A desk in a spare room on the west coast. PACIFIC is down the road; HARBOR and LAKESIDE are across the ' +
+      'country, and every order to them travels there and back.',
   },
   {
     id: 'city',
     name: 'Office in Harbor City',
     price: 25 * K,
-    distance: { HARBOR: 2, LAKESIDE: 7 },
+    distance: { HARBOR: 2, LAKESIDE: 7, PACIFIC: 30 },
     explain: 'Downtown, a few miles from the HARBOR data centre. Latency to HARBOR falls to a couple of milliseconds.',
   },
   {
     id: 'colo-harbor',
     name: 'Colocation at HARBOR',
     price: 80 * K,
-    distance: { HARBOR: 0.1, LAKESIDE: 7 },
+    distance: { HARBOR: 0.1, LAKESIDE: 7, PACIFIC: 30 },
     explain:
       'A rack in the exchange building itself. Orders reach the matching engine in microseconds. ' +
       'LAKESIDE is still a long link away: that is why firms colocate at both and run a fast line between them.',
@@ -34,8 +35,37 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'colo-lakeside',
     name: 'Colocation at LAKESIDE',
     price: 80 * K,
-    distance: { HARBOR: 7, LAKESIDE: 0.1 },
-    explain: 'A rack inside LAKESIDE. Fastest there, a long link from HARBOR.',
+    distance: { HARBOR: 7, LAKESIDE: 0.1, PACIFIC: 20 },
+    explain: 'A rack inside LAKESIDE. Fastest there, a long link from HARBOR and a longer one from PACIFIC.',
+  },
+  {
+    id: 'colo-pacific',
+    name: 'Colocation at PACIFIC',
+    price: 80 * K,
+    distance: { HARBOR: 30, LAKESIDE: 20, PACIFIC: 0.1 },
+    explain: 'A rack inside PACIFIC, the slowest crowd in the game: a fast firm here is first to every gap it has.',
+  },
+  {
+    id: 'colo-harbor-lakeside',
+    name: 'Racks at HARBOR and LAKESIDE',
+    price: 250 * K,
+    distance: { HARBOR: 0.1, LAKESIDE: 0.1, PACIFIC: 30 },
+    dataDistance: { HARBOR: 0.1, LAKESIDE: 7, PACIFIC: 30 },
+    explain:
+      'A rack in each building and a line between them. An order leaves from the rack next to the exchange it ' +
+      'is for, so both legs land at once. What still takes time is the other exchange\u2019s quote crossing ' +
+      'the link to wherever the decision is made: half the round trip of one rack, and the line is what you ' +
+      'pay for next.',
+  },
+  {
+    id: 'colo-all',
+    name: 'Racks at all three',
+    price: 600 * K,
+    distance: { HARBOR: 0.1, LAKESIDE: 0.1, PACIFIC: 0.1 },
+    dataDistance: { HARBOR: 0.1, LAKESIDE: 7, PACIFIC: 30 },
+    explain:
+      'A rack in every building. Every order lands at once; every far quote still takes as long as light ' +
+      'takes to bring it. From here the only thing left to buy is a faster line.',
   },
 ];
 
@@ -100,19 +130,35 @@ export const COMPUTERS: ComputerSpec[] = [
 ];
 
 export const COMPETITORS: CompetitorSpec[] = [
-  { id: 'midtown', name: 'Midtown Capital', location: 'city', network: 'fibre', computer: 'server', minEdge: 0.5 },
+  {
+    id: 'midtown',
+    name: 'Midtown Capital',
+    location: 'city',
+    network: 'fibre',
+    computer: 'server',
+    minEdge: 0.5,
+    maxLatency: 10,
+  },
   {
     id: 'lakeside-partners',
     name: 'Lakeside Partners',
     location: 'colo-lakeside',
     network: 'fibre',
     computer: 'server',
-    minEdge: 0.2,
+    minEdge: 0.4,
+  },
+  {
+    id: 'bayview',
+    name: 'Bayview Systems',
+    location: 'colo-pacific',
+    network: 'fibre',
+    computer: 'server',
+    minEdge: 0.3,
   },
   {
     id: 'harbor-quant',
     name: 'Harbor Quant',
-    location: 'colo-harbor',
+    location: 'colo-harbor-lakeside',
     network: 'microwave',
     computer: 'rack',
     minEdge: 0.1,

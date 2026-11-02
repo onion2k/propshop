@@ -89,6 +89,8 @@ export interface MarketView {
   quotes: Readonly<Record<string, Readonly<Record<string, SeenQuote>>>>;
   /** Taker fee per share per exchange, cents. */
   fees: Readonly<Record<string, number>>;
+  /** The firm's own order latency to each exchange, ms, so a block can leave the far ones alone. */
+  latency: Readonly<Record<string, number>>;
   /** Recent mids per symbol, oldest first, from the best quote the firm has seen, sampled each decision. */
   mids: Readonly<Record<string, readonly number[]>>;
   positions: Readonly<Record<string, number>>;
@@ -118,11 +120,12 @@ export interface StrategyBlock {
   decide(view: MarketView, params: Params): Intent[];
 }
 
-/** The best bid and ask across exchanges, with where each is. */
-export function bestAcross(view: MarketView, symbol: string) {
+/** The best bid and ask across exchanges, with where each is; exchanges further than maxLatency are left out. */
+export function bestAcross(view: MarketView, symbol: string, maxLatency = Infinity) {
   let bid: { price: number; size: number; exchange: string } | null = null;
   let ask: { price: number; size: number; exchange: string } | null = null;
   for (const exchange of view.exchanges) {
+    if ((view.latency[exchange] ?? 0) > maxLatency) continue;
     const q = view.quotes[exchange]?.[symbol];
     if (!q) continue;
     if (q.bid !== null && (bid === null || q.bid > bid.price)) bid = { price: q.bid, size: q.bidSize, exchange };

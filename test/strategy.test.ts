@@ -11,6 +11,7 @@ function view(over: Partial<MarketView> = {}): MarketView {
     exchanges: ['HARBOR', 'LAKESIDE'],
     quotes: { HARBOR: { ABC: quote(4100, 4101) }, LAKESIDE: { ABC: quote(4100, 4101) } },
     fees: { HARBOR: 0.3, LAKESIDE: 0.25 },
+    latency: { HARBOR: 1, LAKESIDE: 8 },
     mids: { ABC: [] },
     positions: {},
     blockPositions: {},
@@ -95,6 +96,12 @@ describe('strategy blocks', () => {
       ).toEqual([
         { kind: 'order', symbol: 'ABC', exchange: 'LAKESIDE', side: 'sell', price: 4102, size: 500, ioc: true },
       ]);
+    });
+
+    it('leaves out an exchange further than its latency limit', () => {
+      const v = view({ quotes: { HARBOR: { ABC: quote(4100, 4101) }, LAKESIDE: { ABC: quote(4102, 4103, 100) } } });
+      expect(arb.decide(v, paramsFrom(arb.spec, { minEdge: 0.3, maxLatency: 5 }))).toEqual([]);
+      expect(arb.decide(v, paramsFrom(arb.spec, { minEdge: 0.3, maxLatency: 10 }))).toHaveLength(2);
     });
 
     it('scratches a leftover leg when there is no gap to trade', () => {

@@ -4,7 +4,7 @@
 import { useEffect, useRef } from 'react';
 import type { HistoryPoint } from '../sim';
 
-const COLOURS: Record<string, string> = { HARBOR: '#5ec8ff', LAKESIDE: '#ffb454' };
+const COLOURS: Record<string, string> = { HARBOR: '#5ec8ff', LAKESIDE: '#ffb454', PACIFIC: '#c58cff' };
 export function exchangeColour(id: string): string {
   return COLOURS[id] ?? '#c0c0c0';
 }

@@ -1,4 +1,4 @@
-import { DelayQueue, MAX_IN_FLIGHT, latencyTo } from '../src/sim/latency';
+import { DelayQueue, MAX_IN_FLIGHT, dataLatencyTo, latencyTo } from '../src/sim/latency';
 import { FAST, SLOW } from './fixtures';
 
 describe('latency', () => {
@@ -8,6 +8,22 @@ describe('latency', () => {
     expect(latencyTo(FAST, 'HARBOR')).toBe(1);
     expect(latencyTo(FAST, 'LAKESIDE')).toBe(8.5);
     expect(() => latencyTo(SLOW, 'NOWHERE')).toThrow();
+  });
+
+  it('splits data from orders where a location has racks at more than one exchange', () => {
+    const dual = {
+      ...FAST,
+      location: {
+        ...FAST.location,
+        id: 'dual',
+        distance: { HARBOR: 0.1, LAKESIDE: 0.1 },
+        dataDistance: { HARBOR: 0.1, LAKESIDE: 7 },
+      },
+    };
+    expect(latencyTo(dual, 'LAKESIDE')).toBe(1);
+    expect(dataLatencyTo(dual, 'LAKESIDE')).toBe(7.5);
+    // Without a data distance, data is as far as orders.
+    expect(dataLatencyTo(FAST, 'LAKESIDE')).toBe(latencyTo(FAST, 'LAKESIDE'));
   });
 
   it('delivers in arrival order and not before time', () => {

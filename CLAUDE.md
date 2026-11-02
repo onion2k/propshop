@@ -57,9 +57,10 @@ For anything new, check what it does:
 
 - The economy's pacing is measured by the PACE harness over three seeds and tuned by hand; nothing holds
   it. A run of `PACE=1 PACE_MINUTES=20 npx vitest run test/pace.test.ts` takes about ten minutes.
-- What each setup earned on 2026-11-02, dollars a day over three seeds: home momentum 3,100; home
-  arbitrage -900; city arbitrage 650; colocated arbitrage 4,100; the fastest bot 4,200; the maker -5,000 at
-  two cents, less the wider it quotes. The shop is sized to about eighty days of that.
+- What each setup earned on 2026-11-02 with three exchanges, dollars a day over three seeds: home
+  momentum 4,700; home arbitrage 900 (PACIFIC is down the road); city arbitrage -2,900 chasing every
+  exchange and 900 limited to those within 10ms; colocated arbitrage 10,700; racks at two exchanges on
+  microwave (the fastest rival) 15,600; the maker -4,000 to -7,000. The shop is sized to weeks of that.
 - The market maker loses at every speed. When the crowd's belief moves it pulls its own stale quotes, and
   the maker's quote is left alone at the old price for the arbitrage bots to take within a tick. That is
   real adverse selection, and the block cannot outrun the fastest bot. It is left as the lesson it is;

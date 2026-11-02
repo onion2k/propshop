@@ -4,7 +4,7 @@
 
 import { MS_PER_SECOND } from './clock';
 import type { Exchange } from './exchange';
-import { DelayQueue, latencyTo, type Delayed } from './latency';
+import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
 import type { Market } from './market';
 import type { Side, Trade } from './orderbook';
 import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
@@ -189,8 +189,14 @@ export class Firm {
     return this.positions.get(symbol)?.qty ?? 0;
   }
 
+  /** How late an order reaches the exchange. */
   latency(exchange: string): number {
     return latencyTo(this.infra, exchange);
+  }
+
+  /** How late the exchange's quotes reach the firm. */
+  dataLatency(exchange: string): number {
+    return dataLatencyTo(this.infra, exchange);
   }
 
   setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params>; source?: string }): void {
@@ -220,7 +226,7 @@ export class Firm {
   private mark(market: Market, symbol: string, now: number): number | null {
     let best: number | null = null;
     for (const e of market.exchanges) {
-      const q = e.quoteAsOf(symbol, now - this.latency(e.id));
+      const q = e.quoteAsOf(symbol, now - this.dataLatency(e.id));
       if (!q || q.bid === null || q.ask === null) continue;
       const mid = (q.bid + q.ask) / 2;
       if (best === null) best = mid;
@@ -353,7 +359,7 @@ export class Firm {
   private view(now: number, market: Market, news: readonly Headline[]): MarketView {
     const quotes: Record<string, Record<string, SeenQuote>> = {};
     for (const e of market.exchanges) {
-      const seen = now - this.latency(e.id);
+      const seen = now - this.dataLatency(e.id);
       const perSymbol: Record<string, SeenQuote> = {};
       for (const s of market.stocks) {
         const q = e.quoteAsOf(s.symbol, seen);
@@ -390,6 +396,8 @@ export class Firm {
     }
     const mids: Record<string, readonly number[]> = {};
     for (const [k, v] of this.mids) mids[k] = v;
+    const latency: Record<string, number> = {};
+    for (const e of market.exchanges) latency[e.id] = this.latency(e.id);
     const blockPositions: Record<string, Record<string, number>> = {};
     for (const [block, bySymbol] of this.blockPositions) blockPositions[block] = Object.fromEntries(bySymbol);
     return {
@@ -398,6 +406,7 @@ export class Firm {
       exchanges: market.exchanges.map((e) => e.id),
       quotes,
       fees: this.feeTable,
+      latency,
       mids,
       positions,
       blockPositions,

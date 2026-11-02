@@ -138,7 +138,9 @@ export const GLOSSARY: GlossaryEntry[] = [
     long:
       'The exchange sells space next to its matching engine, and firms pay for it because a metre of cable is ' +
       'faster than a kilometre. Exchanges give every colocated firm the same length of cable so none is faster ' +
-      'than another; the race then moves to the line between exchanges.',
+      'than another; the race then moves to the line between exchanges. With a rack at each, an order leaves ' +
+      'from the rack beside its exchange and lands at once, and what still takes time is the other ' +
+      'exchange\u2019s quote crossing the link: the game shows that as data latency apart from order latency.',
   },
   {
     id: 'microwave',

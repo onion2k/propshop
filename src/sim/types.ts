@@ -30,8 +30,13 @@ export interface LocationSpec {
   id: string;
   name: string;
   price: number;
-  /** One-way distance to each exchange, in ms of light through fibre. */
+  /** One-way distance an order travels to each exchange, in ms of light through fibre. */
   distance: Record<string, number>;
+  /**
+   * How far each exchange's quotes travel to reach the firm's decision; `distance` where absent. A rack at an
+   * exchange sends orders at once, but the other exchange's quotes still cross the link.
+   */
+  dataDistance?: Record<string, number>;
   explain: string;
 }
 
@@ -97,6 +102,8 @@ export interface CompetitorSpec {
   computer: string;
   /** The arbitrage edge it insists on, in cents a share. */
   minEdge: number;
+  /** Exchanges further than this, in ms, it leaves alone. */
+  maxLatency?: number;
 }
 
 /** Everything the content hands the sim. */

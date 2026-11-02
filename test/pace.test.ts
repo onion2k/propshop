@@ -26,6 +26,7 @@ const CONFIGS: Config[] = [
   ['home momentum', HOME, ['momentum']],
   ['home news', HOME, ['newsReaction']],
   ['city arb', CITY, ['arbitrage']],
+  ['city arb near', CITY, ['arbitrage'], { arbitrage: { maxLatency: 10 } }],
   ['city mm', CITY, ['marketMaker']],
   ['city arb+mm', CITY, ['arbitrage', 'marketMaker']],
   ['colo arb', COLO, ['arbitrage']],

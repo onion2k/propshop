@@ -167,6 +167,13 @@ describe('App', () => {
     expect(store.game.firm.risk).toEqual({ dailyLossLimit: 50_000, maxLeverage: 2 });
     act(() => {
       store.game.setRisk({ dailyLossLimit: 500 });
+      // Pay the spread every decision: a strategy that can only lose.
+      store.game.setBlock('arbitrage', { enabled: false });
+      store.game.setBlock('script', {
+        enabled: true,
+        source:
+          'const b = best("ABC"); if (b.bid && b.ask) { buy("ABC", b.ask.exchange, b.ask.price, 100); sell("ABC", b.bid.exchange, b.bid.price, 100); }',
+      });
       store.skipToOpen();
       for (let i = 0; i < (20 * 60 * 1000) / TICK_MS && !store.game.firm.halt; i++) store.game.step();
       store.publish();
@@ -174,6 +181,16 @@ describe('App', () => {
     expect(store.game.firm.halt).not.toBeNull();
     expect(screen.getByRole('status').textContent).toMatch(/HALTED.*loss limit/);
   }, 60_000);
+
+  it('shows data latency apart from order latency for racks at more than one exchange', () => {
+    const store = createStore(CONTENT, null, 13);
+    render(<App store={store} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Shop' }));
+    const dual = screen.getByText('Racks at HARBOR and LAKESIDE').parentElement?.textContent ?? '';
+    // Over the consumer line the firm starts on: twelve of overhead, and seven more of link for the data.
+    expect(dual).toMatch(/LAKESIDE orders 12.1ms, data 19ms/);
+    expect(dual).toMatch(/HARBOR 12.1ms/);
+  });
 
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);

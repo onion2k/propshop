@@ -42,13 +42,21 @@ export function ShopPanel({ s, store }: { s: Snapshot; store: Store }) {
   );
 }
 
+/** "HARBOR 0.6ms, LAKESIDE 4.4ms", or where data lags orders, "LAKESIDE orders 0.6ms, data 4.4ms". */
+export function latencies(orders: Record<string, number>, data: Record<string, number>): string {
+  return Object.entries(orders)
+    .map(([e, l]) => {
+      const d = data[e] ?? l;
+      return d === l ? `${e} ${ms(l)}` : `${e} orders ${ms(l)}, data ${ms(d)}`;
+    })
+    .join(', ');
+}
+
 function Offer({ o, s, store }: { o: UpgradeOffer; s: Snapshot; store: Store }) {
   const extra =
     o.kind === 'computer' && 'maxBlocks' in o.spec
       ? `${o.spec.maxBlocks} blocks, every ${o.spec.decisionEveryMs}ms, ${o.spec.ordersPerSecond} orders/s`
-      : Object.entries(o.latency)
-          .map(([e, l]) => `${e} ${ms(l)}`)
-          .join(', ');
+      : latencies(o.latency, o.dataLatency);
   return (
     <li className={`offer ${o.inUse ? 'in-use' : ''}`}>
       <div>

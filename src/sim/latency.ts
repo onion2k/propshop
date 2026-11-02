@@ -4,10 +4,22 @@
 
 import type { Infrastructure } from './types';
 
-/** One-way latency in ms from a firm with this infrastructure to the exchange. Never under a millisecond. */
+/** One-way latency in ms for an order from a firm with this infrastructure to the exchange. */
 export function latencyTo(infra: Infrastructure, exchangeId: string): number {
   const distance = infra.location.distance[exchangeId];
   if (distance === undefined) throw new Error(`${infra.location.id} has no distance to ${exchangeId}`);
+  return over(infra, distance);
+}
+
+/** One-way latency in ms for the exchange's quotes to reach the firm's decision. */
+export function dataLatencyTo(infra: Infrastructure, exchangeId: string): number {
+  const distance = infra.location.dataDistance?.[exchangeId] ?? infra.location.distance[exchangeId];
+  if (distance === undefined) throw new Error(`${infra.location.id} has no distance to ${exchangeId}`);
+  return over(infra, distance);
+}
+
+/** Through the network: the distance scaled by the medium, plus the gear at each end, and never under a tick. */
+function over(infra: Infrastructure, distance: number): number {
   return Math.max(1, distance * infra.network.factor + infra.network.overhead);
 }
 

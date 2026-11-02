@@ -47,6 +47,18 @@ export const arbitrage: StrategyBlock = {
         explain: 'Shares per leg, capped by what is actually quoted at the touch on both sides.',
       },
       {
+        key: 'maxLatency',
+        name: 'Only exchanges within',
+        min: 1,
+        max: 100,
+        step: 1,
+        default: 100,
+        unit: 'ms',
+        explain:
+          'Leave out any exchange your orders take longer than this to reach. A gap you cannot win is a leg ' +
+          'you will scratch; from the city, the far coast is one to skip.',
+      },
+      {
         key: 'maxPosition',
         name: 'Max position',
         min: 0,
@@ -63,7 +75,7 @@ export const arbitrage: StrategyBlock = {
     const out: Intent[] = [];
     for (const symbol of view.symbols) {
       if (inFlight(view, symbol, this.spec.id)) continue;
-      const { bid, ask } = bestAcross(view, symbol);
+      const { bid, ask } = bestAcross(view, symbol, p.maxLatency ?? Infinity);
       if (!bid || !ask) continue;
       const own = ownPosition(view, this.spec.id, symbol);
       const fees = (view.fees[bid.exchange] ?? 0) + (view.fees[ask.exchange] ?? 0);

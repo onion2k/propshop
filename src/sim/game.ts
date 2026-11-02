@@ -176,7 +176,9 @@ export interface Snapshot {
   /** How many times the firm has seen a gap between the exchanges it could have raced for. */
   gapsSeen: number;
   infra: { location: string; network: string; computer: string };
+  /** Order latency and data latency per exchange; the same unless the firm has racks at more than one. */
   latency: Record<string, number>;
+  dataLatency: Record<string, number>;
   stocks: {
     symbol: string;
     name: string;
@@ -257,7 +259,11 @@ export class Game {
     this.competitors = content.competitors.map(
       (c) =>
         new Firm(`bot:${c.id}`, c.name, content.startingCash * 10, infrastructureFrom(content, c), [
-          { id: 'arbitrage', enabled: true, params: { minEdge: c.minEdge, size: 300, maxPosition: 3000 } },
+          {
+            id: 'arbitrage',
+            enabled: true,
+            params: { minEdge: c.minEdge, size: 300, maxPosition: 3000, maxLatency: c.maxLatency ?? 100 },
+          },
         ]),
     );
     this.dayStartEquity = content.startingCash;
@@ -446,7 +452,11 @@ export class Game {
     const open = isMarketOpen(now);
     const firm = this.firm;
     const latency: Record<string, number> = {};
-    for (const e of this.market.exchanges) latency[e.id] = firm.latency(e.id);
+    const dataLatency: Record<string, number> = {};
+    for (const e of this.market.exchanges) {
+      latency[e.id] = firm.latency(e.id);
+      dataLatency[e.id] = firm.dataLatency(e.id);
+    }
     const positions: Snapshot['positions'] = [];
     for (const [symbol, pos] of firm.positions) {
       if (pos.qty === 0) continue;
@@ -502,6 +512,7 @@ export class Game {
       gapsSeen: firm.stats.gapsSeen,
       infra: { location: firm.infra.location.id, network: firm.infra.network.id, computer: firm.infra.computer.id },
       latency,
+      dataLatency,
       stocks: this.market.stocks.map((s) => ({
         symbol: s.symbol,
         name: s.name,
@@ -509,7 +520,7 @@ export class Game {
         fair: this.market.fair.get(s.symbol) ?? s.startPrice,
         exchanges: this.market.exchanges.map((e) => ({
           id: e.id,
-          seen: e.quoteAsOf(s.symbol, now - firm.latency(e.id)),
+          seen: e.quoteAsOf(s.symbol, now - firm.dataLatency(e.id)),
           last: e.book(s.symbol).lastPrice,
           depth: e.book(s.symbol).depth(5),
         })),

@@ -38,11 +38,15 @@ describe('lessons', () => {
     expect(g.snapshot().gapsSeen).toBeGreaterThan(5);
   });
 
-  it('race and cost: done once arbitrage from home has lost a race and some money', { timeout: 60_000 }, () => {
-    const s = after(3, 12);
-    expect(LESSONS[1]!.done(s)).toBe(true);
-    expect(LESSONS[2]!.done(s)).toBe(true);
-  });
+  it(
+    'race and cost: done once arbitrage from home has lost a race, and more races than it won',
+    { timeout: 60_000 },
+    () => {
+      const s = after(3, 12);
+      expect(LESSONS[1]!.done(s)).toBe(true);
+      expect(LESSONS[2]!.done(s)).toBe(true);
+    },
+  );
 
   it('home: done once momentum has earned', { timeout: 60_000 }, () => {
     const s = after(4, 20, ['momentum']);

@@ -208,6 +208,33 @@ describe('Firm', () => {
   });
 });
 
+describe('Firm with racks at both exchanges', () => {
+  it('sees the far quote late but lands its order there at once, and wins more races than one rack does', () => {
+    const dual = {
+      ...FAST,
+      location: {
+        ...FAST.location,
+        id: 'dual',
+        distance: { HARBOR: 0.1, LAKESIDE: 0.1 },
+        dataDistance: { HARBOR: 0.1, LAKESIDE: 8 },
+      },
+    };
+    const both = new Firm('both', 'Both', MILLION, dual, Firm.defaultBlocks(['arbitrage']));
+    const one = new Firm('one', 'One', MILLION, FAST, Firm.defaultBlocks(['arbitrage']));
+    expect(both.latency('LAKESIDE')).toBe(1);
+    expect(both.dataLatency('LAKESIDE')).toBe(8.5);
+    expect(one.latency('LAKESIDE')).toBe(8.5);
+    const w = world(30, [one, both]);
+    w.run(120 * MS_PER_SECOND);
+    const lakeside = (f: Firm) => [...f.orders.values()].filter((o) => o.exchange === 'LAKESIDE' && o.ackAt !== null);
+    // Arrival is rounded up to the tick.
+    for (const o of lakeside(both)) expect(o.arrivedAt! - o.sentAt).toBe(TICK);
+    for (const o of lakeside(one)) expect(o.arrivedAt! - o.sentAt).toBe(Math.ceil(8.5 / TICK) * TICK);
+    const won = (f: Firm) => [...f.orders.values()].filter((o) => o.ioc && o.filled >= o.size).length;
+    expect(won(both)).toBeGreaterThan(won(one));
+  });
+});
+
 describe('Firm risk', () => {
   it('refuses an order that would carry more than the leverage allows, and says why', () => {
     const f = new Firm('firm', 'Mine', 1_000_000, FAST, Firm.defaultBlocks());
