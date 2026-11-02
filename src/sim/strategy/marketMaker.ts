@@ -24,6 +24,7 @@ export const marketMaker: StrategyBlock = {
       'them. It earns steadily in a calm market. When the price moves, the quotes on the wrong side keep ' +
       'filling, and the maker ends up long a falling stock or short a rising one: inventory risk. The block ' +
       'skews its quotes away from the side it is already heavy on, and at the limit pays the spread to cut it. ' +
+      'Its quotes are post-only: one that would cross is refused, so it never pays the taker fee by accident. ' +
       'Resting orders pay no exchange fee: the taker pays, which is the maker\u2019s other edge. Its enemy is ' +
       'adverse selection: a quote left behind when the price moves is taken by whoever is fastest, and in ' +
       'this market somebody is always faster than you.',
@@ -134,7 +135,8 @@ export const marketMaker: StrategyBlock = {
           }
           const busy = have.some((o) => o.status === 'inflight' || o.status === 'cancelling');
           if (want !== null && !keep && !busy && want > 0) {
-            out.push({ kind: 'order', symbol, exchange, side, price: want, size, ioc: false });
+            // Post-only: a quote into a market that has moved through it is refused, never filled as a taker.
+            out.push({ kind: 'order', symbol, exchange, side, price: want, size, ioc: false, postOnly: true });
           }
         }
       }

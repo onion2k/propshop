@@ -16,6 +16,12 @@ export interface Order {
   at: number;
   /** Immediate or cancel: whatever does not fill at once is dropped rather than rested. */
   ioc: boolean;
+  /** Post-only: refused rather than matched if it would cross. */
+  postOnly: boolean;
+  /** Iceberg: at most this much of the remainder is shown; null shows it all. */
+  display: number | null;
+  /** What is shown right now, for an iceberg; equals remaining otherwise. */
+  shown: number;
 }
 
 export interface Trade {
@@ -34,6 +40,8 @@ export interface Level {
   price: number;
   size: number;
   orders: number;
+  /** The shares at this level that belong to the owner asked about, zero where none asked. */
+  mine: number;
 }
 
 export interface Quote {
@@ -54,7 +62,12 @@ export interface OrderRequest {
   price: number;
   size: number;
   ioc?: boolean;
+  postOnly?: boolean;
+  display?: number | null;
 }
+
+/** Why the book refused an order. */
+export const REFUSED_CROSSED = 'would have crossed the spread';
 
 /** The most orders one side may hold. Background traders cancel as they go; this is the safety net. */
 export const MAX_RESTING_PER_SIDE = 400;
@@ -70,11 +83,16 @@ export class OrderBook {
     this.nextId = nextId;
   }
 
-  /** Add an order, matching what it can. Returns the order as it now stands and the trades it made. */
-  add(req: OrderRequest, at: number): { order: Order; trades: Trade[] } {
+  /**
+   * Add an order, matching what it can. Returns the order as it now stands, the trades it made, and why it
+   * was refused if it was: a post-only order that would have crossed is refused with nothing done.
+   */
+  add(req: OrderRequest, at: number): { order: Order; trades: Trade[]; refused: string | null } {
     if (!Number.isInteger(req.price) || !Number.isInteger(req.size) || req.size <= 0 || req.price <= 0) {
       throw new Error(`Bad order: price ${req.price}, size ${req.size}`);
     }
+    const display =
+      req.display !== undefined && req.display !== null && req.display > 0 ? Math.min(req.display, req.size) : null;
     const order: Order = {
       id: this.nextId++,
       owner: req.owner,
@@ -84,10 +102,23 @@ export class OrderBook {
       remaining: req.size,
       at,
       ioc: req.ioc ?? false,
+      postOnly: req.postOnly ?? false,
+      display,
+      shown: display ?? req.size,
     };
+    if (order.postOnly && this.wouldCross(order)) return { order, trades: [], refused: REFUSED_CROSSED };
     const trades = this.match(order, at);
-    if (order.remaining > 0 && !order.ioc) this.rest(order);
-    return { order, trades };
+    if (order.remaining > 0 && !order.ioc) {
+      order.shown = order.display === null ? order.remaining : Math.min(order.display, order.remaining);
+      this.rest(order);
+    }
+    return { order, trades, refused: null };
+  }
+
+  private wouldCross(order: Order): boolean {
+    const top = (order.side === 'buy' ? this.asks : this.bids)[0];
+    if (!top) return false;
+    return order.side === 'buy' ? top.price <= order.price : top.price >= order.price;
   }
 
   private match(order: Order, at: number): Trade[] {
@@ -98,9 +129,11 @@ export class OrderBook {
       if (!top) break;
       const crosses = order.side === 'buy' ? top.price <= order.price : top.price >= order.price;
       if (!crosses) break;
-      const size = Math.min(order.remaining, top.remaining);
+      // An iceberg gives up only its shown slice at a time; what is hidden waits its turn again.
+      const size = Math.min(order.remaining, top.shown);
       order.remaining -= size;
       top.remaining -= size;
+      top.shown -= size;
       this.lastPrice = top.price;
       trades.push({
         price: top.price,
@@ -112,7 +145,15 @@ export class OrderBook {
         seller: order.side === 'buy' ? top.owner : order.owner,
         aggressor: order.side,
       });
-      if (top.remaining === 0) opposite.shift();
+      if (top.remaining === 0) {
+        opposite.shift();
+      } else if (top.shown === 0) {
+        // The shown slice is used up: a fresh one goes to the back of its price level, as a real iceberg does.
+        opposite.shift();
+        top.shown = Math.min(top.display ?? top.remaining, top.remaining);
+        top.at = at;
+        this.rest(top);
+      }
     }
     return trades;
   }
@@ -190,9 +231,9 @@ export class OrderBook {
     return q.bid !== null && q.ask !== null ? (q.bid + q.ask) / 2 : null;
   }
 
-  /** The top levels of each side, aggregated by price, for the ladder. */
-  depth(levels: number): { bids: Level[]; asks: Level[] } {
-    return { bids: aggregate(this.bids, levels), asks: aggregate(this.asks, levels) };
+  /** The top levels of each side, aggregated by price, for the ladder, with the owner's own shares marked. */
+  depth(levels: number, owner?: string): { bids: Level[]; asks: Level[] } {
+    return { bids: aggregate(this.bids, levels, owner), asks: aggregate(this.asks, levels, owner) };
   }
 
   /** How many orders rest on a side at prices no further from the touch than the limit. Walks until it is past. */
@@ -221,16 +262,27 @@ export class OrderBook {
 
   static load(s: SavedBook): OrderBook {
     const b = new OrderBook(s.nextId);
-    b.bids = s.bids.map((o) => ({ ...o }));
-    b.asks = s.asks.map((o) => ({ ...o }));
+    // A save from before post-only and icebergs has orders without those fields.
+    const fill = (o: SavedOrder): Order => ({
+      ...o,
+      postOnly: o.postOnly ?? false,
+      display: o.display ?? null,
+      shown: o.shown ?? o.remaining,
+    });
+    b.bids = s.bids.map(fill);
+    b.asks = s.asks.map(fill);
     b.lastPrice = s.lastPrice;
     return b;
   }
 }
 
+/** An order as saved; one from before post-only and icebergs lacks those fields. */
+export type SavedOrder = Omit<Order, 'postOnly' | 'display' | 'shown'> &
+  Partial<Pick<Order, 'postOnly' | 'display' | 'shown'>>;
+
 export interface SavedBook {
-  bids: Order[];
-  asks: Order[];
+  bids: SavedOrder[];
+  asks: SavedOrder[];
   nextId: number;
   lastPrice: number | null;
 }
@@ -243,7 +295,7 @@ function twoLevels(side: Order[]): { p1: number | null; s1: number; p2: number |
   for (; i < side.length; i++) {
     const o = side[i];
     if (!o || o.price !== first.price) break;
-    s1 += o.remaining;
+    s1 += o.shown;
   }
   const second = side[i];
   if (!second) return { p1: first.price, s1, p2: null, s2: 0 };
@@ -251,21 +303,23 @@ function twoLevels(side: Order[]): { p1: number | null; s1: number; p2: number |
   for (; i < side.length; i++) {
     const o = side[i];
     if (!o || o.price !== second.price) break;
-    s2 += o.remaining;
+    s2 += o.shown;
   }
   return { p1: first.price, s1, p2: second.price, s2 };
 }
 
-function aggregate(side: Order[], levels: number): Level[] {
+function aggregate(side: Order[], levels: number, owner?: string): Level[] {
   const out: Level[] = [];
   for (const o of side) {
+    const mine = o.owner === owner ? o.shown : 0;
     const last = out[out.length - 1];
     if (last && last.price === o.price) {
-      last.size += o.remaining;
+      last.size += o.shown;
       last.orders += 1;
+      last.mine += mine;
     } else {
       if (out.length === levels) break;
-      out.push({ price: o.price, size: o.remaining, orders: 1 });
+      out.push({ price: o.price, size: o.shown, orders: 1, mine });
     }
   }
   return out;

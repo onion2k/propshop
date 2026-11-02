@@ -541,3 +541,7 @@ code {
   font-size: 12px;
   color: var(--muted);
 }
+
+.mine {
+  color: var(--accent);
+}

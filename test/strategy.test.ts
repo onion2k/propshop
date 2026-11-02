@@ -149,6 +149,7 @@ describe('strategy blocks', () => {
         price: 4098,
         size: 100,
         ioc: false,
+        postOnly: true,
       });
       expect(intents).toContainEqual({
         kind: 'order',
@@ -158,6 +159,7 @@ describe('strategy blocks', () => {
         price: 4103,
         size: 100,
         ioc: false,
+        postOnly: true,
       });
     });
 
@@ -201,7 +203,16 @@ describe('strategy blocks', () => {
       const intents = mm.decide(v, p);
       expect(intents).toEqual([
         { kind: 'cancel', localId: 2 },
-        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'sell', price: 4103, size: 100, ioc: false },
+        {
+          kind: 'order',
+          symbol: 'ABC',
+          exchange: 'HARBOR',
+          side: 'sell',
+          price: 4103,
+          size: 100,
+          ioc: false,
+          postOnly: true,
+        },
       ]);
     });
   });
@@ -252,6 +263,7 @@ describe('strategy blocks', () => {
         price: 4102,
         size: 100,
         ioc: false,
+        postOnly: true,
       });
     });
   });

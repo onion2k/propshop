@@ -51,6 +51,8 @@ type Outbound =
       price: number;
       size: number;
       ioc: boolean;
+      postOnly?: boolean;
+      display?: number;
     }
   | { kind: 'cancel'; localId: number; exchange: string; symbol: string; exchangeOrderId: number };
 
@@ -284,6 +286,7 @@ export class Firm {
           break;
         case 'rejected':
           order.status = 'rejected';
+          order.reason = msg.reason;
           break;
       }
       if (
@@ -519,6 +522,8 @@ export class Firm {
       size: intent.size,
       filled: 0,
       ioc: intent.ioc,
+      postOnly: intent.postOnly,
+      display: intent.display,
       status: 'inflight',
       block,
       sentAt: now,
@@ -551,11 +556,23 @@ export class Firm {
       // Before the order goes in, read who took the quote it was sent for since the firm saw it.
       const beatenBy =
         mine && mine.seenAt !== null ? exchange.takersSince(msg.symbol, mine.seenAt, msg.side, msg.price, this.id) : [];
-      const { order } = exchange.submit(
+      const { order, refused } = exchange.submit(
         msg.symbol,
-        { owner: this.id, side: msg.side, price: msg.price, size: msg.size, ioc: msg.ioc },
+        {
+          owner: this.id,
+          side: msg.side,
+          price: msg.price,
+          size: msg.size,
+          ioc: msg.ioc,
+          postOnly: msg.postOnly,
+          display: msg.display,
+        },
         now,
       );
+      if (refused) {
+        this.inbound.push({ kind: 'rejected', localId: msg.localId, reason: refused }, back);
+        continue;
+      }
       // The exchange's own trades for this order come back through onTrade, like any other fill.
       this.inbound.push(
         {

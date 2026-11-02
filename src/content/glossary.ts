@@ -37,6 +37,27 @@ export const GLOSSARY: GlossaryEntry[] = [
       'cancelled. Arbitrage uses IOC because a stale leg left resting is a position you did not want.',
   },
   {
+    id: 'post-only',
+    term: 'Post-only',
+    short: 'An order that will rest or be refused, never take.',
+    long:
+      'A maker wants to be the one waiting, not the one crossing: resting pays no fee and earns the spread, ' +
+      'taking pays a fee and gives it up. A post-only order says so to the exchange: if it would cross the ' +
+      'spread on arrival, because the market moved while it was on its way, it is refused rather than filled. ' +
+      'The market maker block sends every quote post-only, and the refusals show in your orders with their ' +
+      'reason.',
+  },
+  {
+    id: 'iceberg',
+    term: 'Iceberg order',
+    short: 'A large order that shows only a slice of itself at a time.',
+    long:
+      'A thousand shares shown in the book tells everyone you are there, and they trade around you. An ' +
+      'iceberg shows a hundred, and when that fills, shows the next hundred, at the back of the queue each ' +
+      'time. The ladder shows what is shown, which is why a level can keep refilling at the same price. In a ' +
+      'script, `buy` and `sell` take `{ display: 100 }`.',
+  },
+  {
     id: 'fill',
     term: 'Fill',
     short: 'A trade: your order met someone else’s.',

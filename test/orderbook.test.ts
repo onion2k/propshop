@@ -1,4 +1,4 @@
-import { MAX_RESTING_PER_SIDE, OrderBook, type SavedBook } from '../src/sim/orderbook';
+import { MAX_RESTING_PER_SIDE, OrderBook, REFUSED_CROSSED, type SavedBook } from '../src/sim/orderbook';
 
 describe('OrderBook', () => {
   it('rests orders and quotes the best of each side', () => {
@@ -82,10 +82,52 @@ describe('OrderBook', () => {
     b.add({ owner: 'd', side: 'buy', price: 4098, size: 5 }, 3);
     const d = b.depth(2);
     expect(d.bids).toEqual([
-      { price: 4100, size: 30, orders: 2 },
-      { price: 4099, size: 5, orders: 1 },
+      { price: 4100, size: 30, orders: 2, mine: 0 },
+      { price: 4099, size: 5, orders: 1, mine: 0 },
     ]);
     expect(d.asks).toEqual([]);
+  });
+
+  it('refuses a post-only order that would cross, and rests one that would not', () => {
+    const b = new OrderBook();
+    b.add({ owner: 'x', side: 'sell', price: 4105, size: 50 }, 0);
+    const crossing = b.add({ owner: 'mm', side: 'buy', price: 4105, size: 100, postOnly: true }, 1);
+    expect(crossing.refused).toBe(REFUSED_CROSSED);
+    expect(crossing.trades).toHaveLength(0);
+    expect(b.resting('mm')).toHaveLength(0);
+    expect(b.quote().ask).toBe(4105);
+    const inside = b.add({ owner: 'mm', side: 'buy', price: 4104, size: 100, postOnly: true }, 2);
+    expect(inside.refused).toBeNull();
+    expect(b.quote().bid).toBe(4104);
+  });
+
+  it('shows an iceberg a slice at a time and sends the rest to the back of the queue', () => {
+    const b = new OrderBook();
+    const berg = b.add({ owner: 'big', side: 'sell', price: 4105, size: 1000, display: 100 }, 0).order;
+    b.add({ owner: 'small', side: 'sell', price: 4105, size: 50 }, 1);
+    expect(b.quote().askSize).toBe(150);
+    expect(b.depth(1).asks[0]).toEqual({ price: 4105, size: 150, orders: 2, mine: 0 });
+    // A buyer for 120 takes the shown 100 of the iceberg, then 20 of the small order behind it.
+    const { trades } = b.add({ owner: 'b', side: 'buy', price: 4105, size: 120, ioc: true }, 2);
+    expect(trades.map((t) => [t.sellId, t.size])).toEqual([
+      [berg.id, 100],
+      [2, 20],
+    ]);
+    expect(berg.remaining).toBe(900);
+    expect(berg.shown).toBe(100);
+    // The iceberg refreshed behind the small order's remainder.
+    expect(b.resting().map((o) => o.id)).toEqual([2, berg.id]);
+    expect(b.quote().askSize).toBe(130);
+  });
+
+  it('marks an owner\u2019s own shares in the depth', () => {
+    const b = new OrderBook();
+    b.add({ owner: 'bg', side: 'buy', price: 4100, size: 300 }, 0);
+    b.add({ owner: 'firm', side: 'buy', price: 4100, size: 100 }, 1);
+    b.add({ owner: 'firm', side: 'sell', price: 4103, size: 200 }, 2);
+    expect(b.depth(2, 'firm').bids[0]).toMatchObject({ price: 4100, size: 400, mine: 100 });
+    expect(b.depth(2, 'firm').asks[0]).toMatchObject({ price: 4103, size: 200, mine: 200 });
+    expect(b.depth(2).bids[0]?.mine).toBe(0);
   });
 
   it('refuses a non-integer or non-positive price or size', () => {

@@ -95,8 +95,10 @@ const position = (symbol) => view.positions[symbol] ?? 0;
 const mine = (symbol) => __mine(view, symbol);
 const orders = () => view.openOrders.filter((o) => o.block === '${SCRIPT_ID}');
 const mids = (symbol) => view.mids[symbol] ?? [];
-const buy = (symbol, exchange, price, size, ioc = true) => __out.push({ kind: 'order', symbol, exchange, side: 'buy', price: Math.round(price), size: Math.floor(size), ioc });
-const sell = (symbol, exchange, price, size, ioc = true) => __out.push({ kind: 'order', symbol, exchange, side: 'sell', price: Math.round(price), size: Math.floor(size), ioc });
+const __opts = (o) => (typeof o === 'object' && o !== null ? { ioc: o.ioc ?? true, postOnly: !!o.postOnly, display: o.display > 0 ? Math.floor(o.display) : undefined } : { ioc: o === undefined ? true : !!o });
+const buy = (symbol, exchange, price, size, o) => __out.push({ kind: 'order', symbol, exchange, side: 'buy', price: Math.round(price), size: Math.floor(size), ...__opts(o) });
+const sell = (symbol, exchange, price, size, o) => __out.push({ kind: 'order', symbol, exchange, side: 'sell', price: Math.round(price), size: Math.floor(size), ...__opts(o) });
+const sweep = (symbol, exchange, size, limit) => { const q = quote(exchange, symbol); if (!q) return; const side = limit >= (q.ask ?? Infinity) ? 'buy' : 'sell'; __out.push({ kind: 'order', symbol, exchange, side, price: Math.round(limit), size: Math.floor(size), ioc: true }); };
 const cancel = (localId) => __out.push({ kind: 'cancel', localId });
 const log = (...parts) => { __state.log.push(parts.map((p) => (typeof p === 'object' ? JSON.stringify(p) : String(p))).join(' ')); if (__state.log.length > ${LOG_LENGTH}) __state.log.splice(0, __state.log.length - ${LOG_LENGTH}); };
 ${instrument(source)}

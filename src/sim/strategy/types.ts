@@ -51,6 +51,8 @@ export interface OpenOrder {
   size: number;
   filled: number;
   ioc: boolean;
+  postOnly?: boolean;
+  display?: number;
   status: 'inflight' | 'resting' | 'cancelling' | 'filled' | 'cancelled' | 'rejected';
   block: string;
   sentAt: number;
@@ -112,6 +114,10 @@ export type Intent =
       price: number;
       size: number;
       ioc: boolean;
+      /** Refused rather than filled as a taker if it would cross. */
+      postOnly?: boolean;
+      /** Iceberg: show at most this much at a time. */
+      display?: number;
     }
   | { kind: 'cancel'; localId: number };
 

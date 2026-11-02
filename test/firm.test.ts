@@ -1,5 +1,6 @@
 import { MARKET_CLOSE, MARKET_OPEN, MS_PER_SECOND } from '../src/sim/clock';
 import { Firm, REJECT_EXPOSURE } from '../src/sim/firm';
+import { REFUSED_CROSSED } from '../src/sim/orderbook';
 import { tick } from '../src/sim/flow';
 import { Market } from '../src/sim/market';
 import { Random } from '../src/sim/random';
@@ -232,6 +233,36 @@ describe('Firm with racks at both exchanges', () => {
     for (const o of lakeside(one)) expect(o.arrivedAt! - o.sentAt).toBe(Math.ceil(8.5 / TICK) * TICK);
     const won = (f: Firm) => [...f.orders.values()].filter((o) => o.ioc && o.filled >= o.size).length;
     expect(won(both)).toBeGreaterThan(won(one));
+  });
+});
+
+describe('Firm order types', () => {
+  it('hears a post-only quote refused with its reason, and no race counted', () => {
+    const f = new Firm('firm', 'Mine', MILLION, FAST, Firm.defaultBlocks());
+    const w = world(31, [f]);
+    w.run(2 * MS_PER_SECOND);
+    const ask = w.market.exchange('HARBOR').quote('ABC').ask!;
+    (f as unknown as { send: (i: unknown, b: string, now: number, view: unknown) => void }).send(
+      {
+        kind: 'order',
+        symbol: 'ABC',
+        exchange: 'HARBOR',
+        side: 'buy',
+        price: ask + 20,
+        size: 100,
+        ioc: false,
+        postOnly: true,
+      },
+      'test',
+      w.now(),
+      { quotes: {} },
+    );
+    w.run(40);
+    const o = [...f.orders.values()][0]!;
+    expect(o.status).toBe('rejected');
+    expect(o.reason).toBe(REFUSED_CROSSED);
+    expect(f.position('ABC')).toBe(0);
+    expect(f.tickResolved.length + 1).toBeGreaterThan(0);
   });
 });
 

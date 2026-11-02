@@ -11,6 +11,7 @@ export type { Tip, Fine } from './darkweb';
 export type { Published } from './news';
 export type { HistoryPoint } from './market';
 export type { Level, Quote } from './orderbook';
+export { REFUSED_CROSSED } from './orderbook';
 export type { UpgradeKind, UpgradeOffer } from './upgrades';
 export type {
   Content,

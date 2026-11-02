@@ -15,8 +15,15 @@ const REFERENCE: [string, string][] = [
   ['mids(symbol)', 'recent midpoints, oldest first'],
   ['position(symbol), mine(symbol)', 'the firm’s position, and the part of it this script took'],
   ['orders()', 'this script’s orders in flight or resting'],
-  ['buy(symbol, exchange, price, size, ioc = true)', 'send an order; prices are cents, sizes shares'],
-  ['sell(symbol, exchange, price, size, ioc = true)', 'the same, selling'],
+  [
+    'buy(symbol, exchange, price, size, options)',
+    'send an order; prices are cents, sizes shares; options { ioc, postOnly, display } or a bare ioc flag',
+  ],
+  ['sell(symbol, exchange, price, size, options)', 'the same, selling'],
+  [
+    'sweep(symbol, exchange, size, limit)',
+    'take every level up to the limit, buying if the limit is at or above the ask, else selling',
+  ],
   ['cancel(localId)', 'pull a resting order of yours'],
   ['log(...parts)', 'print a line below the editor'],
 ];

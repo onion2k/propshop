@@ -105,6 +105,36 @@ describe('script block', () => {
     ]);
   });
 
+  it('takes order options: post-only, iceberg, and a sweep', () => {
+    const src =
+      'buy("ABC", "HARBOR", 4099, 300, { postOnly: true, display: 100 }); sell("ABC", "LAKESIDE", 4104, 100, { ioc: false }); sweep("ABC", "HARBOR", 500, 4103);';
+    expect(scriptBlock(src).decide(view(), {})).toEqual([
+      {
+        kind: 'order',
+        symbol: 'ABC',
+        exchange: 'HARBOR',
+        side: 'buy',
+        price: 4099,
+        size: 300,
+        ioc: true,
+        postOnly: true,
+        display: 100,
+      },
+      {
+        kind: 'order',
+        symbol: 'ABC',
+        exchange: 'LAKESIDE',
+        side: 'sell',
+        price: 4104,
+        size: 100,
+        ioc: false,
+        postOnly: false,
+        display: undefined,
+      },
+      { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: 4103, size: 500, ioc: true },
+    ]);
+  });
+
   it('is in the registry and found by its setting', () => {
     expect(blockById(SCRIPT_ID).spec.name).toBe('Your script');
     const b = blockFor({ id: SCRIPT_ID, source: 'log("hi")' });

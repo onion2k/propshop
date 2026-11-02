@@ -549,7 +549,7 @@ export class Game {
           id: e.id,
           seen: e.quoteAsOf(s.symbol, now - firm.dataLatency(e.id)),
           last: e.book(s.symbol).lastPrice,
-          depth: e.book(s.symbol).depth(5),
+          depth: e.book(s.symbol).depth(5, firm.id),
         })),
         history: this.market.history.get(s.symbol) ?? [],
       })),

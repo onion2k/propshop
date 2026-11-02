@@ -85,19 +85,33 @@ export function MarketPanel({ s }: { s: Snapshot }) {
 
 function Ladder({ exchange, bids, asks }: { exchange: string; bids: Level[]; asks: Level[] }) {
   const rows = Math.max(bids.length, asks.length);
+  const mine = (l: Level | undefined) => (l && l.mine > 0 ? <span className="mine">{shares(l.mine)}</span> : '');
   return (
     <div className="ladder">
       <div className="muted">
-        <Term id="order-book">Order book</Term> at {exchange}, as it stands now
+        <Term id="order-book">Order book</Term> at {exchange}, as it stands now · <span className="mine">yours</span>{' '}
+        beside the crowd&apos;s
       </div>
       <table>
+        <thead>
+          <tr>
+            <th className="num">you</th>
+            <th className="num">size</th>
+            <th className="num">bid</th>
+            <th className="num">ask</th>
+            <th className="num">size</th>
+            <th className="num">you</th>
+          </tr>
+        </thead>
         <tbody>
           {Array.from({ length: rows }, (_, i) => (
             <tr key={i}>
+              <td className="num">{mine(bids[i])}</td>
               <td className="num muted">{bids[i] ? shares(bids[i].size) : ''}</td>
               <td className="num bid">{bids[i] ? price(bids[i].price) : ''}</td>
               <td className="num ask">{asks[i] ? price(asks[i].price) : ''}</td>
               <td className="num muted">{asks[i] ? shares(asks[i].size) : ''}</td>
+              <td className="num">{mine(asks[i])}</td>
             </tr>
           ))}
         </tbody>

@@ -205,6 +205,32 @@ describe('App', () => {
     expect(['Calm day', 'Trending day', 'Choppy day', 'News-heavy day']).toContain(name);
   });
 
+  it('shows your own shares in the ladder', () => {
+    const store = createStore(CONTENT, null, 15);
+    store.setBlock('arbitrage', { enabled: false });
+    store.setBlock('marketMaker', { enabled: true });
+    render(<App store={store} />);
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (3 * 60 * 1000) / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    const s = store.getSnapshot();
+    const withMine = s.stocks.flatMap((st) =>
+      st.exchanges
+        .filter((e) => e.depth.bids.some((l) => l.mine > 0) || e.depth.asks.some((l) => l.mine > 0))
+        .map((e) => [st.symbol, e.id] as const),
+    );
+    expect(withMine.length).toBeGreaterThan(0);
+    const [symbol, exchange] = withMine[0]!;
+    const row = [...document.querySelectorAll('.quotes tr')].find(
+      (r) => r.textContent.includes(exchange) && (r.closest('.stock')?.textContent ?? '').includes(symbol),
+    );
+    fireEvent.mouseOver(row!);
+    expect(document.querySelector('.ladder .mine')).not.toBeNull();
+    expect(document.querySelectorAll('.ladder tbody .mine').length).toBeGreaterThan(0);
+  }, 60_000);
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;
