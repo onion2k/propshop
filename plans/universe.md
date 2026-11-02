@@ -1,6 +1,6 @@
 # A wider universe: factors, an index, a watchlist
 
-State: building, part 1 of 5.
+State: landed on main at d57f3fe, 2026-11-02.
 
 ## Context
 
