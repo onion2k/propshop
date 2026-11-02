@@ -584,3 +584,98 @@ code {
 .chart {
   height: 160px;
 }
+
+/* A phone's width: the top bar in rows, tighter gutters, wide tables scrolling inside their panel with the
+   columns a thumb does not need put away, and parameter rows one under the other. */
+.panel {
+  overflow-x: auto;
+}
+.clock .day {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .topbar {
+    gap: 8px 16px;
+    padding: 8px 12px;
+  }
+  .brand {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+  }
+  .clock {
+    width: 100%;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .clock .time {
+    font-size: 17px;
+  }
+  .money {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .stat .value {
+    font-size: 14px;
+  }
+  .speed button {
+    padding: 3px 7px;
+  }
+  .pages {
+    padding: 8px 12px 0;
+  }
+  .pages .hint {
+    margin-left: 0;
+    width: 100%;
+    text-align: left;
+  }
+  .layout {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .panel {
+    padding: 10px;
+  }
+  th,
+  td {
+    padding: 2px 4px;
+  }
+  .col-sector,
+  .col-name,
+  .col-size {
+    display: none;
+  }
+  .param {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .firm-grid,
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+  .chart {
+    height: 120px;
+  }
+  .script-source {
+    font-size: 11px;
+  }
+  .orders li,
+  .fills li {
+    font-size: 12px;
+  }
+}
+
+.tabs nav {
+  flex-wrap: wrap;
+}
+@media (max-width: 360px) {
+  .col-spread {
+    display: none;
+  }
+  .pages > button {
+    padding: 5px 10px;
+  }
+}

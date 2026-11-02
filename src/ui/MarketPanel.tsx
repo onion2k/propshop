@@ -31,7 +31,7 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
           <tr>
             <th>Watch</th>
             <th>Symbol</th>
-            <th>Sector</th>
+            <th className="col-sector">Sector</th>
             <th className="num">
               <Term id="bid-ask">Bid</Term>
             </th>
@@ -56,9 +56,9 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
                 />
               </td>
               <td>
-                <strong>{st.symbol}</strong> <span className="muted small">{st.name}</span>
+                <strong>{st.symbol}</strong> <span className="muted small col-name">{st.name}</span>
               </td>
-              <td className="muted">{st.constituents ? `index of ${st.constituents.length}` : st.sector}</td>
+              <td className="muted col-sector">{st.constituents ? `index of ${st.constituents.length}` : st.sector}</td>
               <td className="num bid">{price(st.bid)}</td>
               <td className="num ask">{price(st.ask)}</td>
               <td className={`num ${st.dayChange === null ? 'muted' : st.dayChange >= 0 ? 'up' : 'down'}`}>
@@ -86,9 +86,9 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
                 <th>Exchange</th>
                 <th className="num">Bid</th>
                 <th className="num">Ask</th>
-                <th className="num">Spread</th>
+                <th className="num col-spread">Spread</th>
                 <th className="num">Last</th>
-                <th className="num">Size</th>
+                <th className="num col-size">Size</th>
               </tr>
             </thead>
             <tbody>
@@ -108,9 +108,9 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
                     </td>
                     <td className="num bid">{price(q?.bid ?? null)}</td>
                     <td className="num ask">{price(q?.ask ?? null)}</td>
-                    <td className="num">{spread === null ? '—' : `${spread}¢`}</td>
+                    <td className="num col-spread">{spread === null ? '—' : `${spread}¢`}</td>
                     <td className="num">{price(ex.last)}</td>
-                    <td className="num muted">{q ? `${shares(q.bidSize)} × ${shares(q.askSize)}` : '—'}</td>
+                    <td className="num muted col-size">{q ? `${shares(q.bidSize)} × ${shares(q.askSize)}` : '—'}</td>
                   </tr>
                 );
               })}
