@@ -1,6 +1,6 @@
 # Two more strategy blocks, and one measured out
 
-State: building, part 1 of 2.
+State: landed on main at 3b0732c, 2026-11-02.
 
 ## Context
 
