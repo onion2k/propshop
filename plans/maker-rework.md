@@ -1,6 +1,6 @@
 # The market maker's own quote is not information
 
-State: building, part 1 of 1.
+State: landed on main at ab50131, 2026-11-02.
 
 ## Context
 
