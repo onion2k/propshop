@@ -260,6 +260,35 @@ describe('App', () => {
     expect(document.querySelectorAll('.ladder tbody .mine').length).toBeGreaterThan(0);
   }, 60_000);
 
+  it('offers the tutorial on a fresh game, walks its first steps and drives the page, and can be skipped', () => {
+    const store = createStore(CONTENT, null, 17);
+    render(<App store={store} />);
+    expect(screen.getByRole('dialog', { name: 'Welcome' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Take the tutorial'));
+    expect(screen.getByRole('dialog', { name: /Tutorial step 1 of/ })).toBeInTheDocument();
+    expect(store.game.speed).toBe(0);
+    expect(document.querySelector('[data-tut="pages"]')).toHaveClass('tut-target');
+    fireEvent.click(screen.getByText('Next'));
+    expect(document.querySelector('[data-tut="watchlist"]')).toHaveClass('tut-target');
+    fireEvent.click(screen.getByText('Next'));
+    fireEvent.click(screen.getByText('Next'));
+    // The clock step waits for the open at speed.
+    expect(screen.getByRole('dialog', { name: /step 4 of/ })).toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+    act(() => {
+      store.skipToOpen();
+      store.setSpeed(10);
+      for (let i = 0; i < (90 * 1000) / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    expect(screen.getByText('Next')).toBeEnabled();
+    // Back to the welcome state is not offered; Skip ends it and the Reports page offers it again.
+    fireEvent.click(screen.getByText('Skip'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    goTo('Reports');
+    expect(screen.getByText('Take the tutorial again')).toBeInTheDocument();
+  }, 60_000);
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;

@@ -763,3 +763,59 @@ code {
     font-size: 9px;
   }
 }
+
+/* The tutorial card: bottom right on a desk, the bottom of the screen on a phone; the step's element lit. */
+.tutorial {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: min(380px, calc(100vw - 32px));
+  background: #1b2230;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  z-index: 5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.tutorial.welcome {
+  bottom: auto;
+  top: 50%;
+  right: 50%;
+  transform: translate(50%, -50%);
+}
+.tutorial-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.tutorial p {
+  margin: 6px 0;
+}
+.tutorial-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.tutorial .waiting {
+  color: var(--accent);
+}
+.tut-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+@media (max-width: 600px) {
+  .tutorial {
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+    width: auto;
+  }
+  .tutorial.welcome {
+    top: auto;
+    right: 8px;
+    bottom: 8px;
+    transform: none;
+  }
+}

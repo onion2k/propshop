@@ -7,7 +7,7 @@ import { Race } from './Race';
 
 export function FirmPanel({ s }: { s: Snapshot }) {
   return (
-    <section className="panel firm">
+    <section className="panel firm" data-tut="firm">
       <h2>
         Your firm{' '}
         <span className="muted">

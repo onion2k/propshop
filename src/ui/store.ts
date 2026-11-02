@@ -11,6 +11,10 @@ const PUBLISH_EVERY = 100;
 const SAVE_EVERY = 10_000;
 export const SAVE_KEY = 'propshop.save.v1';
 export const PROGRESS_KEY = 'propshop.progress.v1';
+export const TUTORIAL_KEY = 'propshop.tutorial.v1';
+
+/** Where the tutorial stands: not started, at a step, or done (skipped or finished). */
+export type Tutorial = { state: 'fresh' } | { state: 'at'; step: number } | { state: 'done' };
 
 /** Which lessons are done, and the simulated time each was. One object per change, so React can compare it. */
 export type Progress = Readonly<Record<string, number>>;
@@ -18,6 +22,8 @@ export type Progress = Readonly<Record<string, number>>;
 export interface Store {
   getSnapshot: () => Snapshot;
   getProgress: () => Progress;
+  getTutorial: () => Tutorial;
+  setTutorial: (t: Tutorial) => void;
   subscribe: (listener: () => void) => () => void;
   /** Hand the store some wall time; it runs the sim and publishes if it is due. */
   pump: (wallNow: number) => void;
@@ -45,6 +51,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
   let game = loadOrNew(content, storage, seed);
   let snapshot = game.snapshot();
   let progress: Progress = loadProgress(storage);
+  let tutorial: Tutorial = loadTutorial(storage);
   let publishedVersion = game.version;
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
@@ -81,6 +88,16 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     },
     getSnapshot: () => snapshot,
     getProgress: () => progress,
+    getTutorial: () => tutorial,
+    setTutorial(t) {
+      tutorial = t;
+      try {
+        storage?.setItem(TUTORIAL_KEY, JSON.stringify(t));
+      } catch {
+        // Storage can be full or forbidden; the tutorial still runs on screen.
+      }
+      for (const l of listeners) l();
+    },
     subscribe(l) {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -112,8 +129,10 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     reset(newSeed) {
       storage?.removeItem(SAVE_KEY);
       storage?.removeItem(PROGRESS_KEY);
+      storage?.removeItem(TUTORIAL_KEY);
       game = new Game(content, newSeed);
       progress = {};
+      tutorial = { state: 'fresh' };
       publishedVersion = -1;
       publish();
     },
@@ -159,5 +178,20 @@ function saveProgress(storage: Storage | null, progress: Progress): void {
     storage?.setItem(PROGRESS_KEY, JSON.stringify(progress));
   } catch {
     // Storage can be full or forbidden; the lessons still tick on screen.
+  }
+}
+
+function loadTutorial(storage: Storage | null): Tutorial {
+  const raw = storage?.getItem(TUTORIAL_KEY);
+  if (!raw) return { state: 'fresh' };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || !('state' in parsed)) return { state: 'fresh' };
+    const t = parsed as { state: unknown; step?: unknown };
+    if (t.state === 'done') return { state: 'done' };
+    if (t.state === 'at' && typeof t.step === 'number') return { state: 'at', step: t.step };
+    return { state: 'fresh' };
+  } catch {
+    return { state: 'fresh' };
   }
 }

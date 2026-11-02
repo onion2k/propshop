@@ -21,7 +21,7 @@ export function StrategyPanel({ s, store }: { s: Snapshot; store: Store }) {
   const cap = s.capacity;
   const full = cap.blocksUsed >= cap.maxBlocks;
   return (
-    <section className="panel strategy">
+    <section className="panel strategy" data-tut="strategy">
       <h2>
         Strategy{' '}
         <span className="muted">

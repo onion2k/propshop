@@ -7,7 +7,7 @@ import type { Store } from './store';
 
 export function RiskPanel({ s, store }: { s: Snapshot; store: Store }) {
   return (
-    <section className="panel risk">
+    <section className="panel risk" data-tut="risk">
       <h2>
         <Term id="risk-limits">Risk limits</Term>
       </h2>

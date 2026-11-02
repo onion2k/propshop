@@ -32,7 +32,7 @@ export function TopBar({ s, store }: { s: Snapshot; store: Store }) {
           </span>
         )}
       </div>
-      <div className="speed" role="group" aria-label="Speed">
+      <div className="speed" role="group" aria-label="Speed" data-tut="speed">
         {SPEEDS.map((sp) => (
           <button key={sp} type="button" className={s.speed === sp ? 'on' : ''} onClick={() => store.setSpeed(sp)}>
             {sp === 0 ? '⏸' : `${sp}×`}

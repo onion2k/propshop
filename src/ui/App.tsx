@@ -2,8 +2,8 @@
 // live book; Strategy is the blocks, the script, the risk limits and the shop; Reports is the first week, the
 // days, the news, the dark web, the rivals and the glossary. All state lives in the store; this file arranges it.
 
-import { useState, useSyncExternalStore } from 'react';
-import { LESSONS } from '../content';
+import { useCallback, useState, useSyncExternalStore } from 'react';
+import { LESSONS, type TutorialPage } from '../content';
 import { DarkWebPanel } from './DarkWebPanel';
 import { DaysPanel } from './DaysPanel';
 import { FirmPanel } from './FirmPanel';
@@ -17,6 +17,7 @@ import { ShopPanel } from './ShopPanel';
 import type { Store } from './store';
 import { StrategyPanel } from './StrategyPanel';
 import { TopBar } from './TopBar';
+import { TutorialCard, Welcome } from './Tutorial';
 
 type Page = 'market' | 'strategy' | 'reports';
 const PAGES: { id: Page; label: string }[] = [
@@ -38,7 +39,9 @@ const TABS: { id: Tab; label: string }[] = [
 export function App({ store }: { store: Store }) {
   const s = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const progress = useSyncExternalStore(store.subscribe, store.getProgress, store.getProgress);
+  const tutorial = useSyncExternalStore(store.subscribe, store.getTutorial, store.getTutorial);
   const [page, setPage] = useState<Page>('market');
+  const goPage = useCallback((p: TutorialPage) => setPage(p), []);
   const [tab, setTab] = useState<Tab>('week');
   const [term, setTerm] = useState<string | null>(null);
   // "new" on the Days tab from a close until it is opened.
@@ -60,10 +63,14 @@ export function App({ store }: { store: Store }) {
   const newDays = s.days.length > daysSeen;
   const tips = s.dark.unlocked ? s.dark.offers.length : 0;
   const reportsBadge = left + (newDays ? 1 : 0) + tips;
+  // A fresh game with nothing done yet is offered the tutorial.
+  const fresh = tutorial.state === 'fresh' && left === LESSONS.length && s.fills.length === 0;
   return (
     <LearnContext.Provider value={learn}>
       <TopBar s={s} store={store} />
-      <nav className="pages" aria-label="Pages">
+      {fresh && <Welcome store={store} />}
+      {tutorial.state === 'at' && <TutorialCard s={s} store={store} tutorial={tutorial} setPage={goPage} />}
+      <nav className="pages" aria-label="Pages" data-tut="pages">
         {PAGES.map((p) => (
           <button
             key={p.id}
@@ -101,7 +108,7 @@ export function App({ store }: { store: Store }) {
           </div>
           <div className="column">
             <RiskPanel s={s} store={store} />
-            <section className="panel">
+            <section className="panel" data-tut="shop">
               <h2>Shop</h2>
               <ShopPanel s={s} store={store} />
             </section>
@@ -110,7 +117,7 @@ export function App({ store }: { store: Store }) {
       )}
       {page === 'reports' && (
         <main className="layout single">
-          <section className="panel tabs">
+          <section className="panel tabs" data-tut="tabs">
             <nav role="tablist">
               {TABS.map((t) => (
                 <button
@@ -129,7 +136,7 @@ export function App({ store }: { store: Store }) {
               ))}
             </nav>
             <div className="tab-body" role="tabpanel">
-              {tab === 'week' && <FirstWeekPanel progress={progress} />}
+              {tab === 'week' && <FirstWeekPanel progress={progress} store={store} />}
               {tab === 'days' && <DaysPanel s={s} />}
               {tab === 'news' && <NewsPanel s={s} />}
               {tab === 'dark' && <DarkWebPanel s={s} store={store} />}

@@ -26,7 +26,7 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
           late · <span className="num slot-short">{s.gapsSeen}</span> gaps seen
         </span>
       </h2>
-      <table className="watchlist">
+      <table className="watchlist" data-tut="watchlist">
         <thead>
           <tr>
             <th>Watch</th>
@@ -80,7 +80,7 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
               <Term id="fair-value">fair</Term> <span className="num">{price(Math.round(selected.fair))}</span>
             </span>
           </div>
-          <table className="quotes">
+          <table className="quotes" data-tut="quotes">
             <thead>
               <tr>
                 <th>Exchange</th>

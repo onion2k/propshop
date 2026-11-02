@@ -4,17 +4,25 @@
 import { LESSONS } from '../content';
 import { formatTime } from '../sim';
 import { Term } from './Glossary';
-import type { Progress } from './store';
+import type { Progress, Store } from './store';
 
 export function lessonsLeft(progress: Progress): number {
   return LESSONS.filter((l) => progress[l.id] === undefined).length;
 }
 
-export function FirstWeekPanel({ progress }: { progress: Progress }) {
+export function FirstWeekPanel({ progress, store }: { progress: Progress; store: Store }) {
   const current = LESSONS.find((l) => progress[l.id] === undefined);
   const left = lessonsLeft(progress);
+  const tutorial = store.getTutorial();
   return (
     <div className="first-week">
+      {tutorial.state !== 'at' && (
+        <p>
+          <button type="button" onClick={() => store.setTutorial({ state: 'at', step: 0 })}>
+            {tutorial.state === 'done' ? 'Take the tutorial again' : 'Take the tutorial'}
+          </button>
+        </p>
+      )}
       <p className="muted">
         {left === 0
           ? 'All eight done. The rest of the game is yours; the Learn tab has the ideas in full.'
