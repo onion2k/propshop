@@ -1,6 +1,6 @@
 # Propshop: a high-frequency trading sim, first slice
 
-State: building, part 10 of 10.
+State: landed on main at 796ed32, 2026-11-02.
 
 ## Context
 
