@@ -69,7 +69,7 @@ export function App({ store }: { store: Store }) {
     <LearnContext.Provider value={learn}>
       <TopBar s={s} store={store} />
       {fresh && <Welcome store={store} />}
-      {tutorial.state === 'at' && <TutorialCard s={s} store={store} tutorial={tutorial} setPage={goPage} />}
+      {tutorial.state === 'at' && <TutorialCard s={s} store={store} tutorial={tutorial} page={page} setPage={goPage} />}
       <nav className="pages" aria-label="Pages" data-tut="pages">
         {PAGES.map((p) => (
           <button

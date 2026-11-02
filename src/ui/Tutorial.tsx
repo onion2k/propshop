@@ -28,11 +28,13 @@ export function TutorialCard({
   s,
   store,
   tutorial,
+  page,
   setPage,
 }: {
   s: Snapshot;
   store: Store;
   tutorial: Extract<TutorialState, { state: 'at' }>;
+  page: TutorialPage;
   setPage: (p: TutorialPage) => void;
 }) {
   const index = Math.min(tutorial.step, TUTORIAL.length - 1);
@@ -58,7 +60,8 @@ export function TutorialCard({
     const scroll = (target as { scrollIntoView?: (o: ScrollIntoViewOptions) => void } | null)?.scrollIntoView;
     if (typeof scroll === 'function') scroll.call(target, { block: 'nearest' });
     return () => target?.classList.remove('tut-target');
-  }, [step, s.now]);
+    // The page is a dependency because its elements exist only once it has rendered.
+  }, [step, page, s.now]);
 
   const ready = !step.waitFor || step.waitFor.check(s);
   const go = (i: number) => store.setTutorial({ state: 'at', step: i });
