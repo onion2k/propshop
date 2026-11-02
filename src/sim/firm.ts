@@ -8,7 +8,7 @@ import { DelayQueue, latencyTo, type Delayed } from './latency';
 import type { Market } from './market';
 import type { Side, Trade } from './orderbook';
 import { blockById, paramsFrom } from './strategy';
-import type { Fill, Intent, MarketView, OpenOrder, Params, SeenQuote } from './strategy';
+import type { BeatenBy, Fill, Intent, MarketView, OpenOrder, Params, SeenQuote } from './strategy';
 import type { Headline, Infrastructure } from './types';
 
 /** How many fills and how many finished orders a firm remembers. */
@@ -45,7 +45,15 @@ type Outbound =
 
 /** A message on its way back from an exchange. */
 type Inbound =
-  | { kind: 'ack'; localId: number; exchangeOrderId: number; remaining: number; resting: boolean }
+  | {
+      kind: 'ack';
+      localId: number;
+      exchangeOrderId: number;
+      remaining: number;
+      resting: boolean;
+      arrivedAt: number;
+      beatenBy: BeatenBy[];
+    }
   | { kind: 'fill'; localId: number; price: number; size: number; at: number; taker: boolean }
   | { kind: 'cancelled'; localId: number }
   | { kind: 'rejected'; localId: number; reason: string };
@@ -199,6 +207,9 @@ export class Firm {
       switch (msg.kind) {
         case 'ack':
           order.exchangeOrderId = msg.exchangeOrderId;
+          order.arrivedAt = msg.arrivedAt;
+          order.ackAt = now;
+          order.beatenBy = msg.beatenBy;
           if (order.status === 'inflight')
             order.status = msg.resting ? 'resting' : msg.remaining === 0 ? 'filled' : 'cancelled';
           break;
@@ -332,11 +343,11 @@ export class Firm {
     const view = this.view(now, market, news);
     for (const setting of this.enabledBlocks()) {
       const block = blockById(setting.id);
-      for (const intent of block.decide(view, setting.params)) this.send(intent, setting.id, now);
+      for (const intent of block.decide(view, setting.params)) this.send(intent, setting.id, now, view);
     }
   }
 
-  private send(intent: Intent, block: string, now: number): void {
+  private send(intent: Intent, block: string, now: number, view: MarketView): void {
     if (now - this.secondStarted >= MS_PER_SECOND) {
       this.secondStarted = now;
       this.ordersThisSecond = 0;
@@ -376,6 +387,10 @@ export class Firm {
       status: 'inflight',
       block,
       sentAt: now,
+      seenAt: view.quotes[intent.exchange]?.[intent.symbol]?.at ?? null,
+      arrivedAt: null,
+      ackAt: null,
+      beatenBy: [],
     });
     this.stats.ordersSent++;
     const sent = this.outbound.push({ ...intent, localId }, now + this.latency(intent.exchange));
@@ -395,6 +410,10 @@ export class Firm {
         this.inbound.push({ kind: 'cancelled', localId: msg.localId }, back);
         continue;
       }
+      const mine = this.orders.get(msg.localId);
+      // Before the order goes in, read who took the quote it was sent for since the firm saw it.
+      const beatenBy =
+        mine && mine.seenAt !== null ? exchange.takersSince(msg.symbol, mine.seenAt, msg.side, msg.price, this.id) : [];
       const { order } = exchange.submit(
         msg.symbol,
         { owner: this.id, side: msg.side, price: msg.price, size: msg.size, ioc: msg.ioc },
@@ -408,6 +427,8 @@ export class Firm {
           exchangeOrderId: order.id,
           remaining: order.remaining,
           resting: order.remaining > 0 && !order.ioc,
+          arrivedAt: now,
+          beatenBy,
         },
         back,
       );

@@ -77,6 +77,10 @@ describe('strategy blocks', () => {
             status: 'inflight',
             block: 'arbitrage',
             sentAt: 0,
+            seenAt: null,
+            arrivedAt: null,
+            ackAt: null,
+            beatenBy: [],
           },
         ],
       });
@@ -106,7 +110,7 @@ describe('strategy blocks', () => {
 
   describe('market maker', () => {
     const mm = blockById('marketMaker');
-    const p = paramsFrom(mm.spec, { halfSpread: 2, size: 100, maxInventory: 500 });
+    const p = paramsFrom(mm.spec, { halfSpread: 2, size: 100, maxInventory: 500, tolerance: 1 });
 
     it('quotes both sides on both exchanges around the mid', () => {
       const intents = mm.decide(view(), p);
@@ -153,6 +157,10 @@ describe('strategy blocks', () => {
         status: 'resting' as const,
         block: 'marketMaker',
         sentAt: 0,
+        seenAt: null,
+        arrivedAt: null,
+        ackAt: null,
+        beatenBy: [],
       });
       const v = view({ exchanges: ['HARBOR'], openOrders: [resting(4098, 'buy'), resting(4110, 'sell')] });
       const intents = mm.decide(v, p);
@@ -160,6 +168,41 @@ describe('strategy blocks', () => {
         { kind: 'cancel', localId: 2 },
         { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'sell', price: 4103, size: 100, ioc: false },
       ]);
+    });
+  });
+
+  describe('market maker on news', () => {
+    const mm = blockById('marketMaker');
+    it('pulls its quotes and stays out after a headline names the stock', () => {
+      const p = paramsFrom(mm.spec, { newsPause: 30 });
+      const headline = { id: 1, at: 5_000, text: 'x', symbols: ['ABC'], sector: null, direction: 1 as const };
+      const resting = {
+        localId: 1,
+        exchange: 'HARBOR',
+        exchangeOrderId: 9,
+        symbol: 'ABC',
+        side: 'buy' as const,
+        price: 4098,
+        size: 100,
+        filled: 0,
+        ioc: false,
+        status: 'resting' as const,
+        block: 'marketMaker',
+        sentAt: 0,
+        seenAt: null,
+        arrivedAt: null,
+        ackAt: null,
+        beatenBy: [],
+      };
+      expect(mm.decide(view({ exchanges: ['HARBOR'], news: [headline], openOrders: [resting] }), p)).toEqual([
+        { kind: 'cancel', localId: 1 },
+      ]);
+      // Forty seconds on, it quotes again.
+      expect(mm.decide(view({ exchanges: ['HARBOR'], news: [headline], now: 50_000 }), p)).toHaveLength(2);
+      // With the pause off, news is ignored.
+      expect(
+        mm.decide(view({ exchanges: ['HARBOR'], news: [headline] }), paramsFrom(mm.spec, { newsPause: 0 })),
+      ).toHaveLength(2);
     });
   });
 

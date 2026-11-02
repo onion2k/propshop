@@ -2,9 +2,9 @@
 // anything but this file.
 
 export { Game, SPEEDS, TICK_MS } from './game';
-export type { GameEvent, SavedGame, Snapshot, Speed, DayRecord } from './game';
+export type { GameEvent, SavedGame, Snapshot, Speed, DayRecord, OrderStory } from './game';
 export { BLOCKS, blockById } from './strategy';
-export type { BlockSpec, Fill, OpenOrder, ParamSpec, Params } from './strategy';
+export type { BeatenBy, BlockSpec, Fill, OpenOrder, ParamSpec, Params } from './strategy';
 export type { BlockSetting } from './firm';
 export type { Tip, Fine } from './darkweb';
 export type { Published } from './news';

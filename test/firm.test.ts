@@ -40,10 +40,11 @@ describe('Firm', () => {
     const ask = w.market.exchange('HARBOR').quote('ABC').ask!;
     // Reach in as a block would: one IOC buy at the ask.
     f.setBlock('arbitrage', { enabled: false });
-    (f as unknown as { send: (i: unknown, b: string, now: number) => void }).send(
+    (f as unknown as { send: (i: unknown, b: string, now: number, view: unknown) => void }).send(
       { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: ask, size: 100, ioc: true },
       'test',
       w.now(),
+      { quotes: {} },
     );
     const order = [...f.orders.values()][0]!;
     expect(order.status).toBe('inflight');
@@ -79,6 +80,10 @@ describe('Firm', () => {
       status: 'inflight',
       block: 't',
       sentAt: 0,
+      seenAt: null,
+      arrivedAt: null,
+      ackAt: null,
+      beatenBy: [],
     });
     book(order('buy'), 4100, 100, 0, true);
     book(order('buy'), 4102, 100, 0, true);
@@ -106,6 +111,25 @@ describe('Firm', () => {
     const slowPnl = slow.realised - slow.feesPaid + slow.unrealised(w.market, w.now());
     expect(fastPnl).toBeGreaterThan(0);
     expect(fastPnl).toBeGreaterThan(slowPnl);
+  });
+
+  it('tells a slow firm who took the quote before its order arrived', () => {
+    const slow = new Firm('slow', 'Slow', MILLION, SLOW, Firm.defaultBlocks(['arbitrage']));
+    const fast = new Firm('fast', 'Fast', MILLION, FAST, Firm.defaultBlocks(['arbitrage']));
+    const w = world(27, [slow, fast]);
+    w.run(120 * MS_PER_SECOND);
+    const orders = [...slow.orders.values()].filter((o) => o.ackAt !== null);
+    expect(orders.length).toBeGreaterThan(0);
+    for (const o of orders) {
+      expect(o.seenAt).not.toBeNull();
+      expect(o.arrivedAt! - o.sentAt).toBe(slow.latency(o.exchange));
+      expect(o.ackAt! - o.arrivedAt!).toBe(slow.latency(o.exchange));
+    }
+    const beaten = orders.filter((o) => o.beatenBy.some((b) => b.owner === 'fast'));
+    expect(beaten.length).toBeGreaterThan(0);
+    const first = beaten[0]!.beatenBy.find((b) => b.owner === 'fast')!;
+    expect(first.at).toBeGreaterThanOrEqual(beaten[0]!.seenAt!);
+    expect(first.at).toBeLessThanOrEqual(beaten[0]!.arrivedAt!);
   });
 
   it('drops orders past the computer capacity and counts them', () => {
@@ -148,6 +172,10 @@ describe('Firm', () => {
       status: 'inflight' as const,
       block: 't',
       sentAt: 0,
+      seenAt: null,
+      arrivedAt: null,
+      ackAt: null,
+      beatenBy: [],
     });
     f.orders.set(1, order(1, 'ABC'));
     f.orders.set(2, order(2, 'XYZ'));

@@ -33,6 +33,14 @@ export interface SeenQuote extends Quote {
   at: number;
 }
 
+/** A trade that took the liquidity an order was sent for, before the order arrived. */
+export interface BeatenBy {
+  owner: string;
+  at: number;
+  price: number;
+  size: number;
+}
+
 export interface OpenOrder {
   localId: number;
   exchange: string;
@@ -46,6 +54,11 @@ export interface OpenOrder {
   status: 'inflight' | 'resting' | 'cancelling' | 'filled' | 'cancelled' | 'rejected';
   block: string;
   sentAt: number;
+  /** When the exchange published the quote this order was priced from; null when the firm had no quote. */
+  seenAt: number | null;
+  arrivedAt: number | null;
+  ackAt: number | null;
+  beatenBy: BeatenBy[];
 }
 
 export interface Fill {

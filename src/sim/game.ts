@@ -87,6 +87,10 @@ export interface Snapshot {
   heatLine: number;
   positions: { symbol: string; qty: number; avgCost: number; mark: number | null; unrealised: number }[];
   openOrders: OpenOrder[];
+  /** Recent orders, open and finished, newest first, each with what its fills made. */
+  orders: OrderStory[];
+  /** Who the rivals are, by owner id, so a race can name who won it. */
+  names: Record<string, string>;
   fills: Fill[];
   blocks: BlockSetting[];
   capacity: {
@@ -122,6 +126,13 @@ export interface Snapshot {
 }
 
 const LOG_LENGTH = 200;
+const ORDER_STORIES = 30;
+
+export interface OrderStory extends OpenOrder {
+  /** Fee paid and P&L realised by this order's fills, cents. */
+  fee: number;
+  realised: number;
+}
 
 export class Game {
   readonly content: Content;
@@ -300,6 +311,11 @@ export class Game {
       openOrders: [...firm.orders.values()].filter(
         (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
       ),
+      orders: this.stories(),
+      names: Object.fromEntries([
+        ['bg', 'the crowd'],
+        ...this.competitors.map((c): [string, string] => [c.id, c.name]),
+      ]),
       fills: firm.fills.slice(-50).reverse(),
       blocks: firm.blocks,
       capacity: {
@@ -353,6 +369,18 @@ export class Game {
       days: this.days,
       log: this.log,
     };
+  }
+
+  private stories(): OrderStory[] {
+    const orders = [...this.firm.orders.values()].slice(-ORDER_STORIES).reverse();
+    const byOrder = new Map<number, { fee: number; realised: number }>();
+    for (const f of this.firm.fills) {
+      const t = byOrder.get(f.localId) ?? { fee: 0, realised: 0 };
+      t.fee += f.fee;
+      t.realised += f.realised;
+      byOrder.set(f.localId, t);
+    }
+    return orders.map((o) => ({ ...o, ...(byOrder.get(o.localId) ?? { fee: 0, realised: 0 }) }));
   }
 
   save(): SavedGame {

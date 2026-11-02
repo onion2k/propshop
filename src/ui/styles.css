@@ -361,3 +361,44 @@ footer {
     transition: border-color 120ms;
   }
 }
+
+.orders {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+}
+.orders li {
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.race-line {
+  position: relative;
+  height: 10px;
+  margin: 4px 0 2px;
+  border-bottom: 1px solid var(--line);
+}
+.race-line .tick {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 10px;
+  background: var(--muted);
+  transform: translateX(-1px);
+}
+.race-line .tick.saw {
+  background: var(--muted);
+}
+.race-line .tick.sent {
+  background: var(--accent);
+}
+.race-line .tick.beaten {
+  background: var(--down);
+  width: 3px;
+}
+.race-line .tick.arrived {
+  background: var(--text);
+}
+.race-line .tick.heard {
+  background: var(--up);
+}

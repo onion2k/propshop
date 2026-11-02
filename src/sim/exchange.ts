@@ -76,6 +76,23 @@ export class Exchange {
     return this.stock(symbol).book;
   }
 
+  /**
+   * Who took liquidity on this side, at this price or better, since a moment: the firms that beat an order
+   * sent for that quote. The tape is short, so this answers for the last few seconds only, which is plenty.
+   */
+  takersSince(symbol: string, since: number, side: 'buy' | 'sell', price: number, except: string) {
+    const out: { owner: string; at: number; price: number; size: number }[] = [];
+    for (const t of this.stock(symbol).tape) {
+      if (t.at < since || t.aggressor !== side) continue;
+      const better = side === 'buy' ? t.price <= price : t.price >= price;
+      if (!better) continue;
+      const owner = side === 'buy' ? t.buyer : t.seller;
+      if (owner === except) continue;
+      out.push({ owner, at: t.at, price: t.price, size: t.size });
+    }
+    return out.slice(-3);
+  }
+
   /** The quote as it stood at a past moment: what a firm that far behind is looking at. */
   quoteAsOf(symbol: string, at: number): LoggedQuote | null {
     const log = this.stock(symbol).quoteLog;

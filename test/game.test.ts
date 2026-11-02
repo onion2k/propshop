@@ -67,6 +67,22 @@ describe('Game', () => {
     expect(Number.isFinite(s.dayPnl)).toBe(true);
   });
 
+  it('tells the story of each order, naming who won the race', () => {
+    const g = new Game(CONTENT, 13);
+    g.skipToOpen();
+    run(g, 2 * MS_PER_MINUTE);
+    const s = g.snapshot();
+    expect(s.orders.length).toBeGreaterThan(0);
+    expect(s.orders.length).toBeLessThanOrEqual(30);
+    const heard = s.orders.filter((o) => o.ackAt !== null);
+    expect(heard.length).toBeGreaterThan(0);
+    const beaten = heard.filter((o) => o.beatenBy.length > 0);
+    expect(beaten.length).toBeGreaterThan(0);
+    for (const b of beaten) for (const t of b.beatenBy) expect(s.names[t.owner]).toBeDefined();
+    const filled = s.orders.find((o) => o.filled > 0);
+    expect(filled?.fee).toBeGreaterThan(0);
+  });
+
   it('runs an upgrade through the shop and lowers the latency', () => {
     const g = new Game(CONTENT, 5);
     const before = g.firm.latency('HARBOR');

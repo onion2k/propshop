@@ -40,6 +40,30 @@ export const marketMaker: StrategyBlock = {
         explain: 'Shares on each quote.',
       },
       {
+        key: 'tolerance',
+        name: 'Requote when off by',
+        min: 1,
+        max: 6,
+        step: 1,
+        default: 2,
+        unit: '¢',
+        explain:
+          'A resting quote is left alone until the midpoint has moved this far from it. Lower keeps the quotes ' +
+          'tighter to the market and sends many more orders, which a small computer cannot keep up with.',
+      },
+      {
+        key: 'newsPause',
+        name: 'Step away on news for',
+        min: 0,
+        max: 120,
+        step: 5,
+        default: 30,
+        unit: 's',
+        explain:
+          'After a headline names a stock, pull its quotes and stay out this long. While the news is being priced ' +
+          'in, a resting quote is a gift to whoever read the headline faster.',
+      },
+      {
         key: 'maxInventory',
         name: 'Max inventory',
         min: 100,
@@ -57,23 +81,28 @@ export const marketMaker: StrategyBlock = {
     const half = p.halfSpread ?? 2;
     const size = p.size ?? 100;
     const max = p.maxInventory ?? 500;
+    const tolerance = p.tolerance ?? 2;
+    const pause = (p.newsPause ?? 30) * 1000;
     for (const symbol of view.symbols) {
       const position = view.positions[symbol] ?? 0;
       // Lean the quotes away from the inventory, a full half spread at the limit.
       const skew = Math.round((-position / max) * half);
+      const onNews = pause > 0 && view.news.some((h) => h.symbols.includes(symbol) && view.now - h.at < pause);
       for (const exchange of view.exchanges) {
         const q = view.quotes[exchange]?.[symbol];
         if (!q || q.bid === null || q.ask === null) continue;
         const mid = (q.bid + q.ask) / 2;
-        const wantBid = position < max ? Math.floor(mid - half + skew) : null;
-        const wantAsk = position > -max ? Math.ceil(mid + half + skew) : null;
+        const wantBid = position < max && !onNews ? Math.floor(mid - half + skew) : null;
+        const wantAsk = position > -max && !onNews ? Math.ceil(mid + half + skew) : null;
         const mine = view.openOrders.filter(
           (o) => o.symbol === symbol && o.exchange === exchange && o.block === this.spec.id && o.status !== 'filled',
         );
         for (const side of ['buy', 'sell'] as const) {
           const want = side === 'buy' ? wantBid : wantAsk;
           const have = mine.filter((o) => o.side === side);
-          const keep = have.find((o) => want !== null && Math.abs(o.price - want) <= 1 && o.status !== 'cancelling');
+          const keep = have.find(
+            (o) => want !== null && Math.abs(o.price - want) <= tolerance && o.status !== 'cancelling',
+          );
           for (const o of have) {
             if (o !== keep && o.status === 'resting') out.push({ kind: 'cancel', localId: o.localId });
           }

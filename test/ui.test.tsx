@@ -73,6 +73,19 @@ describe('App', () => {
     expect(again.game.now).not.toBe(store.game.now);
   });
 
+  it('tells each order its race once the market has traded', () => {
+    const store = createStore(CONTENT, null, 7);
+    store.skipToOpen();
+    for (let i = 0; i < (150 * 1000) / TICK_MS; i++) store.game.step();
+    store.publish();
+    render(<App store={store} />);
+    const items = document.querySelectorAll('.orders li');
+    expect(items.length).toBeGreaterThan(0);
+    const words = [...document.querySelectorAll('.race-words')].map((e) => e.textContent);
+    expect(words.some((w) => /Filled|Missed|took/.test(w))).toBe(true);
+    expect(words.some((w) => /old when sent/.test(w))).toBe(true);
+  });
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     render(<App store={store} />);
