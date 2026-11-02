@@ -1,6 +1,6 @@
 # The guided first week
 
-State: building, part 1 of 3.
+State: landed on main at f2dabff, 2026-11-02.
 
 ## Context
 
