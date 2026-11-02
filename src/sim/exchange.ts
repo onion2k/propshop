@@ -172,13 +172,18 @@ export class Exchange {
     if (asks < TARGET_DEPTH && random.chance(rate * (1 - asks / TARGET_DEPTH) * 2)) {
       this.post(symbol, s, 'sell', askCenter + this.offset(random), now, random);
     }
-    // Someone wants in or out and pays the spread for it: this is what prints a last price.
+    // Someone wants in or out and pays the spread for it: this is what prints a last price. Now and then they
+    // want more than the touch holds and walk a few cents into the book, which is the flow a market maker lives on.
     if (random.chance(0.03 * activity * scale)) {
       const side = random.chance(0.5) ? 'buy' : 'sell';
       const q = s.book.quote();
-      const price = side === 'buy' ? q.ask : q.bid;
-      if (price !== null) {
-        this.submit(symbol, { owner: BACKGROUND, side, price, size: 100 * random.int(1, 3), ioc: true }, now);
+      const touch = side === 'buy' ? q.ask : q.bid;
+      if (touch !== null) {
+        const impatient = random.chance(0.25);
+        const reach = impatient ? random.int(1, 4) : 0;
+        const price = side === 'buy' ? touch + reach : touch - reach;
+        const size = impatient ? 100 * random.int(3, 10) : 100 * random.int(1, 3);
+        this.submit(symbol, { owner: BACKGROUND, side, price, size, ioc: true }, now);
       }
     }
     if (sweep) {
@@ -198,7 +203,15 @@ export class Exchange {
     return Math.min(PLACEMENT_RANGE - 1, Math.floor(-Math.log(1 - u) * 1.5));
   }
 
+  /**
+   * The crowd's resting orders never cross the book: a trader who wants to trade now sends an aggressive order
+   * (above), and one who is posting a quote tucks it inside the touch. Without this, every move in the crowd's
+   * belief would run over whatever quotes were resting, and nobody could make a market.
+   */
   private post(symbol: string, s: StockState, side: 'buy' | 'sell', price: number, now: number, random: Random) {
+    const q = s.book.quote();
+    if (side === 'buy' && q.ask !== null) price = Math.min(price, q.ask - 1);
+    if (side === 'sell' && q.bid !== null) price = Math.max(price, q.bid + 1);
     if (price <= 0) return;
     const result = s.book.add({ owner: BACKGROUND, side, price, size: 100 * random.int(1, 5) }, now);
     this.record(symbol, result.trades);

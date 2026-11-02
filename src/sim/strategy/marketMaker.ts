@@ -2,7 +2,15 @@
 // time someone crosses to trade with you. The danger is inventory: when the price moves, one side keeps
 // filling and you pile up stock that is now worth less than you paid. Skewing the quotes leans against that.
 
-import type { Intent, MarketView, Params, StrategyBlock } from './types';
+import {
+  flattenTo,
+  inFlight,
+  ownPosition,
+  type Intent,
+  type MarketView,
+  type Params,
+  type StrategyBlock,
+} from './types';
 
 export const marketMaker: StrategyBlock = {
   spec: {
@@ -14,20 +22,23 @@ export const marketMaker: StrategyBlock = {
       'the midpoint and offer a little over it, and pocket the gap each time an impatient trader crosses to ' +
       'them. It earns steadily in a calm market. When the price moves, the quotes on the wrong side keep ' +
       'filling, and the maker ends up long a falling stock or short a rising one: inventory risk. The block ' +
-      'skews its quotes away from the side it is already heavy on, and stops quoting that side at the limit. ' +
-      'Resting orders pay no exchange fee: the taker pays, which is the maker\u2019s other edge.',
+      'skews its quotes away from the side it is already heavy on, and at the limit pays the spread to cut it. ' +
+      'Resting orders pay no exchange fee: the taker pays, which is the maker\u2019s other edge. Its enemy is ' +
+      'adverse selection: a quote left behind when the price moves is taken by whoever is fastest, and in ' +
+      'this market somebody is always faster than you.',
     params: [
       {
         key: 'halfSpread',
         name: 'Half spread',
-        min: 1,
+        min: 0,
         max: 10,
         step: 1,
         default: 4,
         unit: '¢',
         explain:
-          'How far from the midpoint each quote sits. Wider earns more per fill and fills less often, and is safer ' +
-          'when you are slow: a tight quote you cannot pull in time is a gift to whoever is faster.',
+          'How far behind the touch each quote sits. At zero it joins the best bid and ask and earns the spread ' +
+          'from the traders who cross it; further back it fills only when the price has come to it, which is ' +
+          'usually because the price is on its way somewhere else.',
       },
       {
         key: 'size',
@@ -45,7 +56,7 @@ export const marketMaker: StrategyBlock = {
         min: 1,
         max: 6,
         step: 1,
-        default: 2,
+        default: 4,
         unit: '¢',
         explain:
           'A resting quote is left alone until the midpoint has moved this far from it. Lower keeps the quotes ' +
@@ -84,14 +95,28 @@ export const marketMaker: StrategyBlock = {
     const tolerance = p.tolerance ?? 2;
     const pause = (p.newsPause ?? 30) * 1000;
     for (const symbol of view.symbols) {
-      const position = view.positions[symbol] ?? 0;
-      // Lean the quotes away from the inventory, a full half spread at the limit.
-      const skew = Math.round((-position / max) * half);
+      const position = ownPosition(view, this.spec.id, symbol);
+      // Lean the quotes away from the inventory, a full half spread (at least a cent) at the limit.
+      const skew = Math.round((-position / max) * Math.max(1, half));
+      // At the limit, stop leaning and get out: pay the spread to cut the inventory to half, which is what
+      // bounds the loss when the price keeps going.
+      if (Math.abs(position) >= max && !inFlight(view, symbol, this.spec.id)) {
+        const cut = flattenTo(view, symbol, position, Math.trunc(position / 2));
+        if (cut) out.push(cut);
+      }
       const onNews = pause > 0 && view.news.some((h) => h.symbols.includes(symbol) && view.now - h.at < pause);
+      // Quote off every exchange at once: the one that has moved is the one that knows, and a maker that
+      // re-centres on it before the crowd does is the maker that does not get picked off.
+      const mids: number[] = [];
+      for (const exchange of view.exchanges) {
+        const q = view.quotes[exchange]?.[symbol];
+        if (q && q.bid !== null && q.ask !== null) mids.push((q.bid + q.ask) / 2);
+      }
+      if (mids.length === 0) continue;
+      const mid = mids.reduce((a, b) => a + b, 0) / mids.length;
       for (const exchange of view.exchanges) {
         const q = view.quotes[exchange]?.[symbol];
         if (!q || q.bid === null || q.ask === null) continue;
-        const mid = (q.bid + q.ask) / 2;
         const wantBid = position < max && !onNews ? Math.floor(mid - half + skew) : null;
         const wantAsk = position > -max && !onNews ? Math.ceil(mid + half + skew) : null;
         const mine = view.openOrders.filter(

@@ -12,9 +12,17 @@ const HOME = { location: 'home', network: 'consumer', computer: 'laptop' };
 const CITY = { location: 'city', network: 'fibre', computer: 'server' };
 const COLO = { location: 'colo-harbor', network: 'microwave', computer: 'rack' };
 
-const CONFIGS: [string, { location: string; network: string; computer: string }, string[]][] = [
+type Config = [
+  string,
+  { location: string; network: string; computer: string },
+  string[],
+  Record<string, Record<string, number>>?,
+];
+const ONLY = process.env.PACE_ONLY;
+const CONFIGS: Config[] = [
   ['home arb', HOME, ['arbitrage']],
   ['home mm', HOME, ['marketMaker']],
+  ['colo mm half0', COLO, ['marketMaker'], { marketMaker: { halfSpread: 0 } }],
   ['home momentum', HOME, ['momentum']],
   ['home news', HOME, ['newsReaction']],
   ['city arb', CITY, ['arbitrage']],
@@ -37,10 +45,12 @@ measure('paces', { timeout: 3_600_000 }, () => {
     (fills[name] ??= []).push(n);
   };
   for (const seed of SEEDS) {
-    for (const [name, infra, blocks] of CONFIGS) {
+    for (const [name, infra, blocks, params] of CONFIGS) {
+      if (ONLY && !name.includes(ONLY)) continue;
       const g = new Game(CONTENT, seed);
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
+      for (const [id, p] of Object.entries(params ?? {})) g.setBlock(id, { params: p });
       g.skipToOpen();
       for (let i = 0; i < (MINUTES * MS_PER_MINUTE) / TICK_MS; i++) g.step();
       add(name, pnl(g.firm, g), g.firm.stats.fillsReceived);

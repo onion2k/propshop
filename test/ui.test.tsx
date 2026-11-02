@@ -88,10 +88,13 @@ describe('App', () => {
 
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
+    store.game.firm.cash = 1000;
+    store.game.version++;
+    store.publish();
     render(<App store={store} />);
     fireEvent.click(screen.getByRole('tab', { name: 'Shop' }));
     expect(screen.getByText('Colocation at HARBOR')).toBeInTheDocument();
-    const buttons = screen.getAllByRole('button', { name: /\$250\.0k/ });
+    const buttons = screen.getAllByRole('button', { name: /\$120\.0k/ });
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 });

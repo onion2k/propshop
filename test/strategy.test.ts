@@ -135,10 +135,19 @@ describe('strategy blocks', () => {
       });
     });
 
-    it('skews away from inventory and stops quoting the heavy side at the limit', () => {
-      const long = mm.decide(view({ positions: { ABC: 500 } }), p);
-      expect(long.filter((i) => i.kind === 'order' && i.side === 'buy')).toHaveLength(0);
-      const asks = long.filter((i) => i.kind === 'order' && i.side === 'sell');
+    it('skews away from inventory and cuts it at the limit', () => {
+      const long = mm.decide(view({ positions: { ABC: 500 }, blockPositions: { marketMaker: { ABC: 500 } } }), p);
+      expect(long.filter((i) => i.kind === 'order' && i.side === 'buy' && !i.ioc)).toHaveLength(0);
+      expect(long[0]).toEqual({
+        kind: 'order',
+        symbol: 'ABC',
+        exchange: 'HARBOR',
+        side: 'sell',
+        price: 4100,
+        size: 250,
+        ioc: true,
+      });
+      const asks = long.filter((i) => i.kind === 'order' && i.side === 'sell' && !i.ioc);
       expect(asks).toHaveLength(2);
       expect(asks[0]).toMatchObject({ price: 4101 });
     });

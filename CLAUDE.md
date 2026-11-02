@@ -55,8 +55,15 @@ For anything new, check what it does:
 
 ## What is not held
 
-- The economy's pacing is measured by the PACE harness and tuned by hand; nothing holds it. One seed's
-  twenty minutes is noisy, and news dominates it.
+- The economy's pacing is measured by the PACE harness over three seeds and tuned by hand; nothing holds
+  it. A run of `PACE=1 PACE_MINUTES=20 npx vitest run test/pace.test.ts` takes about ten minutes.
+- What each setup earned on 2026-11-02, dollars a day over three seeds: home momentum 3,100; home
+  arbitrage -900; city arbitrage 650; colocated arbitrage 4,100; the fastest bot 4,200; the maker -5,000 at
+  two cents, less the wider it quotes. The shop is sized to about eighty days of that.
+- The market maker loses at every speed. When the crowd's belief moves it pulls its own stale quotes, and
+  the maker's quote is left alone at the old price for the arbitrage bots to take within a tick. That is
+  real adverse selection, and the block cannot outrun the fastest bot. It is left as the lesson it is;
+  a rework would give the crowd queue priority or the maker a belief of its own.
 - Latency below one tick (2ms) is one tick: a colocated firm and one a millisecond away are the same.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.

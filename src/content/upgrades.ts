@@ -1,5 +1,6 @@
 // The shop. Distances are one-way milliseconds through fibre; a network multiplies them and adds its own overhead.
-// Prices are cents.
+// Prices are cents, sized so the whole path from home to colocation is about eighty trading days of what the
+// blocks earn on the way (see test/pace.test.ts), a couple of hours at the top speed.
 import type { CompetitorSpec, ComputerSpec, LocationSpec, NetworkSpec } from '../sim';
 
 const K = 100_000;
@@ -16,14 +17,14 @@ export const LOCATIONS: LocationSpec[] = [
   {
     id: 'city',
     name: 'Office in Harbor City',
-    price: 50 * K,
+    price: 25 * K,
     distance: { HARBOR: 2, LAKESIDE: 7 },
     explain: 'Downtown, a few miles from the HARBOR data centre. Latency to HARBOR falls to a couple of milliseconds.',
   },
   {
     id: 'colo-harbor',
     name: 'Colocation at HARBOR',
-    price: 250 * K,
+    price: 80 * K,
     distance: { HARBOR: 0.1, LAKESIDE: 7 },
     explain:
       'A rack in the exchange building itself. Orders reach the matching engine in microseconds. ' +
@@ -32,7 +33,7 @@ export const LOCATIONS: LocationSpec[] = [
   {
     id: 'colo-lakeside',
     name: 'Colocation at LAKESIDE',
-    price: 250 * K,
+    price: 80 * K,
     distance: { HARBOR: 7, LAKESIDE: 0.1 },
     explain: 'A rack inside LAKESIDE. Fastest there, a long link from HARBOR.',
   },
@@ -50,7 +51,7 @@ export const NETWORKS: NetworkSpec[] = [
   {
     id: 'fibre',
     name: 'Leased fibre',
-    price: 40 * K,
+    price: 15 * K,
     factor: 1,
     overhead: 1,
     explain:
@@ -59,7 +60,7 @@ export const NETWORKS: NetworkSpec[] = [
   {
     id: 'microwave',
     name: 'Microwave link',
-    price: 400 * K,
+    price: 120 * K,
     factor: 0.55,
     overhead: 0.5,
     explain:
@@ -81,7 +82,7 @@ export const COMPUTERS: ComputerSpec[] = [
   {
     id: 'server',
     name: 'Server',
-    price: 30 * K,
+    price: 15 * K,
     maxBlocks: 2,
     ordersPerSecond: 100,
     decisionEveryMs: 20,
@@ -90,7 +91,7 @@ export const COMPUTERS: ComputerSpec[] = [
   {
     id: 'rack',
     name: 'Rack with custom hardware',
-    price: 200 * K,
+    price: 60 * K,
     maxBlocks: 4,
     ordersPerSecond: 500,
     decisionEveryMs: 10,
@@ -99,7 +100,7 @@ export const COMPUTERS: ComputerSpec[] = [
 ];
 
 export const COMPETITORS: CompetitorSpec[] = [
-  { id: 'midtown', name: 'Midtown Capital', location: 'city', network: 'fibre', computer: 'server', minEdge: 0.3 },
+  { id: 'midtown', name: 'Midtown Capital', location: 'city', network: 'fibre', computer: 'server', minEdge: 0.5 },
   {
     id: 'lakeside-partners',
     name: 'Lakeside Partners',

@@ -59,7 +59,7 @@ describe('Game', () => {
     run(g, 3 * MS_PER_MINUTE);
     const s = g.snapshot();
     expect(s.open).toBe(true);
-    expect(s.fills.length + s.openOrders.length).toBeGreaterThan(0);
+    expect(s.orders.length).toBeGreaterThan(0);
     expect(s.competitors.some((c) => c.fills > 0)).toBe(true);
     expect(s.stocks[0]!.exchanges[0]!.seen).not.toBeNull();
     expect(s.stocks[0]!.history.length).toBeGreaterThan(100);
@@ -86,7 +86,8 @@ describe('Game', () => {
   it('runs an upgrade through the shop and lowers the latency', () => {
     const g = new Game(CONTENT, 5);
     const before = g.firm.latency('HARBOR');
-    expect(() => g.buyUpgrade('location', 'colo-harbor')).toThrow();
+    g.firm.cash = 1000;
+    expect(() => g.buyUpgrade('network', 'microwave')).toThrow();
     g.firm.cash += 100 * 100_000_000;
     g.buyUpgrade('location', 'colo-harbor');
     g.buyUpgrade('network', 'fibre');

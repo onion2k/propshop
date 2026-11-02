@@ -102,6 +102,18 @@ export const GLOSSARY: GlossaryEntry[] = [
       'pile growing.',
   },
   {
+    id: 'adverse-selection',
+    term: 'Adverse selection',
+    short: 'The trades you get are the ones nobody else wanted: your quote was stale and someone knew.',
+    long:
+      'A resting quote is a free option for everyone else. When the price moves, the crowd pulls its own quotes ' +
+      'at the old price, and whoever is slowest to pull is left alone at the top of the book, where the fast ' +
+      'firms take it. So a market maker\u2019s fills cluster right before the price moves against them. The ' +
+      'defences are speed, quoting off the freshest venue, stepping away on news, and keeping inventory small. ' +
+      'Try the market maker block from the home office and watch the race replay: the fills come after the ' +
+      'quote went stale, and the name on them is the fastest rival.',
+  },
+  {
     id: 'momentum',
     term: 'Momentum',
     short: 'A move that keeps going for a moment, because the orders behind it are still arriving.',
