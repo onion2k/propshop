@@ -138,6 +138,27 @@ describe('App', () => {
     expect(document.querySelector('.script-bar .down')?.textContent).toMatch(/Unexpected|missing/i);
   }, 30_000);
 
+  it('shows the day report after a close, and marks the tab new', () => {
+    const store = createStore(CONTENT, null, 11);
+    render(<App store={store} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
+    expect(screen.getByText(/No day has closed yet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'News' }));
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (3 * 60 * 1000) / TICK_MS; i++) store.game.step();
+      while (store.game.snapshot().open) store.game.step(60_000);
+      store.publish();
+    });
+    expect(screen.getByRole('tab', { name: /Days.*new/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Days/ }));
+    expect(screen.queryByText('new')).toBeNull();
+    expect(document.querySelector('.day')).not.toBeNull();
+    expect(document.querySelector('.day summary strong')?.textContent).toMatch(/Mon, week 1/);
+    expect(screen.getByText('By block')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rivals' })).toBeInTheDocument();
+  }, 60_000);
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;

@@ -43,10 +43,34 @@ export type GameEvent =
   | { kind: 'tip'; at: number; tip: Tip }
   | { kind: 'upgrade'; at: number; kind2: UpgradeKind; id: string };
 
+export interface Tally {
+  fills: number;
+  realised: number;
+  fees: number;
+}
+
+/** What a day was, written at its close. Money in cents. */
+export interface DayReport {
+  day: number;
+  weekday: Calendar['weekday'];
+  week: number;
+  pnl: number;
+  equityAtClose: number;
+  byBlock: Record<string, Tally>;
+  bySymbol: Record<string, Tally>;
+  /** Immediate-or-cancel orders: filled in full, beaten by a named rival, or missed with nobody named. */
+  races: { won: number; beaten: number; missed: number };
+  fees: number;
+  fines: number;
+  headlines: { text: string; symbols: string[]; moved: Record<string, number>; noise: boolean }[];
+  latency: Record<string, number>;
+  rivals: { name: string; pnl: number }[];
+}
+
+/** The older shape of a day, kept so a save from before the report still loads. */
 export interface DayRecord {
   day: number;
   weekday: Calendar['weekday'];
-  /** Cents. */
   pnl: number;
 }
 
@@ -64,9 +88,41 @@ export interface SavedGame {
   owned: string[];
   dayStartEquity: number;
   weekStartEquity: number;
-  days: DayRecord[];
+  days: (DayReport | DayRecord)[];
   log: GameEvent[];
   wasOpen: boolean;
+  today?: Today;
+}
+
+/** The day's tallies, from the open. */
+interface Today {
+  byBlock: Record<string, Tally>;
+  bySymbol: Record<string, Tally>;
+  races: { won: number; beaten: number; missed: number };
+  fees: number;
+  fines: number;
+  rivalsAtOpen: Record<string, number>;
+  openedAt: number;
+}
+
+function freshToday(): Today {
+  return {
+    byBlock: {},
+    bySymbol: {},
+    races: { won: 0, beaten: 0, missed: 0 },
+    fees: 0,
+    fines: 0,
+    rivalsAtOpen: {},
+    openedAt: 0,
+  };
+}
+
+function tally(into: Record<string, Tally>, key: string, f: { realised: number; fee: number }): void {
+  const t = into[key] ?? { fills: 0, realised: 0, fees: 0 };
+  t.fills++;
+  t.realised += f.realised;
+  t.fees += f.fee;
+  into[key] = t;
 }
 
 /** What the UI reads, rebuilt on demand. Plain data, so it can cross a wire one day. */
@@ -125,11 +181,12 @@ export interface Snapshot {
   dark: { unlocked: boolean; offers: Tip[]; bought: Tip[]; fines: Fine[] };
   competitors: { id: string; name: string; latency: Record<string, number>; fills: number; pnl: number }[];
   shop: UpgradeOffer[];
-  days: DayRecord[];
+  days: DayReport[];
   log: GameEvent[];
 }
 
 const LOG_LENGTH = 200;
+const DAYS_KEPT = 60;
 const ORDER_STORIES = 30;
 
 export interface OrderStory extends OpenOrder {
@@ -151,7 +208,8 @@ export class Game {
   readonly owned: Set<string>;
   private dayStartEquity: number;
   private weekStartEquity: number;
-  days: DayRecord[] = [];
+  days: DayReport[] = [];
+  private today: Today = freshToday();
   log: GameEvent[] = [];
   private wasOpen: boolean;
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -209,9 +267,23 @@ export class Game {
     this.news.step(this.now, this.market, this.random);
     tick(this.now, dt, this.market, this.firms(), this.random, this.news.feed());
     this.dark.step(this.now, this.firm, this.news, this.random);
-    for (const f of this.firm.tickFills) this.emit({ kind: 'fill', at: this.now, fill: f });
+    for (const f of this.firm.tickFills) {
+      this.emit({ kind: 'fill', at: this.now, fill: f });
+      tally(this.today.byBlock, f.block, f);
+      tally(this.today.bySymbol, f.symbol, f);
+      this.today.fees += f.fee;
+    }
+    for (const o of this.firm.tickResolved) {
+      if (!o.ioc) continue;
+      if (o.filled >= o.size) this.today.races.won++;
+      else if (o.beatenBy.length > 0) this.today.races.beaten++;
+      else this.today.races.missed++;
+    }
     for (const h of this.news.tickPublished) this.emit({ kind: 'news', at: this.now, headline: h });
-    for (const f of this.dark.tickFines) this.emit({ kind: 'fine', at: this.now, fine: f });
+    for (const f of this.dark.tickFines) {
+      this.emit({ kind: 'fine', at: this.now, fine: f });
+      this.today.fines += f.cents;
+    }
     const open = isMarketOpen(this.now);
     if (open && !this.wasOpen) this.onOpen();
     if (!open && this.wasOpen) this.onClose();
@@ -222,6 +294,9 @@ export class Game {
   private onOpen(): void {
     this.dayStartEquity = this.firm.equity(this.market, this.now);
     if (calendar(this.now).weekday === 'Mon') this.weekStartEquity = this.dayStartEquity;
+    this.today = freshToday();
+    this.today.openedAt = this.now;
+    for (const c of this.competitors) this.today.rivalsAtOpen[c.id] = c.equity(this.market, this.now);
     this.emit({ kind: 'open', at: this.now });
   }
 
@@ -229,8 +304,29 @@ export class Game {
     const equity = this.firm.equity(this.market, this.now);
     const c = calendar(this.now);
     const pnl = equity - this.dayStartEquity;
-    this.days.push({ day: c.day, weekday: c.weekday, pnl });
-    if (this.days.length > 60) this.days.splice(0, this.days.length - 60);
+    const latency: Record<string, number> = {};
+    for (const e of this.market.exchanges) latency[e.id] = this.firm.latency(e.id);
+    this.days.push({
+      day: c.day,
+      weekday: c.weekday,
+      week: c.week,
+      pnl,
+      equityAtClose: equity,
+      byBlock: this.today.byBlock,
+      bySymbol: this.today.bySymbol,
+      races: this.today.races,
+      fees: this.today.fees,
+      fines: this.today.fines,
+      headlines: this.news.published
+        .filter((h) => h.at >= this.today.openedAt - MS_PER_DAY / 2 && h.at <= this.now)
+        .map((h) => ({ text: h.text, symbols: h.symbols, moved: h.moves, noise: h.noise })),
+      latency,
+      rivals: this.competitors.map((r) => ({
+        name: r.name,
+        pnl: r.equity(this.market, this.now) - (this.today.rivalsAtOpen[r.id] ?? r.equity(this.market, this.now)),
+      })),
+    });
+    if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
     if (c.weekday === 'Fri' && !this.dark.unlocked && equity > this.weekStartEquity) {
       this.dark.unlocked = true;
@@ -411,6 +507,7 @@ export class Game {
       days: this.days,
       log: this.log,
       wasOpen: this.wasOpen,
+      today: this.today,
     };
   }
 
@@ -436,7 +533,8 @@ export class Game {
     for (const id of s.owned) g.owned.add(id);
     g.dayStartEquity = s.dayStartEquity;
     g.weekStartEquity = s.weekStartEquity;
-    g.days = s.days.map((d) => ({ ...d }));
+    g.days = s.days.map((d) => ('byBlock' in d ? { ...d } : upgraded(d)));
+    g.today = s.today ? { ...s.today } : freshToday();
     g.log = s.log.map((e) => ({ ...e }));
     g.wasOpen = s.wasOpen;
     return g;
@@ -463,3 +561,22 @@ export class Game {
 }
 
 export { BLOCKS, MARKET_OPEN, MS_PER_DAY };
+
+/** A day saved before the report existed: the number it had, and nothing else to say. */
+function upgraded(d: DayRecord): DayReport {
+  return {
+    day: d.day,
+    weekday: d.weekday,
+    week: Math.floor(d.day / 7) + 1,
+    pnl: d.pnl,
+    equityAtClose: 0,
+    byBlock: {},
+    bySymbol: {},
+    races: { won: 0, beaten: 0, missed: 0 },
+    fees: 0,
+    fines: 0,
+    headlines: [],
+    latency: {},
+    rivals: [],
+  };
+}

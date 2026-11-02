@@ -3,6 +3,7 @@
 
 import { useState, useSyncExternalStore } from 'react';
 import { DarkWebPanel } from './DarkWebPanel';
+import { DaysPanel } from './DaysPanel';
 import { FirmPanel } from './FirmPanel';
 import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
 import { LearnContext, LearnPanel } from './Glossary';
@@ -14,9 +15,10 @@ import type { Store } from './store';
 import { StrategyPanel } from './StrategyPanel';
 import { TopBar } from './TopBar';
 
-type Tab = 'week' | 'news' | 'dark' | 'shop' | 'rivals' | 'learn';
+type Tab = 'week' | 'days' | 'news' | 'dark' | 'shop' | 'rivals' | 'learn';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'week', label: 'First week' },
+  { id: 'days', label: 'Days' },
   { id: 'news', label: 'News' },
   { id: 'dark', label: 'Dark web' },
   { id: 'shop', label: 'Shop' },
@@ -29,6 +31,12 @@ export function App({ store }: { store: Store }) {
   const progress = useSyncExternalStore(store.subscribe, store.getProgress, store.getProgress);
   const [tab, setTab] = useState<Tab>('week');
   const [term, setTerm] = useState<string | null>(null);
+  // "new" on the Days tab from a close until it is opened.
+  const [daysSeen, setDaysSeen] = useState(s.days.length);
+  const pick = (t: Tab) => {
+    setTab(t);
+    if (t === 'days') setDaysSeen(s.days.length);
+  };
   const learn = {
     selected: term,
     open: (id: string) => {
@@ -55,12 +63,13 @@ export function App({ store }: { store: Store }) {
                   role="tab"
                   aria-selected={tab === t.id}
                   className={tab === t.id ? 'on' : ''}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => pick(t.id)}
                 >
                   {t.label}
                   {t.id === 'dark' && s.dark.unlocked && s.dark.offers.length > 0 && (
                     <span className="badge">{s.dark.offers.length}</span>
                   )}
+                  {t.id === 'days' && s.days.length > daysSeen && <span className="badge">new</span>}
                   {t.id === 'week' && lessonsLeft(progress) > 0 && (
                     <span className="badge quiet">{lessonsLeft(progress)}</span>
                   )}
@@ -69,6 +78,7 @@ export function App({ store }: { store: Store }) {
             </nav>
             <div className="tab-body" role="tabpanel">
               {tab === 'week' && <FirstWeekPanel progress={progress} />}
+              {tab === 'days' && <DaysPanel s={s} />}
               {tab === 'news' && <NewsPanel s={s} />}
               {tab === 'dark' && <DarkWebPanel s={s} store={store} />}
               {tab === 'shop' && <ShopPanel s={s} store={store} />}

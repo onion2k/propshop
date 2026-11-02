@@ -136,6 +136,39 @@ describe('Game', () => {
     expect(nextOpen(g.now)).toBe(7 * MS_PER_DAY + MARKET_OPEN);
   });
 
+  it('writes a report of the day at the close', { timeout: 120_000 }, () => {
+    const g = new Game(CONTENT, 15);
+    g.skipToOpen();
+    run(g, 10 * MS_PER_MINUTE);
+    const iocs = [...g.firm.orders.values()].filter((o) => o.ioc && o.status !== 'inflight').length;
+    while (isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+    const r = g.days[0]!;
+    expect(r.weekday).toBe('Mon');
+    expect(r.week).toBe(1);
+    expect(r.equityAtClose).toBe(g.firm.equity(g.market, g.now));
+    expect(r.pnl).toBe(g.snapshot().dayPnl);
+    const fills = Object.values(r.byBlock).reduce((n, t) => n + t.fills, 0);
+    expect(fills).toBe(g.firm.stats.fillsReceived);
+    expect(Object.values(r.bySymbol).reduce((n, t) => n + t.fills, 0)).toBe(fills);
+    expect(r.byBlock.arbitrage?.fees).toBe(g.firm.feesPaid);
+    expect(r.races.won + r.races.beaten + r.races.missed).toBeGreaterThanOrEqual(iocs);
+    expect(r.headlines.length).toBeGreaterThan(0);
+    expect(r.latency.HARBOR).toBe(44);
+    expect(r.rivals.map((x) => x.name)).toEqual(CONTENT.competitors.map((c) => c.name));
+    expect(r.rivals.some((x) => x.pnl !== 0)).toBe(true);
+    const b = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
+    expect(b.days[0]).toEqual(r);
+  });
+
+  it('loads a day saved before the report existed', () => {
+    const g = new Game(CONTENT, 16);
+    const saved = g.save();
+    saved.days = [{ day: 0, weekday: 'Mon', pnl: 1234 }];
+    delete saved.today;
+    const b = Game.load(CONTENT, JSON.parse(JSON.stringify(saved)) as SavedGame);
+    expect(b.days[0]).toMatchObject({ day: 0, pnl: 1234, week: 1, races: { won: 0, beaten: 0, missed: 0 } });
+  });
+
   it('sells and records a tip once unlocked', () => {
     const g = new Game(CONTENT, 7);
     g.dark.unlocked = true;

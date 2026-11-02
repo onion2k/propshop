@@ -120,8 +120,9 @@ export class Firm {
   private ordersThisSecond = 0;
   private outbound = new DelayQueue<Outbound>();
   private inbound = new DelayQueue<Inbound>();
-  /** Fills that arrived this tick, for the game to tell the UI about. */
+  /** Fills that arrived this tick, and orders that finished this tick, for the game's tallies. */
   tickFills: Fill[] = [];
+  tickResolved: OpenOrder[] = [];
 
   constructor(id: string, name: string, cash: number, infra: Infrastructure, blocks: BlockSetting[]) {
     this.id = id;
@@ -197,6 +198,7 @@ export class Firm {
   /** One tick. Delivers what has arrived, decides if it is time, and sends what is due. */
   step(now: number, market: Market, news: readonly Headline[], open: boolean): void {
     this.tickFills = [];
+    this.tickResolved = [];
     this.receive(now);
     this.deliver(now, market);
     if (!open) return;
@@ -210,6 +212,7 @@ export class Firm {
     for (const msg of this.inbound.pop(now)) {
       const order = this.orders.get(msg.localId);
       if (!order) continue;
+      const before = order.status;
       switch (msg.kind) {
         case 'ack':
           order.exchangeOrderId = msg.exchangeOrderId;
@@ -229,6 +232,12 @@ export class Firm {
         case 'rejected':
           order.status = 'rejected';
           break;
+      }
+      if (
+        order.status !== before &&
+        (order.status === 'filled' || order.status === 'cancelled' || order.status === 'rejected')
+      ) {
+        this.tickResolved.push(order);
       }
     }
     this.trimOrders();
