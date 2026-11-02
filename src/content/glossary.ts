@@ -179,6 +179,27 @@ export const GLOSSARY: GlossaryEntry[] = [
       'a faster line.',
   },
   {
+    id: 'risk-limits',
+    term: 'Risk limits',
+    short: 'A loss on the day that halts you, and an exposure the firm may not exceed.',
+    long:
+      'Every trading firm has a risk officer whose job is to say no. Two of their rules are here. A daily loss ' +
+      'limit: down that much on the day and the book is halted until the next open, resting orders pulled and ' +
+      'positions flattened at whatever the market will give. A leverage: the gross value of what you hold and ' +
+      'have resting may not pass your equity times it, and an order that would is refused before it leaves. ' +
+      'The first bounds a bad day; the second bounds a bad script.',
+  },
+  {
+    id: 'quote-stuffing',
+    term: 'Quote stuffing',
+    short: 'Flooding an exchange with orders you cancel at once. The regulator calls it manipulation.',
+    long:
+      'Sending thousands of orders and cancelling nearly all of them clogs the exchange\u2019s feed and the ' +
+      'competition\u2019s view of it, which is sometimes the point. Regulators treat a high cancel rate on a ' +
+      'high order count as a pattern worth a letter, and a flood of orders past what your connection can carry ' +
+      'as another. In the game, either at the close adds to your heat, and the fines that heat brings follow.',
+  },
+  {
     id: 'hft',
     term: 'High-frequency trading',
     short: 'Trading by machine, in large numbers, on tiny edges, as fast as physics allows.',

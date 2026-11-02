@@ -90,6 +90,23 @@ function Report({ d }: { d: DayReport }) {
         {d.fines > 0 && <span className="down">, fines {money(-d.fines)}</span>} · equity at the close{' '}
         {moneyShort(d.equityAtClose)}
       </p>
+      {((d.halts?.length ?? 0) > 0 || (d.regulator?.length ?? 0) > 0) && (
+        <>
+          <h3>Risk and the regulator</h3>
+          <ul className="small">
+            {(d.halts ?? []).map((h, i) => (
+              <li key={`h${i}`} className="down">
+                Halted: {h}.
+              </li>
+            ))}
+            {(d.regulator ?? []).map((n, i) => (
+              <li key={`r${i}`} className="down">
+                {n}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <h3>Rivals</h3>
       <table>
         <tbody>

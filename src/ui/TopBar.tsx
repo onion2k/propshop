@@ -39,6 +39,14 @@ export function TopBar({ s, store }: { s: Snapshot; store: Store }) {
           </button>
         )}
       </div>
+      {s.halt && (
+        <div className="halt" role="status">
+          HALTED{' '}
+          <span className="muted">
+            · {s.halt.reason} · trading again at the open, in {formatSpan(Math.max(0, s.halt.until - s.now))}
+          </span>
+        </div>
+      )}
       <div className="money">
         <Stat label="Cash" value={moneyShort(s.cash)} />
         <Stat label="Equity" value={moneyShort(s.equity)} />

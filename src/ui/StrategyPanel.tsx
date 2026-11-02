@@ -24,6 +24,7 @@ export function StrategyPanel({ s, store }: { s: Snapshot; store: Store }) {
           · <Term id="capacity">capacity</Term> {cap.blocksUsed}/{cap.maxBlocks} blocks, decides every{' '}
           {cap.decisionEveryMs}ms, {cap.ordersPerSecond} orders/s
           {cap.ordersDropped > 0 && <span className="down"> · {cap.ordersDropped} dropped</span>}
+          {cap.ordersRejected > 0 && <span className="down"> · {cap.ordersRejected} refused for exposure</span>}
         </span>
       </h2>
       {BLOCKS.map((b) => {

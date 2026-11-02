@@ -50,7 +50,7 @@ export function App({ store }: { store: Store }) {
       <main className="layout">
         <div className="column">
           <MarketPanel s={s} />
-          <FirmPanel s={s} />
+          <FirmPanel s={s} store={store} />
         </div>
         <div className="column">
           <StrategyPanel s={s} store={store} />

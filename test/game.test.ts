@@ -1,5 +1,16 @@
 import { CONTENT } from '../src/content';
-import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, isMarketOpen, nextOpen, type SavedGame } from '../src/sim';
+import {
+  FLOOD_DROPPED,
+  Game,
+  MS_PER_MINUTE,
+  MS_PER_SECOND,
+  STUFFING_CANCEL_SHARE,
+  STUFFING_ORDERS,
+  TICK_MS,
+  isMarketOpen,
+  nextOpen,
+  type SavedGame,
+} from '../src/sim';
 import { MARKET_OPEN, MS_PER_DAY } from '../src/sim/clock';
 
 function run(g: Game, ms: number) {
@@ -158,6 +169,71 @@ describe('Game', () => {
     expect(r.rivals.some((x) => x.pnl !== 0)).toBe(true);
     const b = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
     expect(b.days[0]).toEqual(r);
+  });
+
+  it('halts the firm for the day when it is down past the loss limit', { timeout: 60_000 }, () => {
+    const g = new Game(CONTENT, 17);
+    g.setRisk({ dailyLossLimit: 500 });
+    expect(g.snapshot().risk.dailyLossLimit).toBe(500);
+    g.skipToOpen();
+    let halted = false;
+    for (let i = 0; i < (20 * MS_PER_MINUTE) / TICK_MS && !halted; i++) {
+      g.step();
+      halted = g.firm.halt !== null;
+    }
+    expect(halted).toBe(true);
+    const s = g.snapshot();
+    expect(s.halt?.reason).toMatch(/loss limit/);
+    expect(s.halt?.until).toBe(nextOpen(g.now));
+    expect(g.log.some((e) => e.kind === 'halt')).toBe(true);
+    const sent = g.firm.stats.ordersSent;
+    run(g, 10 * MS_PER_SECOND);
+    expect(g.firm.stats.ordersSent).toBe(sent);
+    while (isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+    expect(g.days[0]!.halts).toHaveLength(1);
+    const b = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
+    expect(b.firm.halt).toEqual(g.firm.halt);
+    expect(b.firm.risk).toEqual(g.firm.risk);
+  });
+
+  it('notes quote stuffing and an order flood at the close, and heats the firm', { timeout: 60_000 }, () => {
+    const stuffing = new Game(CONTENT, 18);
+    stuffing.setBlock('arbitrage', { enabled: false });
+    // Post a bid far from the market and cancel it again, every decision: quoting with no wish to trade.
+    stuffing.setBlock('script', {
+      enabled: true,
+      source: 'for (const o of orders()) cancel(o.localId); buy("ABC", "HARBOR", 3000, 100, false);',
+    });
+    stuffing.skipToOpen();
+    run(stuffing, 3 * MS_PER_MINUTE);
+    expect(stuffing.firm.stats.cancelsSent).toBeGreaterThan(STUFFING_ORDERS * STUFFING_CANCEL_SHARE);
+    while (isMarketOpen(stuffing.now)) stuffing.step(MS_PER_MINUTE);
+    // Two orders a decision is also more than the laptop sends, so this day is a flood as well.
+    expect(stuffing.days[0]!.regulator).toContainEqual(expect.stringMatching(/Quote stuffing/) as string);
+    expect(stuffing.firm.heat).toBeGreaterThanOrEqual(10);
+    expect(stuffing.log.filter((e) => e.kind === 'regulator').length).toBeGreaterThanOrEqual(1);
+
+    // A flood: a script that sends far more than the laptop can.
+    const flood = new Game(CONTENT, 18);
+    flood.setBlock('arbitrage', { enabled: false });
+    flood.setBlock('script', {
+      enabled: true,
+      source: 'for (let i = 0; i < 50; i++) buy("ABC", "HARBOR", 3000, 100);',
+    });
+    flood.skipToOpen();
+    run(flood, 2 * MS_PER_MINUTE);
+    expect(flood.firm.stats.ordersDropped).toBeGreaterThan(FLOOD_DROPPED);
+    while (isMarketOpen(flood.now)) flood.step(MS_PER_MINUTE);
+    expect(flood.days[0]!.regulator).toEqual([expect.stringMatching(/Order flood/) as string]);
+    expect(flood.firm.heat).toBe(5);
+
+    // A quiet day notes nothing.
+    const q = new Game(CONTENT, 19);
+    q.skipToOpen();
+    run(q, MS_PER_MINUTE);
+    while (isMarketOpen(q.now)) q.step(MS_PER_MINUTE);
+    expect(q.days[0]!.regulator).toEqual([]);
+    expect(q.firm.heat).toBe(0);
   });
 
   it('loads a day saved before the report existed', () => {

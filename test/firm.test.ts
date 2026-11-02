@@ -1,5 +1,5 @@
 import { MARKET_CLOSE, MARKET_OPEN, MS_PER_SECOND } from '../src/sim/clock';
-import { Firm } from '../src/sim/firm';
+import { Firm, REJECT_EXPOSURE } from '../src/sim/firm';
 import { tick } from '../src/sim/flow';
 import { Market } from '../src/sim/market';
 import { Random } from '../src/sim/random';
@@ -205,5 +205,56 @@ describe('Firm', () => {
     expect(copy.position('ABC')).toBe(f.position('ABC'));
     expect(copy.fills).toEqual(f.fills);
     expect(copy.blocks).toEqual(f.blocks);
+  });
+});
+
+describe('Firm risk', () => {
+  it('refuses an order that would carry more than the leverage allows, and says why', () => {
+    const f = new Firm('firm', 'Mine', 1_000_000, FAST, Firm.defaultBlocks());
+    f.risk = { dailyLossLimit: 100_000, maxLeverage: 1 };
+    const w = world(28, [f]);
+    w.run(2 * MS_PER_SECOND);
+    const ask = w.market.exchange('HARBOR').quote('ABC').ask!;
+    const send = (size: number) =>
+      (f as unknown as { send: (i: unknown, b: string, now: number, view: unknown) => void }).send(
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: ask, size, ioc: true },
+        'test',
+        w.now(),
+        { quotes: {} },
+      );
+    // Equity is ten thousand dollars; 300 shares at forty-one is more than that.
+    send(300);
+    const rejected = [...f.orders.values()].find((o) => o.status === 'rejected');
+    expect(rejected?.reason).toBe(REJECT_EXPOSURE);
+    expect(f.stats.ordersRejected).toBe(1);
+    send(100);
+    expect([...f.orders.values()].filter((o) => o.status === 'inflight')).toHaveLength(1);
+  });
+
+  it('halts: pulls what rests, gets flat, and decides nothing until the moment passes', () => {
+    const f = new Firm('firm', 'Mine', MILLION, FAST, Firm.defaultBlocks(['marketMaker']));
+    const w = world(29, [f]);
+    w.run(5 * MS_PER_SECOND);
+    (f as unknown as { book: (o: unknown, p: number, s: number, at: number, t: boolean) => void }).book(
+      { localId: 999, exchange: 'HARBOR', symbol: 'ABC', side: 'buy', size: 100, filled: 0, block: 't' },
+      4100,
+      100,
+      w.now(),
+      true,
+    );
+    expect(f.position('ABC')).toBe(100);
+    expect([...f.orders.values()].some((o) => o.status === 'resting')).toBe(true);
+    const sentBefore = f.stats.ordersSent;
+    f.haltUntil(w.now() + 10 * MS_PER_SECOND, 'test', w.now(), w.market, []);
+    w.run(MS_PER_SECOND);
+    expect(f.position('ABC')).toBe(0);
+    expect([...f.orders.values()].some((o) => o.status === 'resting')).toBe(false);
+    const sentAfter = f.stats.ordersSent;
+    w.run(5 * MS_PER_SECOND);
+    expect(f.stats.ordersSent).toBe(sentAfter);
+    expect(sentAfter).toBeGreaterThan(sentBefore);
+    w.run(6 * MS_PER_SECOND);
+    expect(f.halt).toBeNull();
+    expect(f.stats.ordersSent).toBeGreaterThan(sentAfter);
   });
 });

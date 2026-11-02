@@ -6,7 +6,8 @@ import { money, ms, price, shares } from './format';
 
 export function raceSentence(o: OrderStory, names: Record<string, string>, now: number): string {
   const name = (id: string) => names[id] ?? id;
-  if (o.status === 'rejected') return 'Dropped: the computer was over its orders a second.';
+  if (o.status === 'rejected')
+    return `Refused before it left: ${o.reason ?? 'the computer was over its orders a second'}.`;
   if (o.status === 'inflight') return `On its way, ${ms(now - o.sentAt)} so far.`;
   if (o.status === 'resting') return `Resting at ${price(o.price)}, ${shares(o.size - o.filled)} left.`;
   if (o.status === 'cancelling') return 'Being pulled.';

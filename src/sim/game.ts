@@ -12,7 +12,7 @@ import {
   type Calendar,
 } from './clock';
 import { DarkWeb, HEAT_FINE_LINE, type Fine, type SavedDarkWeb, type Tip } from './darkweb';
-import { Firm, type BlockSetting, type SavedFirm } from './firm';
+import { Firm, type BlockSetting, type Halt, type RiskSettings, type SavedFirm } from './firm';
 import { tick } from './flow';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
@@ -41,7 +41,9 @@ export type GameEvent =
   | { kind: 'close'; at: number; dayPnl: number }
   | { kind: 'unlock'; at: number; what: 'darkweb' }
   | { kind: 'tip'; at: number; tip: Tip }
-  | { kind: 'upgrade'; at: number; kind2: UpgradeKind; id: string };
+  | { kind: 'upgrade'; at: number; kind2: UpgradeKind; id: string }
+  | { kind: 'halt'; at: number; reason: string; until: number }
+  | { kind: 'regulator'; at: number; note: string; heat: number };
 
 export interface Tally {
   fills: number;
@@ -65,6 +67,9 @@ export interface DayReport {
   headlines: { text: string; symbols: string[]; moved: Record<string, number>; noise: boolean }[];
   latency: Record<string, number>;
   rivals: { name: string; pnl: number }[];
+  /** Why the firm was halted, if it was, and what the regulator noted. Missing in a report saved before them. */
+  halts?: string[];
+  regulator?: string[];
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -103,6 +108,9 @@ interface Today {
   fines: number;
   rivalsAtOpen: Record<string, number>;
   openedAt: number;
+  halts: string[];
+  regulator: string[];
+  statsAtOpen: { ordersSent: number; cancelsSent: number; ordersDropped: number };
 }
 
 function freshToday(): Today {
@@ -114,6 +122,9 @@ function freshToday(): Today {
     fines: 0,
     rivalsAtOpen: {},
     openedAt: 0,
+    halts: [],
+    regulator: [],
+    statsAtOpen: { ordersSent: 0, cancelsSent: 0, ordersDropped: 0 },
   };
 }
 
@@ -141,6 +152,8 @@ export interface Snapshot {
   finesPaid: number;
   heat: number;
   heatLine: number;
+  risk: RiskSettings;
+  halt: Halt | null;
   positions: { symbol: string; qty: number; avgCost: number; mark: number | null; unrealised: number }[];
   openOrders: OpenOrder[];
   /** Recent orders, open and finished, newest first, each with what its fills made. */
@@ -157,6 +170,7 @@ export interface Snapshot {
     ordersPerSecond: number;
     ordersSent: number;
     ordersDropped: number;
+    ordersRejected: number;
     decisionEveryMs: number;
   };
   /** How many times the firm has seen a gap between the exchanges it could have raced for. */
@@ -187,6 +201,14 @@ export interface Snapshot {
 
 const LOG_LENGTH = 200;
 const DAYS_KEPT = 60;
+/** The loss limit is checked this often, in ms of simulated time. */
+const LOSS_CHECK_EVERY = 500;
+/** What the regulator calls a pattern: so many orders a day with so large a share cancelled, or so many dropped. */
+export const STUFFING_ORDERS = 1000;
+export const STUFFING_CANCEL_SHARE = 0.9;
+export const FLOOD_DROPPED = 500;
+export const HEAT_FOR_STUFFING = 10;
+export const HEAT_FOR_FLOOD = 5;
 const ORDER_STORIES = 30;
 
 export interface OrderStory extends OpenOrder {
@@ -286,8 +308,28 @@ export class Game {
     }
     const open = isMarketOpen(this.now);
     if (open && !this.wasOpen) this.onOpen();
+    if (open && !this.firm.halt && this.now % LOSS_CHECK_EVERY === 0) this.checkLoss();
     if (!open && this.wasOpen) this.onClose();
     this.wasOpen = open;
+    this.version++;
+  }
+
+  /** Down more than the limit: halted until the next open, flat, and told so. */
+  private checkLoss(): void {
+    const pnl = this.firm.equity(this.market, this.now) - this.dayStartEquity;
+    if (pnl >= -this.firm.risk.dailyLossLimit) return;
+    const until = nextOpen(this.now);
+    const reason = `down ${Math.round(-pnl / 100)} dollars on the day, past the loss limit`;
+    this.firm.haltUntil(until, reason, this.now, this.market, this.news.feed());
+    this.today.halts.push(reason);
+    this.emit({ kind: 'halt', at: this.now, reason, until });
+  }
+
+  setRisk(change: Partial<RiskSettings>): void {
+    this.firm.risk = {
+      dailyLossLimit: Math.max(0, Math.round(change.dailyLossLimit ?? this.firm.risk.dailyLossLimit)),
+      maxLeverage: Math.min(20, Math.max(1, change.maxLeverage ?? this.firm.risk.maxLeverage)),
+    };
     this.version++;
   }
 
@@ -296,11 +338,36 @@ export class Game {
     if (calendar(this.now).weekday === 'Mon') this.weekStartEquity = this.dayStartEquity;
     this.today = freshToday();
     this.today.openedAt = this.now;
+    this.today.statsAtOpen = {
+      ordersSent: this.firm.stats.ordersSent,
+      cancelsSent: this.firm.stats.cancelsSent,
+      ordersDropped: this.firm.stats.ordersDropped,
+    };
     for (const c of this.competitors) this.today.rivalsAtOpen[c.id] = c.equity(this.market, this.now);
     this.emit({ kind: 'open', at: this.now });
   }
 
+  /** The regulator reads the day's order flow at the close. A pattern is a note and heat; the fines follow. */
+  private regulate(): void {
+    const sent = this.firm.stats.ordersSent - this.today.statsAtOpen.ordersSent;
+    const cancels = this.firm.stats.cancelsSent - this.today.statsAtOpen.cancelsSent;
+    const dropped = this.firm.stats.ordersDropped - this.today.statsAtOpen.ordersDropped;
+    if (sent >= STUFFING_ORDERS && cancels / sent >= STUFFING_CANCEL_SHARE) {
+      const note = `Quote stuffing: ${sent} orders sent, ${Math.round((100 * cancels) / sent)}% of them cancelled. Heat +${HEAT_FOR_STUFFING}.`;
+      this.firm.heat += HEAT_FOR_STUFFING;
+      this.today.regulator.push(note);
+      this.emit({ kind: 'regulator', at: this.now, note, heat: HEAT_FOR_STUFFING });
+    }
+    if (dropped >= FLOOD_DROPPED) {
+      const note = `Order flood: ${dropped} orders dropped for capacity, past what the exchanges tolerate. Heat +${HEAT_FOR_FLOOD}.`;
+      this.firm.heat += HEAT_FOR_FLOOD;
+      this.today.regulator.push(note);
+      this.emit({ kind: 'regulator', at: this.now, note, heat: HEAT_FOR_FLOOD });
+    }
+  }
+
   private onClose(): void {
+    this.regulate();
     const equity = this.firm.equity(this.market, this.now);
     const c = calendar(this.now);
     const pnl = equity - this.dayStartEquity;
@@ -325,6 +392,8 @@ export class Game {
         name: r.name,
         pnl: r.equity(this.market, this.now) - (this.today.rivalsAtOpen[r.id] ?? r.equity(this.market, this.now)),
       })),
+      halts: this.today.halts,
+      regulator: this.today.regulator,
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -407,6 +476,8 @@ export class Game {
       finesPaid: firm.finesPaid,
       heat: firm.heat,
       heatLine: HEAT_FINE_LINE,
+      risk: { ...firm.risk },
+      halt: firm.halt ? { ...firm.halt } : null,
       positions,
       openOrders: [...firm.orders.values()].filter(
         (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
@@ -425,6 +496,7 @@ export class Game {
         ordersPerSecond: firm.infra.computer.ordersPerSecond,
         ordersSent: firm.stats.ordersSent,
         ordersDropped: firm.stats.ordersDropped,
+        ordersRejected: firm.stats.ordersRejected,
         decisionEveryMs: firm.infra.computer.decisionEveryMs,
       },
       gapsSeen: firm.stats.gapsSeen,
@@ -534,7 +606,7 @@ export class Game {
     g.dayStartEquity = s.dayStartEquity;
     g.weekStartEquity = s.weekStartEquity;
     g.days = s.days.map((d) => ('byBlock' in d ? { ...d } : upgraded(d)));
-    g.today = s.today ? { ...s.today } : freshToday();
+    g.today = s.today ? { ...freshToday(), ...s.today } : freshToday();
     g.log = s.log.map((e) => ({ ...e }));
     g.wasOpen = s.wasOpen;
     return g;
@@ -578,5 +650,7 @@ function upgraded(d: DayRecord): DayReport {
     headlines: [],
     latency: {},
     rivals: [],
+    halts: [],
+    regulator: [],
   };
 }

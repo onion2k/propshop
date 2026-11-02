@@ -59,6 +59,8 @@ export interface OpenOrder {
   arrivedAt: number | null;
   ackAt: number | null;
   beatenBy: BeatenBy[];
+  /** Why it was refused before it left, where it was. */
+  reason?: string;
 }
 
 export interface Fill {

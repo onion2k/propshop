@@ -8,7 +8,16 @@ import { DelayQueue, latencyTo, type Delayed } from './latency';
 import type { Market } from './market';
 import type { Side, Trade } from './orderbook';
 import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
-import type { BeatenBy, Fill, Intent, MarketView, OpenOrder, Params, SeenQuote } from './strategy';
+import {
+  flattenTo,
+  type BeatenBy,
+  type Fill,
+  type Intent,
+  type MarketView,
+  type OpenOrder,
+  type Params,
+  type SeenQuote,
+} from './strategy';
 import type { Headline, Infrastructure } from './types';
 
 /** How many fills and how many finished orders a firm remembers. */
@@ -45,6 +54,10 @@ type Outbound =
     }
   | { kind: 'cancel'; localId: number; exchange: string; symbol: string; exchangeOrderId: number };
 
+/** Why an order was refused before it left. */
+export const REJECT_EXPOSURE = 'over the exposure limit';
+export const REJECT_FLOOD = 'over the orders a second the computer can send';
+
 /** A message on its way back from an exchange. */
 type Inbound =
   | {
@@ -60,9 +73,24 @@ type Inbound =
   | { kind: 'cancelled'; localId: number }
   | { kind: 'rejected'; localId: number; reason: string };
 
+export interface RiskSettings {
+  /** The day's loss, in cents, at which the firm halts until the next open. */
+  dailyLossLimit: number;
+  /** Gross exposure may reach equity times this. */
+  maxLeverage: number;
+}
+
+export interface Halt {
+  until: number;
+  reason: string;
+}
+
 export interface FirmStats {
   ordersSent: number;
   ordersDropped: number;
+  /** Orders refused before they left: over the exposure cap. */
+  ordersRejected: number;
+  cancelsSent: number;
   fillsReceived: number;
   arbRoundTrips: number;
   /** Decisions at which the firm saw one exchange's ask below another's bid: a gap it could have raced for. */
@@ -80,6 +108,8 @@ export interface SavedFirm {
   finesPaid: number;
   heat: number;
   blocks: BlockSetting[];
+  risk?: RiskSettings;
+  halt?: Halt | null;
   orders: OpenOrder[];
   fills: Fill[];
   mids: Record<string, number[]>;
@@ -109,10 +139,22 @@ export class Firm {
   heat = 0;
   infra: Infrastructure;
   blocks: BlockSetting[];
+  risk: RiskSettings;
+  halt: Halt | null = null;
+  /** Equity as of the last step, for the exposure cap, which cannot reach the market from send. */
+  private equityNow = 0;
   readonly orders = new Map<number, OpenOrder>();
   fills: Fill[] = [];
   readonly mids = new Map<string, number[]>();
-  stats: FirmStats = { ordersSent: 0, ordersDropped: 0, fillsReceived: 0, arbRoundTrips: 0, gapsSeen: 0 };
+  stats: FirmStats = {
+    ordersSent: 0,
+    ordersDropped: 0,
+    ordersRejected: 0,
+    cancelsSent: 0,
+    fillsReceived: 0,
+    arbRoundTrips: 0,
+    gapsSeen: 0,
+  };
   private nextLocalId = 1;
   private nextFillSeq = 1;
   private lastDecision = -Infinity;
@@ -130,6 +172,8 @@ export class Firm {
     this.cash = cash;
     this.infra = infra;
     this.blocks = blocks;
+    this.risk = { dailyLossLimit: Math.round(cash * 0.02), maxLeverage: 4 };
+    this.equityNow = cash;
   }
 
   static defaultBlocks(enabled: string[] = []): BlockSetting[] {
@@ -202,7 +246,10 @@ export class Firm {
     this.receive(now);
     this.deliver(now, market);
     if (!open) return;
+    if (this.halt && now < this.halt.until) return;
+    this.halt = null;
     if (now - this.lastDecision >= this.infra.computer.decisionEveryMs) {
+      this.equityNow = this.equity(market, now);
       this.lastDecision = now;
       this.decide(now, market, news);
     }
@@ -371,17 +418,72 @@ export class Firm {
     }
   }
 
-  private send(intent: Intent, block: string, now: number, view: MarketView): void {
+  /**
+   * Halt until a moment: pull what is resting, get flat once at the best price in view, and decide nothing
+   * until then. What does not fill on the way out stays; a halted firm is not a trading firm.
+   */
+  haltUntil(until: number, reason: string, now: number, market: Market, news: readonly Headline[]): void {
+    this.halt = { until, reason };
+    const view = this.view(now, market, news);
+    for (const o of view.openOrders)
+      if (o.status === 'resting') this.send({ kind: 'cancel', localId: o.localId }, 'risk', now, view, true);
+    for (const symbol of view.symbols) {
+      const position = view.positions[symbol] ?? 0;
+      const intent = flattenTo(view, symbol, position, 0);
+      if (intent) this.send(intent, 'risk', now, view, true);
+    }
+  }
+
+  /** Gross notional of what is held and what is resting or in flight, cents. */
+  private exposure(): number {
+    let total = 0;
+    for (const pos of this.positions.values()) total += Math.abs(pos.qty) * pos.avgCost;
+    for (const o of this.orders.values()) {
+      if (o.status === 'inflight' || o.status === 'resting') total += (o.size - o.filled) * o.price;
+    }
+    return total;
+  }
+
+  private send(intent: Intent, block: string, now: number, view: MarketView, force = false): void {
     if (now - this.secondStarted >= MS_PER_SECOND) {
       this.secondStarted = now;
       this.ordersThisSecond = 0;
     }
-    if (this.ordersThisSecond >= this.infra.computer.ordersPerSecond) {
+    if (!force && this.ordersThisSecond >= this.infra.computer.ordersPerSecond) {
       this.stats.ordersDropped++;
       return;
     }
     this.ordersThisSecond++;
+    if (intent.kind === 'order' && !force) {
+      // An order that would carry more than the leverage allows is refused here, not at the exchange.
+      const reduces = Math.sign(this.position(intent.symbol)) === (intent.side === 'buy' ? -1 : 1);
+      if (!reduces && this.exposure() + intent.size * intent.price > this.equityNow * this.risk.maxLeverage) {
+        this.stats.ordersRejected++;
+        const localId = this.nextLocalId++;
+        this.orders.set(localId, {
+          localId,
+          exchange: intent.exchange,
+          exchangeOrderId: null,
+          symbol: intent.symbol,
+          side: intent.side,
+          price: intent.price,
+          size: intent.size,
+          filled: 0,
+          ioc: intent.ioc,
+          status: 'rejected',
+          block,
+          sentAt: now,
+          seenAt: null,
+          arrivedAt: null,
+          ackAt: null,
+          beatenBy: [],
+          reason: REJECT_EXPOSURE,
+        });
+        return;
+      }
+    }
     if (intent.kind === 'cancel') {
+      this.stats.cancelsSent++;
       const o = this.orders.get(intent.localId);
       if (!o || o.status !== 'resting' || o.exchangeOrderId === null) return;
       o.status = 'cancelling';
@@ -419,7 +521,9 @@ export class Firm {
     this.stats.ordersSent++;
     const sent = this.outbound.push({ ...intent, localId }, now + this.latency(intent.exchange));
     if (!sent) {
-      this.orders.get(localId)!.status = 'rejected';
+      const o = this.orders.get(localId)!;
+      o.status = 'rejected';
+      o.reason = REJECT_FLOOD;
       this.stats.ordersDropped++;
     }
   }
@@ -527,6 +631,8 @@ export class Firm {
       finesPaid: this.finesPaid,
       heat: this.heat,
       blocks: this.blocks,
+      risk: this.risk,
+      halt: this.halt,
       orders: [...this.orders.values()],
       fills: this.fills,
       mids: Object.fromEntries(this.mids),
@@ -555,6 +661,8 @@ export class Firm {
     f.feesPaid = s.feesPaid;
     f.finesPaid = s.finesPaid;
     f.heat = s.heat;
+    if (s.risk) f.risk = { ...s.risk };
+    f.halt = s.halt ?? null;
     for (const o of s.orders) f.orders.set(o.localId, { ...o });
     f.fills = s.fills.map((x) => ({ ...x }));
     for (const [k, v] of Object.entries(s.mids)) f.mids.set(k, [...v]);
@@ -564,7 +672,13 @@ export class Firm {
     f.secondStarted = s.secondStarted === null ? -Infinity : s.secondStarted;
     f.ordersThisSecond = s.ordersThisSecond;
     // A save from before the count has none; it starts at nought.
-    f.stats = { ...s.stats, gapsSeen: Number(s.stats.gapsSeen) || 0 };
+    f.stats = {
+      ...s.stats,
+      gapsSeen: Number(s.stats.gapsSeen) || 0,
+      ordersRejected: Number(s.stats.ordersRejected) || 0,
+      cancelsSent: Number(s.stats.cancelsSent) || 0,
+    };
+    f.equityNow = s.cash;
     f.outbound = new DelayQueue(s.outbound.map((d) => ({ ...d })));
     f.inbound = new DelayQueue(s.inbound.map((d) => ({ ...d })));
     return f;

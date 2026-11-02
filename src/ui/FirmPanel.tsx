@@ -1,11 +1,12 @@
 // The firm: positions, and each recent order with the story of its race.
 
 import { formatTime, type Snapshot } from '../sim';
-import { money, price, shares } from './format';
+import { money, moneyShort, price, shares } from './format';
 import { Term } from './Glossary';
 import { Race } from './Race';
+import type { Store } from './store';
 
-export function FirmPanel({ s }: { s: Snapshot }) {
+export function FirmPanel({ s, store }: { s: Snapshot; store: Store }) {
   return (
     <section className="panel firm">
       <h2>
@@ -16,6 +17,43 @@ export function FirmPanel({ s }: { s: Snapshot }) {
           {s.finesPaid > 0 && <span className="down">, fines {money(-s.finesPaid)}</span>}
         </span>
       </h2>
+      <h3>
+        <Term id="risk-limits">Risk limits</Term>
+      </h3>
+      <div className="risk">
+        <label className="param">
+          <span className="param-name">
+            Daily loss limit <span className="num">{moneyShort(s.risk.dailyLossLimit)}</span>
+          </span>
+          <input
+            type="range"
+            min={50_000}
+            max={5_000_000}
+            step={50_000}
+            value={Math.min(5_000_000, Math.max(50_000, s.risk.dailyLossLimit))}
+            onChange={(e) => store.setRisk({ dailyLossLimit: Number(e.target.value) })}
+            aria-label="Daily loss limit"
+          />
+          <span className="muted small">Down this much on the day and the firm halts until the next open, flat.</span>
+        </label>
+        <label className="param">
+          <span className="param-name">
+            Leverage <span className="num">{s.risk.maxLeverage}×</span>
+          </span>
+          <input
+            type="range"
+            min={1}
+            max={20}
+            step={1}
+            value={s.risk.maxLeverage}
+            onChange={(e) => store.setRisk({ maxLeverage: Number(e.target.value) })}
+            aria-label="Leverage"
+          />
+          <span className="muted small">
+            Gross exposure, held and resting, may reach equity times this. An order past it is refused.
+          </span>
+        </label>
+      </div>
       <h3>Positions</h3>
       {s.positions.length === 0 ? (
         <p className="muted">Flat.</p>

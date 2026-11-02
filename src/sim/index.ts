@@ -1,11 +1,12 @@
 // The surface the UI uses, and the one a remote API would stand behind. Nothing outside src/sim imports
 // anything but this file.
 
-export { Game, SPEEDS, TICK_MS } from './game';
+export { Game, SPEEDS, TICK_MS, STUFFING_ORDERS, STUFFING_CANCEL_SHARE, FLOOD_DROPPED } from './game';
 export type { GameEvent, SavedGame, Snapshot, Speed, DayRecord, DayReport, Tally, OrderStory } from './game';
 export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById } from './strategy';
 export type { BeatenBy, BlockSpec, Fill, OpenOrder, ParamSpec, Params } from './strategy';
-export type { BlockSetting } from './firm';
+export type { BlockSetting, RiskSettings, Halt } from './firm';
+export { REJECT_EXPOSURE, REJECT_FLOOD } from './firm';
 export type { Tip, Fine } from './darkweb';
 export type { Published } from './news';
 export type { HistoryPoint } from './market';

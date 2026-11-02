@@ -31,6 +31,7 @@ export interface Store {
   setBlock: Game['setBlock'];
   buyUpgrade: Game['buyUpgrade'];
   buyTip: Game['buyTip'];
+  setRisk: Game['setRisk'];
 }
 
 export interface Storage {
@@ -120,6 +121,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     setBlock: act((id, change) => game.setBlock(id, change)),
     buyUpgrade: act((kind, id) => game.buyUpgrade(kind, id)),
     buyTip: act((id) => game.buyTip(id)),
+    setRisk: act((change) => game.setRisk(change)),
   };
   return store;
 }

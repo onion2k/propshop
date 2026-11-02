@@ -159,6 +159,22 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Rivals' })).toBeInTheDocument();
   }, 60_000);
 
+  it('sets the risk limits, and shows the halt when the day goes past them', () => {
+    const store = createStore(CONTENT, null, 12);
+    render(<App store={store} />);
+    fireEvent.change(screen.getByLabelText('Daily loss limit'), { target: { value: '50000' } });
+    fireEvent.change(screen.getByLabelText('Leverage'), { target: { value: '2' } });
+    expect(store.game.firm.risk).toEqual({ dailyLossLimit: 50_000, maxLeverage: 2 });
+    act(() => {
+      store.game.setRisk({ dailyLossLimit: 500 });
+      store.skipToOpen();
+      for (let i = 0; i < (20 * 60 * 1000) / TICK_MS && !store.game.firm.halt; i++) store.game.step();
+      store.publish();
+    });
+    expect(store.game.firm.halt).not.toBeNull();
+    expect(screen.getByRole('status').textContent).toMatch(/HALTED.*loss limit/);
+  }, 60_000);
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;

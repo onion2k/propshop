@@ -520,3 +520,18 @@ code {
 .report table {
   width: auto;
 }
+
+.halt {
+  background: var(--down);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+.halt .muted {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: normal;
+}
+.risk {
+  margin-bottom: 6px;
+}
