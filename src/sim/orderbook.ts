@@ -41,6 +41,11 @@ export interface Quote {
   ask: number | null;
   bidSize: number;
   askSize: number;
+  /** The second-best price and its size on each side, so a firm can see the touch without one order at it. */
+  bid2: number | null;
+  ask2: number | null;
+  bid2Size: number;
+  ask2Size: number;
 }
 
 export interface OrderRequest {
@@ -157,24 +162,20 @@ export class OrderBook {
     return gone;
   }
 
+  /** The best two levels of each side. Runs every tick for every book, so it walks the arrays once and allocates nothing but the result. */
   quote(): Quote {
-    const bid = this.bids[0] ?? null;
-    const ask = this.asks[0] ?? null;
+    const b = twoLevels(this.bids);
+    const a = twoLevels(this.asks);
     return {
-      bid: bid ? bid.price : null,
-      ask: ask ? ask.price : null,
-      bidSize: bid ? this.sizeAt(this.bids, bid.price) : 0,
-      askSize: ask ? this.sizeAt(this.asks, ask.price) : 0,
+      bid: b.p1,
+      ask: a.p1,
+      bidSize: b.s1,
+      askSize: a.s1,
+      bid2: b.p2,
+      ask2: a.p2,
+      bid2Size: b.s2,
+      ask2Size: a.s2,
     };
-  }
-
-  private sizeAt(side: Order[], price: number): number {
-    let size = 0;
-    for (const o of side) {
-      if (o.price !== price) break;
-      size += o.remaining;
-    }
-    return size;
   }
 
   /** The spread in cents, or null when a side is empty. */
@@ -192,6 +193,17 @@ export class OrderBook {
   /** The top levels of each side, aggregated by price, for the ladder. */
   depth(levels: number): { bids: Level[]; asks: Level[] } {
     return { bids: aggregate(this.bids, levels), asks: aggregate(this.asks, levels) };
+  }
+
+  /** How many orders rest on a side at prices no further from the touch than the limit. Walks until it is past. */
+  countNear(side: Side, limit: number): number {
+    const orders = side === 'buy' ? this.bids : this.asks;
+    let n = 0;
+    for (const o of orders) {
+      if (side === 'buy' ? o.price < limit : o.price > limit) break;
+      n++;
+    }
+    return n;
   }
 
   resting(owner?: string): Order[] {
@@ -221,6 +233,27 @@ export interface SavedBook {
   asks: Order[];
   nextId: number;
   lastPrice: number | null;
+}
+
+function twoLevels(side: Order[]): { p1: number | null; s1: number; p2: number | null; s2: number } {
+  const first = side[0];
+  if (!first) return { p1: null, s1: 0, p2: null, s2: 0 };
+  let s1 = 0;
+  let i = 0;
+  for (; i < side.length; i++) {
+    const o = side[i];
+    if (!o || o.price !== first.price) break;
+    s1 += o.remaining;
+  }
+  const second = side[i];
+  if (!second) return { p1: first.price, s1, p2: null, s2: 0 };
+  let s2 = 0;
+  for (; i < side.length; i++) {
+    const o = side[i];
+    if (!o || o.price !== second.price) break;
+    s2 += o.remaining;
+  }
+  return { p1: first.price, s1, p2: second.price, s2 };
 }
 
 function aggregate(side: Order[], levels: number): Level[] {

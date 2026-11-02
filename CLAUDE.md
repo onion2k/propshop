@@ -61,10 +61,10 @@ For anything new, check what it does:
   momentum 4,700; home arbitrage 900 (PACIFIC is down the road); city arbitrage -2,900 chasing every
   exchange and 900 limited to those within 10ms; colocated arbitrage 10,700; racks at two exchanges on
   microwave (the fastest rival) 15,600; the maker -4,000 to -7,000. The shop is sized to weeks of that.
-- The market maker loses at every speed. When the crowd's belief moves it pulls its own stale quotes, and
-  the maker's quote is left alone at the old price for the arbitrage bots to take within a tick. That is
-  real adverse selection, and the block cannot outrun the fastest bot. It is left as the lesson it is;
-  a rework would give the crowd queue priority or the maker a belief of its own.
+- The market maker is near break-even and lives by the day's regime: about -900 dollars a day over three
+  seeds at home and colocated, with a calm day positive and a trending day not. It reads the book without
+  its own orders in it (`touchExcluding`); what it still cannot beat is the fastest bot taking a quote in
+  the tick before its cancel lands.
 - Latency below one tick (2ms) is one tick: a colocated firm and one a millisecond away are the same.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.

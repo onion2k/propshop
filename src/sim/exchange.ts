@@ -161,9 +161,9 @@ export class Exchange {
     const scale = dt / REFERENCE_DT;
     const bidCenter = Math.floor(s.belief);
     const askCenter = bidCenter + 1;
-    const depth = s.book.depth(PLACEMENT_RANGE + 1);
-    const bids = depth.bids.reduce((n, l) => n + l.orders, 0);
-    const asks = depth.asks.reduce((n, l) => n + l.orders, 0);
+    // How many crowd orders rest near the touch on each side: a bounded walk, since this runs every tick.
+    const bids = s.book.countNear('buy', bidCenter - PLACEMENT_RANGE);
+    const asks = s.book.countNear('sell', askCenter + PLACEMENT_RANGE);
     // Replenish toward the target depth, faster when the book is thin, slower when the day is quiet.
     const rate = (0.15 + 0.85 * activity) * scale;
     if (bids < TARGET_DEPTH && random.chance(rate * (1 - bids / TARGET_DEPTH) * 2)) {

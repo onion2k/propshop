@@ -134,6 +134,24 @@ export function bestAcross(view: MarketView, symbol: string, maxLatency = Infini
   return { bid, ask };
 }
 
+/**
+ * The bid and ask on an exchange with the block's own resting orders taken out: where the block's order is the
+ * whole of the best level, the second level is the touch. A maker's own quote is not information about the price.
+ */
+export function touchExcluding(view: MarketView, exchange: string, symbol: string, block: string) {
+  const q = view.quotes[exchange]?.[symbol];
+  if (!q) return null;
+  let bid = q.bid;
+  let ask = q.ask;
+  for (const o of view.openOrders) {
+    if (o.block !== block || o.exchange !== exchange || o.symbol !== symbol || o.status !== 'resting') continue;
+    const left = o.size - o.filled;
+    if (o.side === 'buy' && o.price === q.bid && left >= q.bidSize) bid = q.bid2;
+    if (o.side === 'sell' && o.price === q.ask && left >= q.askSize) ask = q.ask2;
+  }
+  return { bid, ask };
+}
+
 export function ownPosition(view: MarketView, block: string, symbol: string): number {
   return view.blockPositions[block]?.[symbol] ?? 0;
 }

@@ -11,7 +11,17 @@ import {
 import type { MarketView, SeenQuote } from '../src/sim/strategy';
 
 function quote(bid: number, ask: number, size = 500): SeenQuote {
-  return { bid, ask, bidSize: size, askSize: size, at: 0 };
+  return {
+    bid,
+    ask,
+    bidSize: size,
+    askSize: size,
+    bid2: bid - 1,
+    ask2: ask + 1,
+    bid2Size: size,
+    ask2Size: size,
+    at: 0,
+  };
 }
 
 function view(over: Partial<MarketView> = {}): MarketView {

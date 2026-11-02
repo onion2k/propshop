@@ -6,6 +6,7 @@ import {
   flattenTo,
   inFlight,
   ownPosition,
+  touchExcluding,
   type Intent,
   type MarketView,
   type Params,
@@ -105,12 +106,12 @@ export const marketMaker: StrategyBlock = {
         if (cut) out.push(cut);
       }
       const onNews = pause > 0 && view.news.some((h) => h.symbols.includes(symbol) && view.now - h.at < pause);
-      // Quote off every exchange at once: the one that has moved is the one that knows, and a maker that
-      // re-centres on it before the crowd does is the maker that does not get picked off.
+      // Quote off every exchange at once, with this block's own orders taken out of each book: the one that has
+      // moved is the one that knows, and a maker's own stale quote must never anchor its idea of the price.
       const mids: number[] = [];
       for (const exchange of view.exchanges) {
-        const q = view.quotes[exchange]?.[symbol];
-        if (q && q.bid !== null && q.ask !== null) mids.push((q.bid + q.ask) / 2);
+        const t = touchExcluding(view, exchange, symbol, this.spec.id);
+        if (t && t.bid !== null && t.ask !== null) mids.push((t.bid + t.ask) / 2);
       }
       if (mids.length === 0) continue;
       const mid = mids.reduce((a, b) => a + b, 0) / mids.length;

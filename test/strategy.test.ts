@@ -1,7 +1,25 @@
-import { BLOCKS, blockById, clampParam, paramsFrom, type MarketView, type SeenQuote } from '../src/sim/strategy';
+import {
+  BLOCKS,
+  blockById,
+  clampParam,
+  paramsFrom,
+  touchExcluding,
+  type MarketView,
+  type SeenQuote,
+} from '../src/sim/strategy';
 
 function quote(bid: number, ask: number, size = 500): SeenQuote {
-  return { bid, ask, bidSize: size, askSize: size, at: 0 };
+  return {
+    bid,
+    ask,
+    bidSize: size,
+    askSize: size,
+    bid2: bid - 1,
+    ask2: ask + 1,
+    bid2Size: size,
+    ask2Size: size,
+    at: 0,
+  };
 }
 
 function view(over: Partial<MarketView> = {}): MarketView {
@@ -185,6 +203,56 @@ describe('strategy blocks', () => {
         { kind: 'cancel', localId: 2 },
         { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'sell', price: 4103, size: 100, ioc: false },
       ]);
+    });
+  });
+
+  describe('market maker reading the book without itself', () => {
+    const mm = blockById('marketMaker');
+    it('re-centres on the second level when its own stale quote is the whole of the touch', () => {
+      const own = {
+        localId: 1,
+        exchange: 'HARBOR',
+        exchangeOrderId: 9,
+        symbol: 'ABC',
+        side: 'sell' as const,
+        price: 4101,
+        size: 100,
+        filled: 0,
+        ioc: false,
+        status: 'resting' as const,
+        block: 'marketMaker',
+        sentAt: 0,
+        seenAt: null,
+        arrivedAt: null,
+        ackAt: null,
+        beatenBy: [],
+      };
+      // The crowd has moved up: bids at 4103, asks from 4105; our old ask at 4101 is alone at the touch.
+      const q: SeenQuote = {
+        bid: 4103,
+        ask: 4101,
+        bidSize: 400,
+        askSize: 100,
+        bid2: 4102,
+        ask2: 4105,
+        bid2Size: 300,
+        ask2Size: 300,
+        at: 0,
+      };
+      const v = view({ exchanges: ['HARBOR'], quotes: { HARBOR: { ABC: q } }, openOrders: [own] });
+      expect(touchExcluding(v, 'HARBOR', 'ABC', 'marketMaker')).toEqual({ bid: 4103, ask: 4105 });
+      const intents = mm.decide(v, paramsFrom(mm.spec, { halfSpread: 2, tolerance: 1 }));
+      // The stale ask is pulled and the new quotes sit around the real midpoint of 4104.
+      expect(intents).toContainEqual({ kind: 'cancel', localId: 1 });
+      expect(intents).toContainEqual({
+        kind: 'order',
+        symbol: 'ABC',
+        exchange: 'HARBOR',
+        side: 'buy',
+        price: 4102,
+        size: 100,
+        ioc: false,
+      });
     });
   });
 

@@ -7,7 +7,16 @@ describe('OrderBook', () => {
     b.add({ owner: 'a', side: 'buy', price: 4102, size: 50 }, 1);
     b.add({ owner: 'a', side: 'sell', price: 4105, size: 200 }, 2);
     b.add({ owner: 'a', side: 'sell', price: 4104, size: 20 }, 3);
-    expect(b.quote()).toEqual({ bid: 4102, ask: 4104, bidSize: 50, askSize: 20 });
+    expect(b.quote()).toEqual({
+      bid: 4102,
+      ask: 4104,
+      bidSize: 50,
+      askSize: 20,
+      bid2: 4100,
+      ask2: 4105,
+      bid2Size: 100,
+      ask2Size: 200,
+    });
     expect(b.spread()).toBe(2);
     expect(b.mid()).toBe(4103);
   });
