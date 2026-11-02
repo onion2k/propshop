@@ -63,6 +63,8 @@ export interface FirmStats {
   ordersDropped: number;
   fillsReceived: number;
   arbRoundTrips: number;
+  /** Decisions at which the firm saw one exchange's ask below another's bid: a gap it could have raced for. */
+  gapsSeen: number;
 }
 
 export interface SavedFirm {
@@ -108,7 +110,7 @@ export class Firm {
   readonly orders = new Map<number, OpenOrder>();
   fills: Fill[] = [];
   readonly mids = new Map<string, number[]>();
-  stats: FirmStats = { ordersSent: 0, ordersDropped: 0, fillsReceived: 0, arbRoundTrips: 0 };
+  stats: FirmStats = { ordersSent: 0, ordersDropped: 0, fillsReceived: 0, arbRoundTrips: 0, gapsSeen: 0 };
   private nextLocalId = 1;
   private nextFillSeq = 1;
   private lastDecision = -Infinity;
@@ -304,12 +306,21 @@ export class Firm {
     for (const s of market.stocks) {
       let bestBid: number | null = null;
       let bestAsk: number | null = null;
+      let bidOn: string | null = null;
+      let askOn: string | null = null;
       for (const e of market.exchanges) {
         const q = quotes[e.id]?.[s.symbol];
         if (!q) continue;
-        if (q.bid !== null && (bestBid === null || q.bid > bestBid)) bestBid = q.bid;
-        if (q.ask !== null && (bestAsk === null || q.ask < bestAsk)) bestAsk = q.ask;
+        if (q.bid !== null && (bestBid === null || q.bid > bestBid)) {
+          bestBid = q.bid;
+          bidOn = e.id;
+        }
+        if (q.ask !== null && (bestAsk === null || q.ask < bestAsk)) {
+          bestAsk = q.ask;
+          askOn = e.id;
+        }
       }
+      if (bestBid !== null && bestAsk !== null && bestAsk < bestBid && bidOn !== askOn) this.stats.gapsSeen++;
       if (bestBid !== null && bestAsk !== null) {
         const log = this.mids.get(s.symbol) ?? [];
         log.push((bestBid + bestAsk) / 2);
@@ -539,7 +550,8 @@ export class Firm {
     f.lastDecision = s.lastDecision === null ? -Infinity : s.lastDecision;
     f.secondStarted = s.secondStarted === null ? -Infinity : s.secondStarted;
     f.ordersThisSecond = s.ordersThisSecond;
-    f.stats = { ...s.stats };
+    // A save from before the count has none; it starts at nought.
+    f.stats = { ...s.stats, gapsSeen: Number(s.stats.gapsSeen) || 0 };
     f.outbound = new DelayQueue(s.outbound.map((d) => ({ ...d })));
     f.inbound = new DelayQueue(s.inbound.map((d) => ({ ...d })));
     return f;

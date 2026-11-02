@@ -4,6 +4,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { DarkWebPanel } from './DarkWebPanel';
 import { FirmPanel } from './FirmPanel';
+import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
 import { LearnContext, LearnPanel } from './Glossary';
 import { MarketPanel } from './MarketPanel';
 import { NewsPanel } from './NewsPanel';
@@ -13,8 +14,9 @@ import type { Store } from './store';
 import { StrategyPanel } from './StrategyPanel';
 import { TopBar } from './TopBar';
 
-type Tab = 'news' | 'dark' | 'shop' | 'rivals' | 'learn';
+type Tab = 'week' | 'news' | 'dark' | 'shop' | 'rivals' | 'learn';
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'week', label: 'First week' },
   { id: 'news', label: 'News' },
   { id: 'dark', label: 'Dark web' },
   { id: 'shop', label: 'Shop' },
@@ -24,7 +26,8 @@ const TABS: { id: Tab; label: string }[] = [
 
 export function App({ store }: { store: Store }) {
   const s = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const [tab, setTab] = useState<Tab>('news');
+  const progress = useSyncExternalStore(store.subscribe, store.getProgress, store.getProgress);
+  const [tab, setTab] = useState<Tab>('week');
   const [term, setTerm] = useState<string | null>(null);
   const learn = {
     selected: term,
@@ -58,10 +61,14 @@ export function App({ store }: { store: Store }) {
                   {t.id === 'dark' && s.dark.unlocked && s.dark.offers.length > 0 && (
                     <span className="badge">{s.dark.offers.length}</span>
                   )}
+                  {t.id === 'week' && lessonsLeft(progress) > 0 && (
+                    <span className="badge quiet">{lessonsLeft(progress)}</span>
+                  )}
                 </button>
               ))}
             </nav>
             <div className="tab-body" role="tabpanel">
+              {tab === 'week' && <FirstWeekPanel progress={progress} />}
               {tab === 'news' && <NewsPanel s={s} />}
               {tab === 'dark' && <DarkWebPanel s={s} store={store} />}
               {tab === 'shop' && <ShopPanel s={s} store={store} />}

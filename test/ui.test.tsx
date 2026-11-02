@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { CONTENT } from '../src/content';
 import { TICK_MS } from '../src/sim';
 import { App } from '../src/ui/App';
-import { createStore, SAVE_KEY, type Storage } from '../src/ui/store';
+import { createStore, PROGRESS_KEY, SAVE_KEY, type Storage } from '../src/ui/store';
 
 function memory(): Storage & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -85,6 +85,32 @@ describe('App', () => {
     expect(words.some((w) => /Filled|Missed|took/.test(w))).toBe(true);
     expect(words.some((w) => /old when sent/.test(w))).toBe(true);
   });
+
+  it('opens on the first week, ticks a lesson when it happens, and keeps the progress', () => {
+    const storage = memory();
+    const store = createStore(CONTENT, storage, 8);
+    render(<App store={store} />);
+    expect(screen.getByRole('tab', { name: /First week/ })).toHaveAttribute('aria-selected', 'true');
+    expect(document.querySelectorAll('.lesson.done')).toHaveLength(0);
+    expect(document.querySelector('.lesson.current strong')?.textContent).toBe('See two exchanges disagree');
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (6 * 60 * 1000) / TICK_MS; i++) {
+        store.game.step();
+        if (i % 500 === 0) store.publish();
+      }
+      store.publish();
+    });
+    const done = document.querySelectorAll('.lesson.done');
+    expect(done.length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelector('.lesson.done .lesson-text')).not.toBeNull();
+    expect(storage.data.has(PROGRESS_KEY)).toBe(true);
+    const again = createStore(CONTENT, storage, 9);
+    expect(Object.keys(again.getProgress()).length).toBe(done.length);
+    again.reset(1);
+    expect(again.getProgress()).toEqual({});
+    expect(storage.data.has(PROGRESS_KEY)).toBe(false);
+  }, 60_000);
 
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);

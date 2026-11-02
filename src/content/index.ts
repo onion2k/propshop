@@ -19,4 +19,6 @@ export const CONTENT: Content = {
 };
 
 export { GLOSSARY, glossary } from './glossary';
+export { LESSONS, lesson } from './lessons';
+export type { Lesson } from './lessons';
 export type { GlossaryEntry } from './glossary';

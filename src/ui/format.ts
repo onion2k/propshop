@@ -1,10 +1,12 @@
 // Numbers as the player reads them. Money and prices come in as cents.
 
 export function money(cents: number, signed = false): string {
-  const sign = cents < 0 ? '-' : signed && cents > 0 ? '+' : '';
-  const abs = Math.abs(cents);
+  // Whole cents first: a float's dust after the split once printed as "$25.100".
+  const whole = Math.round(cents);
+  const sign = whole < 0 ? '-' : signed && whole > 0 ? '+' : '';
+  const abs = Math.abs(whole);
   const dollars = Math.floor(abs / 100);
-  const rest = Math.round(abs % 100);
+  const rest = abs % 100;
   return `${sign}$${dollars.toLocaleString('en-US')}.${String(rest).padStart(2, '0')}`;
 }
 

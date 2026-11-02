@@ -101,6 +101,8 @@ export interface Snapshot {
     ordersDropped: number;
     decisionEveryMs: number;
   };
+  /** How many times the firm has seen a gap between the exchanges it could have raced for. */
+  gapsSeen: number;
   infra: { location: string; network: string; computer: string };
   latency: Record<string, number>;
   stocks: {
@@ -326,6 +328,7 @@ export class Game {
         ordersDropped: firm.stats.ordersDropped,
         decisionEveryMs: firm.infra.computer.decisionEveryMs,
       },
+      gapsSeen: firm.stats.gapsSeen,
       infra: { location: firm.infra.location.id, network: firm.infra.network.id, computer: firm.infra.computer.id },
       latency,
       stocks: this.market.stocks.map((s) => ({

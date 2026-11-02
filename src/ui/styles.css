@@ -402,3 +402,52 @@ footer {
 .race-line .tick.heard {
   background: var(--up);
 }
+
+.badge.quiet {
+  background: #2b3442;
+  color: var(--text);
+}
+.first-week ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.lesson {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.lesson.later {
+  opacity: 0.5;
+}
+.lesson-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lesson-mark {
+  display: inline-block;
+  min-width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 50%;
+  background: #2b3442;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.lesson.done .lesson-mark {
+  background: var(--up);
+  color: #06111a;
+}
+.lesson.current .lesson-mark {
+  background: var(--accent);
+  color: #06111a;
+}
+.lesson-body {
+  margin-left: 28px;
+}
+.lesson-text {
+  border-left: 2px solid var(--up);
+  padding-left: 10px;
+  margin: 8px 0;
+}

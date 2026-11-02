@@ -2,6 +2,7 @@
 // whatever the sim speed, and saves. React subscribes through useSyncExternalStore. The wall clock is read
 // here and nowhere further in: the sim only ever sees how many ms it is being asked for.
 
+import { LESSONS } from '../content';
 import { Game, type SavedGame, type Snapshot, type Speed } from '../sim';
 import type { Content } from '../sim';
 
@@ -9,9 +10,14 @@ import type { Content } from '../sim';
 const PUBLISH_EVERY = 100;
 const SAVE_EVERY = 10_000;
 export const SAVE_KEY = 'propshop.save.v1';
+export const PROGRESS_KEY = 'propshop.progress.v1';
+
+/** Which lessons are done, and the simulated time each was. One object per change, so React can compare it. */
+export type Progress = Readonly<Record<string, number>>;
 
 export interface Store {
   getSnapshot: () => Snapshot;
+  getProgress: () => Progress;
   subscribe: (listener: () => void) => () => void;
   /** Hand the store some wall time; it runs the sim and publishes if it is due. */
   pump: (wallNow: number) => void;
@@ -36,6 +42,7 @@ export interface Storage {
 export function createStore(content: Content, storage: Storage | null, seed: number): Store {
   let game = loadOrNew(content, storage, seed);
   let snapshot = game.snapshot();
+  let progress: Progress = loadProgress(storage);
   let publishedVersion = game.version;
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
@@ -46,6 +53,15 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     if (game.version === publishedVersion) return;
     snapshot = game.snapshot();
     publishedVersion = game.version;
+    // The lessons watch the snapshot; one newly done is kept with the time, and saved at once.
+    let changed = false;
+    for (const l of LESSONS) {
+      if (progress[l.id] === undefined && l.done(snapshot)) {
+        progress = { ...progress, [l.id]: snapshot.now };
+        changed = true;
+      }
+    }
+    if (changed) saveProgress(storage, progress);
     for (const l of listeners) l();
   };
 
@@ -62,6 +78,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
       return game;
     },
     getSnapshot: () => snapshot,
+    getProgress: () => progress,
     subscribe(l) {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -92,7 +109,9 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     },
     reset(newSeed) {
       storage?.removeItem(SAVE_KEY);
+      storage?.removeItem(PROGRESS_KEY);
       game = new Game(content, newSeed);
+      progress = {};
       publishedVersion = -1;
       publish();
     },
@@ -115,4 +134,26 @@ function loadOrNew(content: Content, storage: Storage | null, seed: number): Gam
     }
   }
   return new Game(content, seed);
+}
+
+function loadProgress(storage: Storage | null): Progress {
+  const raw = storage?.getItem(PROGRESS_KEY);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed)) if (typeof v === 'number') out[k] = v;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveProgress(storage: Storage | null, progress: Progress): void {
+  try {
+    storage?.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  } catch {
+    // Storage can be full or forbidden; the lessons still tick on screen.
+  }
 }
