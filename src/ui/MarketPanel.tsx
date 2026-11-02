@@ -23,7 +23,7 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
           {Object.entries(s.dataLatency)
             .map(([e, l]) => `${e} ${l}ms`)
             .join(', ')}{' '}
-          late · {s.gapsSeen} gaps seen
+          late · <span className="num slot-short">{s.gapsSeen}</span> gaps seen
         </span>
       </h2>
       <table className="watchlist">

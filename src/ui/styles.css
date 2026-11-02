@@ -679,3 +679,87 @@ code {
     padding: 5px 10px;
   }
 }
+
+/* Figures sit in slots of fixed width, so a number growing a digit does not shove its neighbours about. */
+.slot {
+  display: inline-block;
+  min-width: 7ch;
+}
+.slot-short {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: right;
+}
+.stat {
+  min-width: 6.5em;
+}
+.stat .value {
+  font-variant-numeric: tabular-nums;
+}
+.money {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 20px;
+}
+.watchlist td.num,
+.quotes td.num {
+  min-width: 6ch;
+}
+.positions td.num {
+  min-width: 7ch;
+}
+@media (max-width: 600px) {
+  html,
+  body {
+    font-size: 13px;
+  }
+  h1 {
+    font-size: 16px;
+  }
+  h2 {
+    font-size: 12px;
+  }
+  h3 {
+    font-size: 12px;
+  }
+  .small,
+  th,
+  .explain,
+  .param .small,
+  .race-words,
+  .lesson-body .small {
+    font-size: 11px;
+  }
+  .orders li,
+  .fills li,
+  .headline,
+  .tip,
+  .offer {
+    font-size: 12px;
+  }
+  .stat {
+    min-width: 0;
+  }
+  .stat .label {
+    font-size: 10px;
+  }
+  .stat .value {
+    font-size: 13px;
+  }
+  .money {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .clock {
+    font-size: 12px;
+  }
+  .clock .time {
+    font-size: 16px;
+  }
+  .pages > button {
+    font-size: 13px;
+  }
+  .chart {
+    font-size: 9px;
+  }
+}
