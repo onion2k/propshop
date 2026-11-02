@@ -1,6 +1,6 @@
 # The fill race: what happened to each order
 
-State: building, part 1 of 3.
+State: landed on main at e0e8e3f, 2026-11-02.
 
 ## Context
 
