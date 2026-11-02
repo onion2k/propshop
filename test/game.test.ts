@@ -1,0 +1,164 @@
+import { CONTENT } from '../src/content';
+import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, isMarketOpen, nextOpen, type SavedGame } from '../src/sim';
+import { MARKET_OPEN, MS_PER_DAY } from '../src/sim/clock';
+
+function run(g: Game, ms: number) {
+  for (let i = 0; i < ms / TICK_MS; i++) g.step();
+}
+
+/** Through the open and on to the close in coarse steps, where a test does not care about the trading between. */
+function throughTheDay(g: Game) {
+  while (!isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+  while (isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+}
+
+describe('Game', () => {
+  it('starts before the open on Monday with the arbitrage block on and nothing traded', () => {
+    const g = new Game(CONTENT, 1);
+    const s = g.snapshot();
+    expect(s.calendar.weekday).toBe('Mon');
+    expect(s.open).toBe(false);
+    expect(s.nextChange).toBe(MARKET_OPEN);
+    expect(s.cash).toBe(CONTENT.startingCash);
+    expect(s.blocks.find((b) => b.id === 'arbitrage')?.enabled).toBe(true);
+    expect(s.fills).toEqual([]);
+    expect(s.latency.HARBOR).toBe(44);
+    expect(s.shop.length).toBe(10);
+    expect(s.news.length).toBe(0);
+    expect(s.dark.unlocked).toBe(false);
+  });
+
+  it('skips to a minute before the open, landing overnight news on the way', () => {
+    const g = new Game(CONTENT, 2);
+    g.skipToOpen();
+    expect(g.now).toBe(MARKET_OPEN - MS_PER_MINUTE);
+    expect(isMarketOpen(g.now)).toBe(false);
+    run(g, 2 * MS_PER_MINUTE);
+    expect(isMarketOpen(g.now)).toBe(true);
+    expect(g.log.some((e) => e.kind === 'open')).toBe(true);
+  });
+
+  it('advances by the speed, and not at all when paused', () => {
+    const g = new Game(CONTENT, 3);
+    const t0 = g.now;
+    g.setSpeed(0);
+    g.advance(1000);
+    expect(g.now).toBe(t0);
+    g.setSpeed(10);
+    g.advance(100);
+    expect(g.now).toBe(t0 + 1000);
+    g.setSpeed(300);
+    g.advance(10_000);
+    // Capped, so a hidden tab does not hang the page catching up.
+    expect(g.now).toBe(t0 + 1000 + 15000 * TICK_MS);
+  });
+
+  it('trades through a few minutes of the open, with fills, a P&L and the bots ahead', () => {
+    const g = new Game(CONTENT, 4);
+    g.skipToOpen();
+    run(g, 3 * MS_PER_MINUTE);
+    const s = g.snapshot();
+    expect(s.open).toBe(true);
+    expect(s.fills.length + s.openOrders.length).toBeGreaterThan(0);
+    expect(s.competitors.some((c) => c.fills > 0)).toBe(true);
+    expect(s.stocks[0]!.exchanges[0]!.seen).not.toBeNull();
+    expect(s.stocks[0]!.history.length).toBeGreaterThan(100);
+    expect(Number.isFinite(s.equity)).toBe(true);
+    expect(Number.isFinite(s.dayPnl)).toBe(true);
+  });
+
+  it('runs an upgrade through the shop and lowers the latency', () => {
+    const g = new Game(CONTENT, 5);
+    const before = g.firm.latency('HARBOR');
+    expect(() => g.buyUpgrade('location', 'colo-harbor')).toThrow();
+    g.firm.cash += 100 * 100_000_000;
+    g.buyUpgrade('location', 'colo-harbor');
+    g.buyUpgrade('network', 'fibre');
+    expect(g.firm.latency('HARBOR')).toBeLessThan(before / 10);
+    const offer = g.snapshot().shop.find((o) => o.spec.id === 'colo-harbor')!;
+    expect(offer.owned && offer.inUse).toBe(true);
+    // Switching back to something owned is free.
+    const cash = g.firm.cash;
+    g.buyUpgrade('location', 'home');
+    expect(g.firm.cash).toBe(cash);
+  });
+
+  it('closes the day with a record, and unlocks the dark web after a profitable week', () => {
+    const g = new Game(CONTENT, 6);
+    g.skipToOpen();
+    run(g, MS_PER_SECOND);
+    throughTheDay(g);
+    expect(g.days).toHaveLength(1);
+    expect(g.log.some((e) => e.kind === 'close')).toBe(true);
+    // Through to Friday's close, made rich on the way.
+    for (let d = 1; d < 5; d++) {
+      g.skipToOpen();
+      run(g, MS_PER_SECOND);
+      g.firm.cash += 1_000_000;
+      throughTheDay(g);
+    }
+    expect(g.days).toHaveLength(5);
+    expect(g.dark.unlocked).toBe(true);
+    expect(g.log.some((e) => e.kind === 'unlock')).toBe(true);
+    expect(nextOpen(g.now)).toBe(7 * MS_PER_DAY + MARKET_OPEN);
+  });
+
+  it('sells and records a tip once unlocked', () => {
+    const g = new Game(CONTENT, 7);
+    g.dark.unlocked = true;
+    g.skipToOpen();
+    run(g, 2 * MS_PER_SECOND);
+    const offers = g.snapshot().dark.offers;
+    expect(offers.length).toBe(3);
+    const tip = g.buyTip(offers[0]!.id);
+    expect(g.snapshot().dark.bought[0]).toEqual(tip);
+    expect(g.firm.heat).toBeGreaterThan(0);
+  });
+
+  it('is deterministic: one seed, one game', () => {
+    const a = new Game(CONTENT, 8);
+    const b = new Game(CONTENT, 8);
+    const c = new Game(CONTENT, 9);
+    for (const g of [a, b, c]) {
+      g.skipToOpen();
+      run(g, 2 * MS_PER_MINUTE);
+    }
+    expect(a.fingerprint()).toBe(b.fingerprint());
+    expect(a.fingerprint()).not.toBe(c.fingerprint());
+    expect(a.snapshot().fills).toEqual(b.snapshot().fills);
+  });
+
+  it('saves and loads to the same future', () => {
+    const a = new Game(CONTENT, 10);
+    a.skipToOpen();
+    run(a, 30 * MS_PER_SECOND);
+    a.setBlock('marketMaker', { enabled: true, params: { halfSpread: 3 } });
+    const saved = JSON.parse(JSON.stringify(a.save())) as SavedGame;
+    const b = Game.load(CONTENT, saved);
+    expect(b.fingerprint()).toBe(a.fingerprint());
+    run(a, 10 * MS_PER_SECOND);
+    run(b, 10 * MS_PER_SECOND);
+    expect(b.fingerprint()).toBe(a.fingerprint());
+    expect(b.snapshot().blocks).toEqual(a.snapshot().blocks);
+    expect(b.firm.infra.location.id).toBe(a.firm.infra.location.id);
+  });
+
+  it('refuses a save from another version', () => {
+    const g = new Game(CONTENT, 11);
+    const saved = { ...g.save(), version: 2 } as unknown as SavedGame;
+    expect(() => Game.load(CONTENT, saved)).toThrow(/version/);
+  });
+
+  it('steps fast enough for the top speed', () => {
+    const g = new Game(CONTENT, 12);
+    g.skipToOpen();
+    run(g, 10 * MS_PER_SECOND);
+    const start = performance.now();
+    run(g, 2 * MS_PER_MINUTE);
+    const wall = performance.now() - start;
+    const ticksPerSecond = ((2 * MS_PER_MINUTE) / TICK_MS / wall) * 1000;
+    process.stderr.write(`${Math.round(ticksPerSecond)} ticks/s\n`);
+    // The top speed is 300x: 150,000 ticks a wall second. Hold it to half that here, where the machine may be busy.
+    expect(ticksPerSecond).toBeGreaterThan(75_000);
+  });
+});
