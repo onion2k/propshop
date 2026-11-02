@@ -1,8 +1,9 @@
 // The strategy: the blocks, each with a switch and sliders and a paragraph on what it is for, and a meter
 // showing how much of the computer is in use.
 
-import { BLOCKS, type Snapshot } from '../sim';
+import { BLOCKS, SCRIPT_ID, type Snapshot } from '../sim';
 import { Term } from './Glossary';
+import { ScriptEditor } from './ScriptEditor';
 import type { Store } from './store';
 
 const TERM_FOR: Record<string, string> = {
@@ -48,6 +49,7 @@ export function StrategyPanel({ s, store }: { s: Snapshot; store: Store }) {
               {setting.enabled && !running && <span className="down"> · no capacity</span>}
             </summary>
             <p className="explain">{b.spec.explain}</p>
+            {b.spec.id === SCRIPT_ID && <ScriptEditor s={s} setting={setting} store={store} />}
             {b.spec.params.map((p) => (
               <label key={p.key} className="param">
                 <span className="param-name">

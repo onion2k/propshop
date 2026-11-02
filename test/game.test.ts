@@ -83,6 +83,22 @@ describe('Game', () => {
     expect(filled?.fee).toBeGreaterThan(0);
   });
 
+  it('runs the script block and keeps its source through a save', () => {
+    const g = new Game(CONTENT, 14);
+    g.setBlock('arbitrage', { enabled: false });
+    g.setBlock('script', { enabled: true, source: 'log("tick", now)' });
+    g.skipToOpen();
+    run(g, 2 * MS_PER_MINUTE);
+    const s = g.snapshot();
+    expect(s.script.error).toBeNull();
+    expect(s.script.log.length).toBeGreaterThan(0);
+    const b = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
+    expect(b.firm.blocks.find((x) => x.id === 'script')?.source).toBe('log("tick", now)');
+    g.setBlock('script', { source: 'while (true) {}' });
+    run(g, MS_PER_SECOND);
+    expect(g.snapshot().script.error).toMatch(/budget/);
+  });
+
   it('runs an upgrade through the shop and lowers the latency', () => {
     const g = new Game(CONTENT, 5);
     const before = g.firm.latency('HARBOR');

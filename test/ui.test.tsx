@@ -112,6 +112,32 @@ describe('App', () => {
     expect(storage.data.has(PROGRESS_KEY)).toBe(false);
   }, 60_000);
 
+  it('applies a script and shows what it prints, or its error', () => {
+    const store = createStore(CONTENT, null, 10);
+    store.setBlock('arbitrage', { enabled: false });
+    store.setBlock('script', { enabled: true });
+    render(<App store={store} />);
+    const source = screen.getByLabelText('Script source');
+    fireEvent.change(source, { target: { value: 'log("hello from", symbols.length, "stocks")' } });
+    fireEvent.click(screen.getByText('Apply'));
+    expect(store.game.firm.blocks.find((b) => b.id === 'script')?.source).toBe(
+      'log("hello from", symbols.length, "stocks")',
+    );
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (90 * 1000) / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    expect(document.querySelector('.script-log')?.textContent).toMatch(/hello from 3 stocks/);
+    fireEvent.change(source, { target: { value: 'nope(' } });
+    fireEvent.click(screen.getByText('Apply'));
+    act(() => {
+      for (let i = 0; i < (2 * 1000) / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    expect(document.querySelector('.script-bar .down')?.textContent).toMatch(/Unexpected|missing/i);
+  }, 30_000);
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;

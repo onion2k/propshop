@@ -18,7 +18,7 @@ import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
 import { Random } from './random';
-import { BLOCKS, type Fill, type OpenOrder, type Params } from './strategy';
+import { BLOCKS, SCRIPT_ID, scriptState, type Fill, type OpenOrder, type Params } from './strategy';
 import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
 import type { Content } from './types';
 
@@ -93,6 +93,8 @@ export interface Snapshot {
   names: Record<string, string>;
   fills: Fill[];
   blocks: BlockSetting[];
+  /** The script block's last error and what it has printed. */
+  script: { error: string | null; log: string[] };
   capacity: {
     blocksUsed: number;
     maxBlocks: number;
@@ -256,7 +258,7 @@ export class Game {
     this.version++;
   }
 
-  setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params> }): void {
+  setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params>; source?: string }): void {
     this.firm.setBlock(id, change);
     this.version++;
   }
@@ -320,6 +322,7 @@ export class Game {
       ]),
       fills: firm.fills.slice(-50).reverse(),
       blocks: firm.blocks,
+      script: { ...scriptState(firm.blocks.find((b) => b.id === SCRIPT_ID)?.source ?? '') },
       capacity: {
         blocksUsed: firm.enabledBlocks().length,
         maxBlocks: firm.infra.computer.maxBlocks,

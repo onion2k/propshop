@@ -7,7 +7,7 @@ import type { Exchange } from './exchange';
 import { DelayQueue, latencyTo, type Delayed } from './latency';
 import type { Market } from './market';
 import type { Side, Trade } from './orderbook';
-import { blockById, paramsFrom } from './strategy';
+import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
 import type { BeatenBy, Fill, Intent, MarketView, OpenOrder, Params, SeenQuote } from './strategy';
 import type { Headline, Infrastructure } from './types';
 
@@ -21,6 +21,8 @@ export interface BlockSetting {
   id: string;
   enabled: boolean;
   params: Params;
+  /** The script block's source; the others have none. */
+  source?: string;
 }
 
 export interface Position {
@@ -130,10 +132,11 @@ export class Firm {
   }
 
   static defaultBlocks(enabled: string[] = []): BlockSetting[] {
-    return ['arbitrage', 'marketMaker', 'momentum', 'newsReaction'].map((id) => ({
+    return ['arbitrage', 'marketMaker', 'momentum', 'newsReaction', SCRIPT_ID].map((id) => ({
       id,
       enabled: enabled.includes(id),
       params: paramsFrom(blockById(id).spec),
+      ...(id === SCRIPT_ID ? { source: EXAMPLE_SOURCE } : {}),
     }));
   }
 
@@ -145,11 +148,12 @@ export class Firm {
     return latencyTo(this.infra, exchange);
   }
 
-  setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params> }): void {
+  setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params>; source?: string }): void {
     const b = this.blocks.find((x) => x.id === id);
     if (!b) throw new Error(`No block ${id}`);
     if (change.enabled !== undefined) b.enabled = change.enabled;
     if (change.params) b.params = paramsFrom(blockById(id).spec, { ...b.params, ...change.params });
+    if (change.source !== undefined && id === SCRIPT_ID) b.source = change.source;
   }
 
   enabledBlocks(): BlockSetting[] {
@@ -353,7 +357,7 @@ export class Firm {
   private decide(now: number, market: Market, news: readonly Headline[]): void {
     const view = this.view(now, market, news);
     for (const setting of this.enabledBlocks()) {
-      const block = blockById(setting.id);
+      const block = blockFor(setting);
       for (const intent of block.decide(view, setting.params)) this.send(intent, setting.id, now, view);
     }
   }

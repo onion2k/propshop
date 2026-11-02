@@ -451,3 +451,46 @@ footer {
   padding-left: 10px;
   margin: 8px 0;
 }
+
+.script-source {
+  width: 100%;
+  font: 12px/1.4 var(--mono);
+  background: #0c0f13;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+  resize: vertical;
+  tab-size: 2;
+}
+.script-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+.script-log {
+  font: 12px/1.4 var(--mono);
+  background: #0c0f13;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0 0 6px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.script-reference dl {
+  margin: 6px 0;
+}
+.script-reference dt {
+  margin-top: 4px;
+}
+.script-reference dd {
+  margin: 0;
+}
+code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
