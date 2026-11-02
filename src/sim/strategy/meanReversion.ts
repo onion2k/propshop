@@ -30,8 +30,8 @@ export const meanReversion: StrategyBlock = {
         max: 60,
         step: 1,
         default: 20,
-        unit: 'decisions',
-        explain: 'How many decisions the average is taken over.',
+        unit: 'quarter-seconds',
+        explain: 'How many quarter-seconds the average is taken over.',
       },
       {
         key: 'threshold',

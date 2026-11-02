@@ -29,6 +29,9 @@ const CONFIGS: Config[] = [
   ['colo revert', COLO, ['meanReversion']],
   ['home sniper', HOME, ['sniper']],
   ['colo sniper', COLO, ['sniper']],
+  ['colo pairs', COLO, ['pairs']],
+  ['home indexArb', HOME, ['indexArb']],
+  ['colo indexArb', COLO, ['indexArb']],
   ['city arb', CITY, ['arbitrage']],
   ['city arb near', CITY, ['arbitrage'], { arbitrage: { maxLatency: 10 } }],
   ['city mm', CITY, ['marketMaker']],
@@ -56,6 +59,8 @@ measure('paces', { timeout: 3_600_000 }, () => {
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
       for (const [id, p] of Object.entries(params ?? {})) g.setBlock(id, { params: p });
+      // Watch everything the computer allows, the index first so index arbitrage has its basket on a rack.
+      g.firm.setWatch(['IDX', ...CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol)]);
       g.skipToOpen();
       for (let i = 0; i < (MINUTES * MS_PER_MINUTE) / TICK_MS; i++) g.step();
       add(name, pnl(g.firm, g), g.firm.stats.fillsReceived);

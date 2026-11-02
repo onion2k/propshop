@@ -15,6 +15,7 @@ export { REFUSED_CROSSED } from './orderbook';
 export type { UpgradeKind, UpgradeOffer } from './upgrades';
 export type {
   Content,
+  FactorSpec,
   RegimeSpec,
   StockSpec,
   ExchangeSpec,

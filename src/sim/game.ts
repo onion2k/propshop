@@ -182,6 +182,8 @@ export interface Snapshot {
   };
   /** How many times the firm has seen a gap between the exchanges it could have raced for. */
   gapsSeen: number;
+  /** How many symbols the computer can watch, and how many the firm does. */
+  watching: { count: number; max: number };
   infra: { location: string; network: string; computer: string };
   /** Order latency and data latency per exchange; the same unless the firm has racks at more than one. */
   latency: Record<string, number>;
@@ -190,7 +192,14 @@ export interface Snapshot {
     symbol: string;
     name: string;
     sector: string;
+    /** An index over these, or null for a stock. */
+    constituents: string[] | null;
+    watched: boolean;
     fair: number;
+    /** The best bid and ask the firm can see across exchanges, and the change on the day in cents. */
+    bid: number | null;
+    ask: number | null;
+    dayChange: number | null;
     exchanges: {
       id: string;
       seen: { bid: number | null; ask: number | null; bidSize: number; askSize: number } | null;
@@ -254,7 +263,7 @@ export class Game {
     // The game begins at six on Monday morning: the market opens in a few hours, so the player has time to look.
     this.now = 6 * 60 * MS_PER_MINUTE;
     this.random = new Random(seed);
-    this.market = new Market(content.stocks, content.exchanges);
+    this.market = new Market(content.stocks, content.exchanges, content.factors);
     this.news = new News(content.news, content.stocks);
     this.dark = new DarkWeb();
     this.owned = new Set([content.start.location, content.start.network, content.start.computer]);
@@ -460,6 +469,14 @@ export class Game {
     this.version++;
   }
 
+  /** Watch a symbol or stop; the computer's limit is applied when the blocks look, not here. */
+  setWatch(symbol: string, on: boolean): void {
+    const current = this.firm.watching(this.market.stocks.map((s) => s.symbol));
+    const next = on ? [...current, symbol] : current.filter((w) => w !== symbol);
+    this.firm.setWatch(next);
+    this.version++;
+  }
+
   buyUpgrade(kind: UpgradeKind, id: string): void {
     buyUpgrade(this.content, this.firm, this.owned, kind, id);
     this.emit({ kind: 'upgrade', at: this.now, kind2: kind, id });
@@ -497,6 +514,7 @@ export class Game {
     }
     const unrealised = firm.unrealised(this.market, now);
     const equity = firm.equity(this.market, now);
+    const watching = firm.watching(this.market.stocks.map((s) => s.symbol));
     return {
       now,
       calendar: calendar(now),
@@ -540,11 +558,16 @@ export class Game {
       infra: { location: firm.infra.location.id, network: firm.infra.network.id, computer: firm.infra.computer.id },
       latency,
       dataLatency,
+      watching: { count: watching.length, max: firm.infra.computer.maxSymbols },
       stocks: this.market.stocks.map((s) => ({
         symbol: s.symbol,
         name: s.name,
         sector: s.sector,
+        constituents: s.constituents ? [...s.constituents] : null,
+        watched: watching.includes(s.symbol),
         fair: this.market.fair.get(s.symbol) ?? s.startPrice,
+        ...this.touchAcross(s.symbol, now),
+        dayChange: this.dayChange(s.symbol),
         exchanges: this.market.exchanges.map((e) => ({
           id: e.id,
           seen: e.quoteAsOf(s.symbol, now - firm.dataLatency(e.id)),
@@ -581,6 +604,34 @@ export class Game {
       days: this.days,
       log: this.log,
     };
+  }
+
+  /** The best bid and ask the firm can see across exchanges. */
+  private touchAcross(symbol: string, now: number): { bid: number | null; ask: number | null } {
+    let bid: number | null = null;
+    let ask: number | null = null;
+    for (const e of this.market.exchanges) {
+      const q = e.quoteAsOf(symbol, now - this.firm.dataLatency(e.id));
+      if (!q) continue;
+      if (q.bid !== null && (bid === null || q.bid > bid)) bid = q.bid;
+      if (q.ask !== null && (ask === null || q.ask < ask)) ask = q.ask;
+    }
+    return { bid, ask };
+  }
+
+  /** The move since the first sample of the day, cents, from the history. */
+  private dayChange(symbol: string): number | null {
+    const h = this.market.history.get(symbol);
+    if (!h || h.length === 0) return null;
+    const day = calendar(this.now).day;
+    const first = h.find((p) => Math.floor(p.at / MS_PER_DAY) === day);
+    const last = h[h.length - 1];
+    if (!first || !last) return null;
+    const mid = (p: HistoryPoint) => {
+      const ms = Object.values(p.mids).filter((m): m is number => m !== null);
+      return ms.length > 0 ? ms.reduce((a, b) => a + b, 0) / ms.length : p.fair;
+    };
+    return mid(last) - mid(first);
   }
 
   private stories(): OrderStory[] {

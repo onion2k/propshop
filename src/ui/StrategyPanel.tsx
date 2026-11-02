@@ -12,6 +12,8 @@ const TERM_FOR: Record<string, string> = {
   momentum: 'momentum',
   meanReversion: 'mean-reversion',
   sniper: 'stale-quote',
+  pairs: 'pairs',
+  indexArb: 'index-arb',
   newsReaction: 'news',
 };
 

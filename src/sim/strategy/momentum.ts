@@ -30,8 +30,8 @@ export const momentum: StrategyBlock = {
         max: 50,
         step: 1,
         default: 10,
-        unit: 'decisions',
-        explain: 'How many decisions back to compare the price against.',
+        unit: 'quarter-seconds',
+        explain: 'How many quarter-seconds back to compare the price against.',
       },
       {
         key: 'threshold',

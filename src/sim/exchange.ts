@@ -15,14 +15,15 @@ const TARGET_DEPTH = 24;
 const PLACEMENT_RANGE = 6;
 /** A background order further than this from the believed price is pulled. */
 const STALE_DISTANCE = 8;
-/** The sweep runs this often, in ms, and each sweep pulls this share of the orders now on the wrong side of the
-    belief. Between them they set how long a mispriced quote survives, which is how long an arbitrage lasts. */
-const SWEEP_EVERY = 10;
+/** Each turn pulls this share of the orders now on the wrong side of the belief. With the turn's length it sets
+    how long a mispriced quote survives, which is how long an arbitrage lasts. */
 const PULL_SHARE = 0.4;
 /** The crowd's chances are written per this many ms, and scaled to the tick. */
 const REFERENCE_DT = 10;
 /** How many recent trades each book keeps for the tape. */
 const TAPE_LENGTH = 40;
+/** How many times slower an index's crowd is to catch up than a stock's. */
+const INDEX_LAG = 4;
 /** How many ticks of quotes each book remembers, so a slow firm can be shown the past it is seeing. */
 const QUOTE_LOG_LENGTH = 400;
 
@@ -32,6 +33,8 @@ export interface LoggedQuote extends Quote {
 
 export interface StockState {
   book: OrderBook;
+  /** An index over other symbols. */
+  index: boolean;
   /** What this exchange's crowd currently believes the stock is worth, in cents, a float. */
   belief: number;
   tape: Trade[];
@@ -47,14 +50,19 @@ export interface SavedExchange {
 export class Exchange {
   readonly spec: ExchangeSpec;
   readonly stocks = new Map<string, StockState>();
-  private lastSweep = 0;
   /** Trades made this tick, by anyone, for the game to route to their owners. */
   tickTrades: { symbol: string; trade: Trade }[] = [];
 
-  constructor(spec: ExchangeSpec, symbols: { symbol: string; startPrice: number }[]) {
+  constructor(spec: ExchangeSpec, symbols: { symbol: string; startPrice: number; constituents?: string[] }[]) {
     this.spec = spec;
     for (const s of symbols) {
-      this.stocks.set(s.symbol, { book: new OrderBook(), belief: s.startPrice, tape: [], quoteLog: [] });
+      this.stocks.set(s.symbol, {
+        book: new OrderBook(),
+        index: (s.constituents?.length ?? 0) > 0,
+        belief: s.startPrice,
+        tape: [],
+        quoteLog: [],
+      });
     }
   }
 
@@ -106,7 +114,23 @@ export class Exchange {
   /** Called at the end of every tick, once everyone has acted, so the log holds the tick's closing quote. */
   logQuotes(now: number): void {
     for (const s of this.stocks.values()) {
-      s.quoteLog.push({ ...s.book.quote(), at: now });
+      const q = s.book.quote();
+      const last = s.quoteLog[s.quoteLog.length - 1];
+      // A tick on which nothing changed needs no entry: the last one still answers for it.
+      if (
+        last &&
+        last.bid === q.bid &&
+        last.ask === q.ask &&
+        last.bidSize === q.bidSize &&
+        last.askSize === q.askSize &&
+        last.bid2 === q.bid2 &&
+        last.ask2 === q.ask2 &&
+        last.bid2Size === q.bid2Size &&
+        last.ask2Size === q.ask2Size
+      ) {
+        continue;
+      }
+      s.quoteLog.push({ ...q, at: now });
       if (s.quoteLog.length > QUOTE_LOG_LENGTH) s.quoteLog.splice(0, s.quoteLog.length - QUOTE_LOG_LENGTH);
     }
   }
@@ -138,14 +162,26 @@ export class Exchange {
    */
   step(now: number, dt: number, fair: ReadonlyMap<string, number>, activity: number, random: Random): void {
     this.tickTrades = [];
-    const sweep = now - this.lastSweep >= SWEEP_EVERY;
-    if (sweep) this.lastSweep = now;
+    // The crowd's own pace is REFERENCE_DT; each book takes its turn once in that many ticks, staggered, so a
+    // tick costs a fifth of what every book acting every tick would, and nothing about the crowd changes. A
+    // turn is a sweep as well: the sweep's own period is the same, and a sweep keyed to the exchange's clock
+    // once left four books in five never swept, which was free money for everyone.
+    const turns = Math.max(1, Math.round(REFERENCE_DT / dt));
+    const sweep = true;
+    const tick = Math.round(now / dt);
+    let i = 0;
     for (const [symbol, s] of this.stocks) {
+      const mine = (tick + i++) % turns === 0;
+      if (!mine) continue;
+      const span = dt * turns;
       const target = fair.get(symbol);
       if (target === undefined) continue;
-      const pull = Math.min(1, dt / this.spec.lag);
-      s.belief += (target - s.belief) * pull + this.spec.noise * Math.sqrt(dt / 1000) * random.normal();
-      if (activity > 0) this.crowd(symbol, s, now, dt, activity, random, sweep);
+      // An index is a derivative: its crowd learns from the basket, and is a few times slower to catch up than
+      // the basket's own crowds are. That lag is what index arbitrage trades, and what keeps the index in line.
+      const lag = this.spec.lag * (s.index ? INDEX_LAG : 1);
+      const pull = Math.min(1, span / lag);
+      s.belief += (target - s.belief) * pull + this.spec.noise * Math.sqrt(span / 1000) * random.normal();
+      if (activity > 0) this.crowd(symbol, s, now, span, activity, random, sweep);
     }
   }
 
@@ -234,18 +270,18 @@ export class Exchange {
     for (const [symbol, s] of this.stocks) {
       stocks[symbol] = { book: s.book.save(), belief: s.belief, tape: s.tape, quoteLog: s.quoteLog };
     }
-    return { stocks, lastSweep: this.lastSweep };
+    return { stocks, lastSweep: 0 };
   }
 
   load(saved: SavedExchange): void {
     for (const [symbol, s] of Object.entries(saved.stocks)) {
       this.stocks.set(symbol, {
         book: OrderBook.load(s.book),
+        index: this.stocks.get(symbol)?.index ?? false,
         belief: s.belief,
         tape: s.tape.map((t) => ({ ...t })),
         quoteLog: s.quoteLog.map((q) => ({ ...q })),
       });
     }
-    this.lastSweep = saved.lastSweep;
   }
 }

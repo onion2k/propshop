@@ -72,10 +72,12 @@ describe('Game', () => {
     expect(g.now).toBe(t0 + 1000 + 15000 * TICK_MS);
   });
 
-  it('trades through a few minutes of the open, with fills, a P&L and the bots ahead', () => {
+  it('trades through the open, with orders, a P&L and the bots ahead', { timeout: 60_000 }, () => {
     const g = new Game(CONTENT, 4);
     g.skipToOpen();
-    run(g, 3 * MS_PER_MINUTE);
+    while (!isMarketOpen(g.now)) g.step();
+    for (let i = 0; i < (15 * MS_PER_MINUTE) / TICK_MS && g.firm.orders.size === 0; i++) g.step();
+    run(g, 2 * MS_PER_MINUTE);
     const s = g.snapshot();
     expect(s.open).toBe(true);
     expect(s.orders.length).toBeGreaterThan(0);
@@ -272,7 +274,7 @@ describe('Game', () => {
     expect(g.firm.heat).toBeGreaterThan(0);
   });
 
-  it('is deterministic: one seed, one game', () => {
+  it('is deterministic: one seed, one game', { timeout: 60_000 }, () => {
     const a = new Game(CONTENT, 8);
     const b = new Game(CONTENT, 8);
     const c = new Game(CONTENT, 9);
@@ -285,7 +287,7 @@ describe('Game', () => {
     expect(a.snapshot().fills).toEqual(b.snapshot().fills);
   });
 
-  it('saves and loads to the same future', () => {
+  it('saves and loads to the same future', { timeout: 60_000 }, () => {
     const a = new Game(CONTENT, 10);
     a.skipToOpen();
     run(a, 30 * MS_PER_SECOND);

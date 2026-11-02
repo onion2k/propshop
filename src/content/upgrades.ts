@@ -118,7 +118,10 @@ export const COMPUTERS: ComputerSpec[] = [
     maxBlocks: 1,
     ordersPerSecond: 20,
     decisionEveryMs: 50,
-    explain: 'Runs one strategy block, thinks twenty times a second, and sends twenty orders a second at most.',
+    maxSymbols: 4,
+    explain:
+      'Runs one strategy block, thinks twenty times a second, sends twenty orders a second at most, and can ' +
+      'follow four symbols. Pick them on the market page.',
   },
   {
     id: 'server',
@@ -127,7 +130,8 @@ export const COMPUTERS: ComputerSpec[] = [
     maxBlocks: 2,
     ordersPerSecond: 100,
     decisionEveryMs: 20,
-    explain: 'Two blocks at once, fifty decisions a second, a hundred orders a second.',
+    maxSymbols: 8,
+    explain: 'Two blocks at once, fifty decisions a second, a hundred orders a second, eight symbols followed.',
   },
   {
     id: 'rack',
@@ -136,7 +140,8 @@ export const COMPUTERS: ComputerSpec[] = [
     maxBlocks: 4,
     ordersPerSecond: 500,
     decisionEveryMs: 10,
-    explain: 'Every block, a decision every tick, and orders as fast as the line can carry them.',
+    maxSymbols: 20,
+    explain: 'Every block, every symbol, a decision every tick, and orders as fast as the line can carry them.',
   },
 ];
 

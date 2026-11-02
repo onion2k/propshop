@@ -4,7 +4,7 @@
 import { MS_PER_HOUR, MS_PER_SECOND, activity, isMarketOpen } from './clock';
 import { Exchange, type SavedExchange } from './exchange';
 import type { Random } from './random';
-import type { ExchangeSpec, RegimeSpec, StockSpec } from './types';
+import type { ExchangeSpec, FactorSpec, RegimeSpec, StockSpec } from './types';
 
 /** A day with no character: every multiplier one, no drift. What the market runs on until the game says. */
 export const PLAIN_DAY: RegimeSpec = {
@@ -41,6 +41,7 @@ export interface HistoryPoint {
 }
 
 export interface SavedMarket {
+  factors?: { market: number; sectors: Record<string, number> };
   regime?: RegimeSpec;
   drifts?: Record<string, number>;
   fair: Record<string, number>;
@@ -54,6 +55,9 @@ export interface SavedMarket {
 export class Market {
   readonly stocks: readonly StockSpec[];
   readonly exchanges: Exchange[];
+  private readonly factorSpec: FactorSpec;
+  /** The market's and each sector's running factor, basis points away from where they started. */
+  readonly factors = { market: 0, sectors: new Map<string, number>() };
   /** True fair value per symbol, cents, a float. */
   readonly fair = new Map<string, number>();
   /** Where fair value is pulled back toward; news moves this. */
@@ -66,13 +70,43 @@ export class Market {
   regime: RegimeSpec = PLAIN_DAY;
   private drifts = new Map<string, number>();
 
-  constructor(stocks: StockSpec[], exchanges: ExchangeSpec[]) {
+  constructor(
+    stocks: StockSpec[],
+    exchanges: ExchangeSpec[],
+    factors: FactorSpec = { marketHourlyBps: 0, sectorHourlyBps: 0, ownReversionPerHour: 0.1 },
+  ) {
     this.stocks = stocks;
+    this.factorSpec = factors;
     this.exchanges = exchanges.map((e) => new Exchange(e, stocks));
     for (const s of stocks) {
       this.fair.set(s.symbol, s.startPrice);
       this.anchor.set(s.symbol, s.startPrice);
       this.history.set(s.symbol, []);
+      this.factors.sectors.set(s.sector, 0);
+    }
+    this.settleIndexes();
+    for (const e of this.exchanges) {
+      for (const s of stocks) {
+        if (s.constituents) {
+          const st = e.stocks.get(s.symbol);
+          if (st) st.belief = this.fair.get(s.symbol) ?? 0;
+        }
+      }
+    }
+  }
+
+  /** An index's fair value is the average of its constituents', and its anchor the same. */
+  private settleIndexes(): void {
+    for (const s of this.stocks) {
+      if (!s.constituents || s.constituents.length === 0) continue;
+      let fair = 0;
+      let anchor = 0;
+      for (const c of s.constituents) {
+        fair += this.fair.get(c) ?? 0;
+        anchor += this.anchor.get(c) ?? 0;
+      }
+      this.fair.set(s.symbol, fair / s.constituents.length);
+      this.anchor.set(s.symbol, anchor / s.constituents.length);
     }
   }
 
@@ -133,19 +167,34 @@ export class Market {
     }
     const hours = dt / MS_PER_HOUR;
     const r = this.regime;
+    // The factors: a market move and a move per sector, each a wander pulled gently back toward nought, so the
+    // tape moves together a little and each sector together more. Taken by every stock in proportion.
+    const marketMove =
+      this.factorSpec.marketHourlyBps * r.vol * Math.sqrt(hours) * random.normal() - this.factors.market * 0.1 * hours;
+    this.factors.market += marketMove;
+    const sectorMoves = new Map<string, number>();
+    for (const [sector, level] of this.factors.sectors) {
+      const move = this.factorSpec.sectorHourlyBps * r.vol * Math.sqrt(hours) * random.normal() - level * 0.1 * hours;
+      this.factors.sectors.set(sector, level + move);
+      sectorMoves.set(sector, move);
+    }
     for (const s of this.stocks) {
+      if (s.constituents) continue;
       const fair = this.fair.get(s.symbol) ?? s.startPrice;
       const anchor = this.anchor.get(s.symbol) ?? s.startPrice;
-      // Mean reversion pulls a tenth of the gap back each hour; the wander is the stock's own volatility, scaled
+      const common = (fair * ((s.beta ?? 1) * marketMove + (sectorMoves.get(s.sector) ?? 0))) / 10_000;
+      // The stock's own wander comes back to its anchor at the content's rate, a liquidity shock rather than a
+      // repricing, since the news, the drift and the factors move the anchor itself; the wander is scaled
       // by the day; a trending day adds a drift, which moves the anchor too so reversion does not fight it; and
       // now and then a burst of orders shoves the price a few cents at once, which is what the fast firms live on.
-      const drift = this.open ? (this.drifts.get(s.symbol) ?? 0) * dt : 0;
-      let next =
-        fair + (anchor - fair) * 0.1 * hours + s.hourlyVol * r.vol * Math.sqrt(hours) * random.normal() + drift;
+      const drift = (this.open ? (this.drifts.get(s.symbol) ?? 0) * dt : 0) + common;
+      const reversion = Math.min(1, this.factorSpec.ownReversionPerHour * hours);
+      let next = fair + (anchor - fair) * reversion + s.hourlyVol * r.vol * Math.sqrt(hours) * random.normal() + drift;
       if (drift !== 0) this.anchor.set(s.symbol, anchor + drift);
       if (random.chance((s.jumpsPerSecond * r.jumpRate * dt) / 1000)) next += s.jumpSize * r.jumpSize * random.normal();
       this.fair.set(s.symbol, Math.max(100, next));
     }
+    this.settleIndexes();
   }
 
   private sample(now: number): void {
@@ -164,6 +213,7 @@ export class Market {
     const exchanges: Record<string, SavedExchange> = {};
     for (const e of this.exchanges) exchanges[e.id] = e.save();
     return {
+      factors: { market: this.factors.market, sectors: Object.fromEntries(this.factors.sectors) },
       regime: this.regime,
       drifts: Object.fromEntries(this.drifts),
       fair: Object.fromEntries(this.fair),
@@ -176,6 +226,10 @@ export class Market {
   }
 
   load(saved: SavedMarket): void {
+    if (saved.factors) {
+      this.factors.market = saved.factors.market;
+      for (const [k, v] of Object.entries(saved.factors.sectors)) this.factors.sectors.set(k, v);
+    }
     if (saved.regime) this.regime = saved.regime;
     this.drifts = new Map(Object.entries(saved.drifts ?? {}));
     for (const [k, v] of Object.entries(saved.fair)) this.fair.set(k, v);

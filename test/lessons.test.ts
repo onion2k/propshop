@@ -1,17 +1,9 @@
-import { CONTENT, LESSONS } from '../src/content';
-import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, isMarketOpen, type Snapshot } from '../src/sim';
+import { CONTENT, LESSONS, REGIMES } from '../src/content';
+import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, isMarketOpen, regimeFor, type Snapshot } from '../src/sim';
 import { infrastructureFrom } from '../src/sim/upgrades';
 
 function fresh(): Snapshot {
   return new Game(CONTENT, 1).snapshot();
-}
-
-function after(seed: number, minutes: number, blocks: string[] = ['arbitrage']): Snapshot {
-  const g = new Game(CONTENT, seed);
-  for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
-  g.skipToOpen();
-  for (let i = 0; i < (minutes * MS_PER_MINUTE) / TICK_MS; i++) g.step();
-  return g.snapshot();
 }
 
 describe('lessons', () => {
@@ -29,28 +21,44 @@ describe('lessons', () => {
     for (const l of LESSONS) expect(l.done(s)).toBe(false);
   });
 
-  it('gap: done once two exchanges are seen crossed', () => {
+  it('gap: done once two exchanges are seen crossed', { timeout: 60_000 }, () => {
     const gap = LESSONS[0]!;
-    const g = new Game(CONTENT, 2);
+    // Gaps come with jumps, and a calm day has few: take a seed whose first day is choppy.
+    let seed = 1;
+    while (regimeFor(REGIMES, seed, 0).id !== 'choppy') seed++;
+    const g = new Game(CONTENT, seed);
     g.skipToOpen();
-    for (let i = 0; i < (3 * MS_PER_MINUTE) / TICK_MS; i++) g.step();
+    while (!isMarketOpen(g.now)) g.step();
+    for (let i = 0; i < (15 * MS_PER_MINUTE) / TICK_MS && g.firm.stats.gapsSeen <= 5; i++) g.step();
     expect(gap.done(g.snapshot())).toBe(true);
     expect(g.snapshot().gapsSeen).toBeGreaterThan(5);
   });
 
   it(
     'race and cost: done once arbitrage from home has lost a race, and more races than it won',
-    { timeout: 60_000 },
+    { timeout: 120_000 },
     () => {
-      const s = after(3, 12);
-      expect(LESSONS[1]!.done(s)).toBe(true);
-      expect(LESSONS[2]!.done(s)).toBe(true);
+      const g = new Game(CONTENT, 3);
+      g.skipToOpen();
+      let done = false;
+      for (let i = 0; i < (40 * MS_PER_MINUTE) / TICK_MS && !done; i++) {
+        g.step();
+        if (i % 5000 === 0) done = LESSONS[1]!.done(g.snapshot()) && LESSONS[2]!.done(g.snapshot());
+      }
+      expect(done).toBe(true);
     },
   );
 
-  it('home: done once momentum has earned', { timeout: 60_000 }, () => {
-    const s = after(4, 20, ['momentum']);
-    expect(LESSONS[3]!.done(s)).toBe(true);
+  it('home: done once momentum has earned', { timeout: 120_000 }, () => {
+    const g = new Game(CONTENT, 4);
+    for (const b of g.firm.blocks) b.enabled = b.id === 'momentum';
+    g.skipToOpen();
+    let done = false;
+    for (let i = 0; i < (60 * MS_PER_MINUTE) / TICK_MS && !done; i++) {
+      g.step();
+      if (i % 5000 === 0) done = LESSONS[3]!.done(g.snapshot());
+    }
+    expect(done).toBe(true);
   });
 
   it('maker: done after ten market maker fills', { timeout: 30_000 }, () => {

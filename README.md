@@ -11,11 +11,13 @@ http://localhost:5181.
 
 ## What is in it
 
-- **A market, not a price feed.** Three fictional stocks trade on three
-  fictional exchanges, each with its own price-time order book fed by a
-  crowd of background traders. Each exchange's crowd learns about a move at
-  its own pace, so for a few hundred milliseconds they disagree, and that
-  disagreement is what every firm in the game is racing for.
+- **A market, not a price feed.** Twelve fictional stocks in four sectors
+  and an index over them trade on three fictional exchanges, each with its
+  own price-time order book fed by a crowd of background traders. Stocks
+  move with the market, with their sector and on their own. Each exchange's
+  crowd learns about a move at its own pace, so for a few hundred
+  milliseconds they disagree, and that disagreement is what every firm in
+  the game is racing for.
 - **Latency you can feel.** Your view of each exchange is as old as your
   distance from it, and your orders take as long again to arrive. From a
   home office that is tens of milliseconds; from a rack in the exchange
@@ -25,13 +27,17 @@ http://localhost:5181.
 - **Every order tells its race.** When was the quote you priced from
   published, when did your order leave, when did it arrive, and who took
   the quote before you, by how many milliseconds and by name.
-- **Seven strategy blocks and a script.** Cross-exchange arbitrage, market
-  making, momentum, mean reversion, a stale-quote sniper and news reaction,
-  each with explained parameters and the day it suits. Or write your own in
-  JavaScript, with a loop budget, no chance, and the page out of reach.
+- **Eight strategy blocks and a script.** Cross-exchange arbitrage, market
+  making, momentum, mean reversion, a stale-quote sniper, pairs, index
+  arbitrage and news reaction, each with explained parameters and the day
+  it suits. Or write your own in JavaScript, with a loop budget, no chance,
+  and the page out of reach.
+- **A watchlist your hardware bounds.** A laptop follows four symbols, a
+  server eight, a rack all of them; the blocks see only what is watched.
+  Scale is the thing an upgrade buys.
 - **Rivals who are faster than you.** Four firms run the same arbitrage
   from better seats. The fastest sits in two exchange buildings on a
-  microwave line and earns about fifteen thousand a day.
+  microwave line and earns about ten thousand a day.
 - **Days with a character.** Calm, trending, choppy or news-heavy, drawn
   from the seed, named in the top bar and kept in the day report. The block
   that worked yesterday is the wrong one today.

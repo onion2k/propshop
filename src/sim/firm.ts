@@ -23,8 +23,10 @@ import type { Headline, Infrastructure } from './types';
 /** How many fills and how many finished orders a firm remembers. */
 const FILL_LOG = 200;
 const ORDER_LOG = 200;
-/** How many recent mids per symbol a firm keeps for the momentum block. */
-const MID_LOG = 60;
+/** The midpoint history the blocks read: a sample every quarter second of simulated time, so many kept. */
+export const MID_SAMPLE_EVERY = 250;
+/** Ten minutes of samples: enough for a pair's ratio to have somewhere to come back from. */
+const MID_LOG = 2400;
 
 export interface BlockSetting {
   id: string;
@@ -112,6 +114,7 @@ export interface SavedFirm {
   blocks: BlockSetting[];
   risk?: RiskSettings;
   halt?: Halt | null;
+  watch?: string[];
   orders: OpenOrder[];
   fills: Fill[];
   mids: Record<string, number[]>;
@@ -141,6 +144,8 @@ export class Firm {
   heat = 0;
   infra: Infrastructure;
   blocks: BlockSetting[];
+  /** The symbols the firm watches and its blocks see: at most what the computer allows. */
+  watch: string[] = [];
   risk: RiskSettings;
   halt: Halt | null = null;
   /** Equity as of the last step, for the exposure cap, which cannot reach the market from send. */
@@ -148,6 +153,7 @@ export class Firm {
   readonly orders = new Map<number, OpenOrder>();
   fills: Fill[] = [];
   readonly mids = new Map<string, number[]>();
+  private midSampledAt = -Infinity;
   stats: FirmStats = {
     ordersSent: 0,
     ordersDropped: 0,
@@ -179,7 +185,17 @@ export class Firm {
   }
 
   static defaultBlocks(enabled: string[] = []): BlockSetting[] {
-    return ['arbitrage', 'marketMaker', 'momentum', 'meanReversion', 'sniper', 'newsReaction', SCRIPT_ID].map((id) => ({
+    return [
+      'arbitrage',
+      'marketMaker',
+      'momentum',
+      'meanReversion',
+      'sniper',
+      'pairs',
+      'indexArb',
+      'newsReaction',
+      SCRIPT_ID,
+    ].map((id) => ({
       id,
       enabled: enabled.includes(id),
       params: paramsFrom(blockById(id).spec),
@@ -207,6 +223,16 @@ export class Firm {
     if (change.enabled !== undefined) b.enabled = change.enabled;
     if (change.params) b.params = paramsFrom(blockById(id).spec, { ...b.params, ...change.params });
     if (change.source !== undefined && id === SCRIPT_ID) b.source = change.source;
+  }
+
+  /** What the blocks see: the watchlist, cut to the computer's limit, or every symbol where none is set. */
+  watching(all: readonly string[]): string[] {
+    const list = this.watch.length > 0 ? this.watch.filter((w) => all.includes(w)) : [...all];
+    return list.slice(0, this.infra.computer.maxSymbols);
+  }
+
+  setWatch(symbols: string[]): void {
+    this.watch = [...new Set(symbols)];
   }
 
   enabledBlocks(): BlockSetting[] {
@@ -322,6 +348,8 @@ export class Firm {
     this.blockPositions.set(order.block, mine);
     this.cash -= signed * price + fee;
     this.feesPaid += fee;
+    // A fill that realised nothing says nought, not minus nought, which a save would lose.
+    if (realised === 0) realised = 0;
     this.realised += realised;
     this.stats.fillsReceived++;
     const fill: Fill = {
@@ -361,10 +389,12 @@ export class Firm {
 
   private view(now: number, market: Market, news: readonly Headline[]): MarketView {
     const quotes: Record<string, Record<string, SeenQuote>> = {};
+    const symbols = this.watching(market.stocks.map((s) => s.symbol));
+    const watched = market.stocks.filter((s) => symbols.includes(s.symbol));
     for (const e of market.exchanges) {
       const seen = now - this.dataLatency(e.id);
       const perSymbol: Record<string, SeenQuote> = {};
-      for (const s of market.stocks) {
+      for (const s of watched) {
         const q = e.quoteAsOf(s.symbol, seen);
         if (q) perSymbol[s.symbol] = q;
       }
@@ -372,7 +402,9 @@ export class Firm {
     }
     const positions: Record<string, number> = {};
     for (const [symbol, pos] of this.positions) positions[symbol] = pos.qty;
-    for (const s of market.stocks) {
+    const sample = now - this.midSampledAt >= MID_SAMPLE_EVERY;
+    if (sample) this.midSampledAt = now;
+    for (const s of watched) {
       let bestBid: number | null = null;
       let bestAsk: number | null = null;
       let bidOn: string | null = null;
@@ -390,7 +422,7 @@ export class Firm {
         }
       }
       if (bestBid !== null && bestAsk !== null && bestAsk < bestBid && bidOn !== askOn) this.stats.gapsSeen++;
-      if (bestBid !== null && bestAsk !== null) {
+      if (sample && bestBid !== null && bestAsk !== null) {
         const log = this.mids.get(s.symbol) ?? [];
         log.push((bestBid + bestAsk) / 2);
         if (log.length > MID_LOG) log.splice(0, log.length - MID_LOG);
@@ -403,9 +435,17 @@ export class Firm {
     for (const e of market.exchanges) latency[e.id] = this.latency(e.id);
     const blockPositions: Record<string, Record<string, number>> = {};
     for (const [block, bySymbol] of this.blockPositions) blockPositions[block] = Object.fromEntries(bySymbol);
+    const sectors: Record<string, string> = {};
+    const constituents: Record<string, readonly string[]> = {};
+    for (const s of market.stocks) {
+      sectors[s.symbol] = s.sector;
+      if (s.constituents) constituents[s.symbol] = s.constituents;
+    }
     return {
       now,
-      symbols: market.stocks.map((s) => s.symbol),
+      symbols,
+      sectors,
+      constituents,
       exchanges: market.exchanges.map((e) => e.id),
       quotes,
       fees: this.feeTable,
@@ -659,6 +699,7 @@ export class Firm {
       blocks: this.blocks,
       risk: this.risk,
       halt: this.halt,
+      watch: this.watch,
       orders: [...this.orders.values()],
       fills: this.fills,
       mids: Object.fromEntries(this.mids),
@@ -689,6 +730,7 @@ export class Firm {
     f.heat = s.heat;
     if (s.risk) f.risk = { ...s.risk };
     f.halt = s.halt ?? null;
+    f.watch = s.watch ? [...s.watch] : [];
     for (const o of s.orders) f.orders.set(o.localId, { ...o });
     f.fills = s.fills.map((x) => ({ ...x }));
     for (const [k, v] of Object.entries(s.mids)) f.mids.set(k, [...v]);

@@ -87,7 +87,7 @@ export function App({ store }: { store: Store }) {
       {page === 'market' && (
         <main className="layout">
           <div className="column">
-            <MarketPanel s={s} />
+            <MarketPanel s={s} store={store} />
           </div>
           <div className="column">
             <FirmPanel s={s} />

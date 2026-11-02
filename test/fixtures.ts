@@ -48,6 +48,7 @@ export const SLOW: Infrastructure = {
     maxBlocks: 1,
     ordersPerSecond: 20,
     decisionEveryMs: 50,
+    maxSymbols: 4,
     explain: 'One block at a time.',
   },
 };
@@ -68,6 +69,7 @@ export const FAST: Infrastructure = {
     maxBlocks: 4,
     ordersPerSecond: 200,
     decisionEveryMs: 10,
+    maxSymbols: 20,
     explain: 'Plenty.',
   },
 };

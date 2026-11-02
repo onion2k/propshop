@@ -65,8 +65,11 @@ describe('regimes', () => {
   });
 
   it('drifts a trending day the way its sign says, over the session', { timeout: 120_000 }, () => {
-    const g = new Game(CONTENT, 13);
-    // No news, so the anchor moves by the drift and nothing else.
+    // No news and no factors, so the anchor moves by the drift and nothing else.
+    const g = new Game(
+      { ...CONTENT, factors: { marketHourlyBps: 0, sectorHourlyBps: 0, ownReversionPerHour: 0.1 } },
+      13,
+    );
     g.news.regimeFor = () => ({ newsRate: 0, newsSize: 0 });
     g.news.scheduled = [];
     const day = dayOf(13, 'trending');
@@ -75,6 +78,8 @@ describe('regimes', () => {
     while (isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
     const regime = regimeFor(REGIMES, 13, day);
     g.market.stocks.forEach((s, i) => {
+      // An index has no drift of its own: its constituents' drifts net out in the average.
+      if (s.constituents) return;
       const moved = g.market.anchor.get(s.symbol)! - start.get(s.symbol)!;
       const expected = (driftSign(13, day, i) * regime.driftBps * start.get(s.symbol)!) / 10_000;
       expect(moved).toBeCloseTo(expected, 0);

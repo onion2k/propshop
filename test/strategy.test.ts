@@ -26,6 +26,8 @@ function view(over: Partial<MarketView> = {}): MarketView {
   return {
     now: 10_000,
     symbols: ['ABC'],
+    sectors: { ABC: 'tech' },
+    constituents: {},
     exchanges: ['HARBOR', 'LAKESIDE'],
     quotes: { HARBOR: { ABC: quote(4100, 4101) }, LAKESIDE: { ABC: quote(4100, 4101) } },
     fees: { HARBOR: 0.3, LAKESIDE: 0.25 },
@@ -400,6 +402,89 @@ describe('strategy blocks', () => {
       });
       // At the limit it will not add; with the gap still open it holds rather than flattening into it.
       expect(sn.decide(full, p)).toEqual([]);
+    });
+  });
+
+  describe('pairs', () => {
+    const pr = blockById('pairs');
+    const p = paramsFrom(pr.spec, { lookback: 4, threshold: 50, size: 200, newsPause: 60, hold: 5 });
+    const pairView = (ratioNow: number, extra: Partial<MarketView> = {}) =>
+      view({
+        symbols: ['ABC', 'QNT', 'XYZ'],
+        sectors: { ABC: 'tech', QNT: 'tech', XYZ: 'utilities' },
+        quotes: {
+          HARBOR: { ABC: quote(4100, 4101), QNT: quote(8200, 8201), XYZ: quote(2500, 2501) },
+          LAKESIDE: { ABC: quote(4100, 4101), QNT: quote(8200, 8201), XYZ: quote(2500, 2501) },
+        },
+        // The ratio ABC/QNT sat at 0.5 and is now ratioNow.
+        mids: {
+          ABC: [4100, 4100, 4100, 4100 * (ratioNow / 0.5)],
+          QNT: [8200, 8200, 8200, 8200],
+          XYZ: [2500, 2500, 2500, 2500],
+        },
+        ...extra,
+      });
+
+    it('sells the leader and buys the laggard when the ratio has strayed, in the same sector only', () => {
+      // ABC has run three percent ahead of QNT, well past fifty basis points of a four-decision average.
+      const intents = pr.decide(pairView(0.515), p);
+      expect(intents).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'sell', price: 4100, size: 200, ioc: true },
+        { kind: 'order', symbol: 'QNT', exchange: 'HARBOR', side: 'buy', price: 8201, size: 200, ioc: true },
+      ]);
+      expect(pr.decide(pairView(0.5), p)).toEqual([]);
+    });
+
+    it('closes both legs once the ratio is back, and steps away after news names either', () => {
+      const held = { ABC: -200, QNT: 200 };
+      const back = pairView(0.5, { positions: held, blockPositions: { pairs: held } });
+      expect(pr.decide(back, p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: 4101, size: 200, ioc: true },
+        { kind: 'order', symbol: 'QNT', exchange: 'HARBOR', side: 'sell', price: 8200, size: 200, ioc: true },
+      ]);
+      const headline = { id: 1, at: 5_000, text: 'x', symbols: ['QNT'], sector: 'tech', direction: 1 as const };
+      expect(pr.decide(pairView(0.515, { news: [headline] }), p)).toEqual([]);
+    });
+  });
+
+  describe('index arbitrage', () => {
+    const ia = blockById('indexArb');
+    const p = paramsFrom(ia.spec, { threshold: 2, baskets: 1 });
+    const members = ['AAA', 'BBB'];
+    const indexView = (idxBid: number, idxAsk: number, extra: Partial<MarketView> = {}) =>
+      view({
+        symbols: ['IDX', 'AAA', 'BBB'],
+        sectors: { IDX: 'index', AAA: 'a', BBB: 'b' },
+        constituents: { IDX: members },
+        // The basket averages 5000 bid, 5001 ask.
+        quotes: {
+          HARBOR: { IDX: quote(idxBid, idxAsk), AAA: quote(4000, 4001), BBB: quote(6000, 6001) },
+          LAKESIDE: { IDX: quote(idxBid, idxAsk), AAA: quote(4000, 4001), BBB: quote(6000, 6001) },
+        },
+        ...extra,
+      });
+
+    it('buys a cheap index and sells its basket, one share each per basket member for every member of the index', () => {
+      // Index ask 4995 against a basket bid of 5000: five cents of edge, fees under one.
+      expect(ia.decide(indexView(4994, 4995), p)).toEqual([
+        { kind: 'order', symbol: 'IDX', exchange: 'HARBOR', side: 'buy', price: 4995, size: 200, ioc: true },
+        { kind: 'order', symbol: 'AAA', exchange: 'HARBOR', side: 'sell', price: 4000, size: 100, ioc: true },
+        { kind: 'order', symbol: 'BBB', exchange: 'HARBOR', side: 'sell', price: 6000, size: 100, ioc: true },
+      ]);
+      expect(ia.decide(indexView(5006, 5007), p)[0]).toMatchObject({ symbol: 'IDX', side: 'sell', size: 200 });
+    });
+
+    it('does nothing within the threshold or without the whole basket watched, and unwinds when the gap closes', () => {
+      expect(ia.decide(indexView(5000, 5001), p)).toEqual([]);
+      expect(ia.decide(indexView(4994, 4995, { symbols: ['IDX', 'AAA'] }), p)).toEqual([]);
+      const held = { IDX: 200, AAA: -100, BBB: -100 };
+      const closed = indexView(5000, 5001, { positions: held, blockPositions: { indexArb: held } });
+      expect(ia.decide(closed, p)).toHaveLength(3);
+      // A leg left over from a basket that did not all fill is scratched.
+      const leg = { AAA: -100 };
+      expect(ia.decide(indexView(5000, 5001, { positions: leg, blockPositions: { indexArb: leg } }), p)).toEqual([
+        { kind: 'order', symbol: 'AAA', exchange: 'HARBOR', side: 'buy', price: 4001, size: 100, ioc: true },
+      ]);
     });
   });
 

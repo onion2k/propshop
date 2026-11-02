@@ -57,15 +57,18 @@ For anything new, check what it does:
 
 - The economy's pacing is measured by the PACE harness over three seeds and tuned by hand; nothing holds
   it. A run of `PACE=1 PACE_MINUTES=20 npx vitest run test/pace.test.ts` takes about ten minutes.
-- What each setup earned on 2026-11-02 with three exchanges, dollars a day over three seeds: home
-  momentum 4,700; home arbitrage 900 (PACIFIC is down the road); city arbitrage -2,900 chasing every
-  exchange and 900 limited to those within 10ms; colocated arbitrage 10,700; racks at two exchanges on
-  microwave (the fastest rival) 15,600; the maker -4,000 to -7,000. The shop is sized to weeks of that.
+- What each setup earned on 2026-11-02 on the twelve-stock universe, dollars a day over three seeds: home
+  momentum 2,200; home arbitrage about nought; colocated arbitrage 6,900; the fastest rival 11,000; the
+  colocated maker 3,300 at two cents and 38,000 joining the touch on every book; pairs 600 colocated; mean
+  reversion -4,000 to -10,000; index arbitrage fires a few hundred times an hour from a rack and loses about
+  a thousand on scratched legs. The shop is sized to weeks of that.
 - The market maker is near break-even and lives by the day's regime: about -900 dollars a day over three
   seeds at home and colocated, with a calm day positive and a trending day not. It reads the book without
   its own orders in it (`touchExcluding`); what it still cannot beat is the fastest bot taking a quote in
   the tick before its cancel lands.
 - Latency below one tick (2ms) is one tick: a colocated firm and one a millisecond away are the same.
+- The crowd acts on each book once in five ticks, staggered. Every book is swept on its turn: a sweep keyed
+  to the exchange's clock once left four books in five never swept, and everything fed on them.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.
 - No fuzzer and no invariants file yet.

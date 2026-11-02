@@ -28,6 +28,8 @@ function view(over: Partial<MarketView> = {}): MarketView {
   return {
     now: 10_000,
     symbols: ['ABC'],
+    sectors: { ABC: 'tech' },
+    constituents: {},
     exchanges: ['HARBOR', 'LAKESIDE'],
     quotes: { HARBOR: { ABC: quote(4100, 4101) }, LAKESIDE: { ABC: quote(4102, 4103, 100) } },
     fees: { HARBOR: 0.3, LAKESIDE: 0.25 },

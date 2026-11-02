@@ -1,44 +1,90 @@
-// The market: per stock, what the firm can see of each exchange's book, the last trade, and a chart with both
-// exchanges on it so the gap that arbitrage lives on is visible to the eye.
+// The market: a watchlist of every symbol, with what the firm can see of each and a tick to watch it, and the
+// selected symbol's exchange rows, ladder and chart beneath. What is watched is what the blocks see, and the
+// computer says how many that may be.
 
 import { useState } from 'react';
 import type { Level, Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
 import { price, shares } from './format';
 import { Term } from './Glossary';
+import type { Store } from './store';
 
-export function MarketPanel({ s }: { s: Snapshot }) {
+export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
+  const [picked, setPicked] = useState<string | null>(null);
   const [ladder, setLadder] = useState<string | null>(null);
+  const selected = s.stocks.find((st) => st.symbol === picked) ?? s.stocks.find((st) => st.watched) ?? s.stocks[0];
+  const full = s.watching.count >= s.watching.max;
   return (
     <section className="panel market">
       <h2>
         Market{' '}
         <span className="muted">
-          · what you can see,{' '}
-          {Object.entries(s.latency)
+          · <Term id="watchlist">watching</Term> {s.watching.count} of {s.watching.max} · what you can see is{' '}
+          {Object.entries(s.dataLatency)
             .map(([e, l]) => `${e} ${l}ms`)
             .join(', ')}{' '}
-          late
+          late · {s.gapsSeen} gaps seen
         </span>
       </h2>
-      {s.stocks.map((st) => (
-        <div key={st.symbol} className="stock">
+      <table className="watchlist">
+        <thead>
+          <tr>
+            <th>Watch</th>
+            <th>Symbol</th>
+            <th>Sector</th>
+            <th className="num">
+              <Term id="bid-ask">Bid</Term>
+            </th>
+            <th className="num">Ask</th>
+            <th className="num">Day</th>
+          </tr>
+        </thead>
+        <tbody>
+          {s.stocks.map((st) => (
+            <tr
+              key={st.symbol}
+              className={`${st.symbol === selected?.symbol ? 'picked' : ''} ${st.watched ? '' : 'unwatched'}`}
+              onClick={() => setPicked(st.symbol)}
+            >
+              <td onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={st.watched}
+                  disabled={!st.watched && full}
+                  onChange={(e) => store.setWatch(st.symbol, e.target.checked)}
+                  aria-label={`Watch ${st.symbol}`}
+                />
+              </td>
+              <td>
+                <strong>{st.symbol}</strong> <span className="muted small">{st.name}</span>
+              </td>
+              <td className="muted">{st.constituents ? `index of ${st.constituents.length}` : st.sector}</td>
+              <td className="num bid">{price(st.bid)}</td>
+              <td className="num ask">{price(st.ask)}</td>
+              <td className={`num ${st.dayChange === null ? 'muted' : st.dayChange >= 0 ? 'up' : 'down'}`}>
+                {st.dayChange === null ? '—' : `${st.dayChange >= 0 ? '+' : ''}${(st.dayChange / 100).toFixed(2)}`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {selected && (
+        <div className="stock" data-symbol={selected.symbol}>
           <div className="stock-head">
-            <strong>{st.symbol}</strong>{' '}
+            <strong>{selected.symbol}</strong>{' '}
             <span className="muted">
-              {st.name} · {st.sector}
+              {selected.name} ·{' '}
+              {selected.constituents ? `index of ${selected.constituents.join(', ')}` : selected.sector}
             </span>
             <span className="muted right">
-              <Term id="fair-value">fair</Term> <span className="num">{price(Math.round(st.fair))}</span>
+              <Term id="fair-value">fair</Term> <span className="num">{price(Math.round(selected.fair))}</span>
             </span>
           </div>
           <table className="quotes">
             <thead>
               <tr>
                 <th>Exchange</th>
-                <th className="num">
-                  <Term id="bid-ask">Bid</Term>
-                </th>
+                <th className="num">Bid</th>
                 <th className="num">Ask</th>
                 <th className="num">Spread</th>
                 <th className="num">Last</th>
@@ -46,8 +92,8 @@ export function MarketPanel({ s }: { s: Snapshot }) {
               </tr>
             </thead>
             <tbody>
-              {st.exchanges.map((ex) => {
-                const key = `${st.symbol}:${ex.id}`;
+              {selected.exchanges.map((ex) => {
+                const key = `${selected.symbol}:${ex.id}`;
                 const q = ex.seen;
                 const spread = q && q.bid !== null && q.ask !== null ? q.ask - q.bid : null;
                 return (
@@ -70,15 +116,15 @@ export function MarketPanel({ s }: { s: Snapshot }) {
               })}
             </tbody>
           </table>
-          {st.exchanges.map(
+          {selected.exchanges.map(
             (ex) =>
-              ladder === `${st.symbol}:${ex.id}` && (
+              ladder === `${selected.symbol}:${ex.id}` && (
                 <Ladder key={ex.id} exchange={ex.id} bids={ex.depth.bids} asks={ex.depth.asks} />
               ),
           )}
-          <Chart history={st.history} exchanges={st.exchanges.map((e) => e.id)} />
+          <Chart history={selected.history} exchanges={selected.exchanges.map((e) => e.id)} />
         </div>
-      ))}
+      )}
     </section>
   );
 }

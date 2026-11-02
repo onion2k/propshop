@@ -164,6 +164,47 @@ export const GLOSSARY: GlossaryEntry[] = [
       'market maker block is what gets taken. Every firm in this market is on one side of that or the other.',
   },
   {
+    id: 'factors',
+    term: 'Factors and correlation',
+    short: 'Stocks move together: with the market, with their sector, and on their own.',
+    long:
+      'A stock\u2019s move on any day is partly the whole market\u2019s move, scaled by its beta, partly its ' +
+      'sector\u2019s, and partly its own. The game draws a market factor and a factor per sector each tick, and ' +
+      'every stock takes its share. That is why two technology stocks rise and fall together more than a ' +
+      'technology stock and a utility do, and why there is such a thing as a pair.',
+  },
+  {
+    id: 'pairs',
+    term: 'Pairs trading',
+    short: 'Two stocks that move together, traded against each other when they come apart.',
+    long:
+      'If two stocks share a sector, the ratio of their prices wanders far less than either price. When the ' +
+      'ratio strays, one has moved and the other has not yet; sell the leader and buy the laggard, and the two ' +
+      'usually come back in line. The risk is that one of them had a reason of its own to move, which is what ' +
+      'company news is: that is why the block steps out of a pair for a while after a headline names either.',
+  },
+  {
+    id: 'index-arb',
+    term: 'Index arbitrage',
+    short: 'The index against its basket: when they disagree, buy one and sell the other.',
+    long:
+      'An index is worth the average of the stocks in it, and it trades as if it were a stock, so for a moment ' +
+      'it can be cheap or dear against its basket. Buying the cheap one and selling the dear one locks in the ' +
+      'difference once they meet again. Doing it takes an order for the index and one for every stock in the ' +
+      'basket, at once: a computer that can only send so many a second is left with a leg or two, which is ' +
+      'the oldest reason there is to buy a bigger one.',
+  },
+  {
+    id: 'watchlist',
+    term: 'Watchlist and scale',
+    short: 'A computer can follow so many symbols; the firm chooses which.',
+    long:
+      'Real high-frequency firms watch thousands of names, and the edge per name is tiny: the business is ' +
+      'scale. In the game a laptop can follow four symbols, a server eight and a rack all of them. The blocks ' +
+      'see only what is watched, so a pair needs both its stocks on the list and index arbitrage needs the ' +
+      'whole basket. Pick the list on the market page.',
+  },
+  {
     id: 'pnl',
     term: 'P&L: realised and unrealised',
     short: 'Money made on trades you have closed, and on positions you still hold.',

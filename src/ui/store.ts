@@ -32,6 +32,7 @@ export interface Store {
   buyUpgrade: Game['buyUpgrade'];
   buyTip: Game['buyTip'];
   setRisk: Game['setRisk'];
+  setWatch: Game['setWatch'];
 }
 
 export interface Storage {
@@ -122,6 +123,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     buyUpgrade: act((kind, id) => game.buyUpgrade(kind, id)),
     buyTip: act((id) => game.buyTip(id)),
     setRisk: act((change) => game.setRisk(change)),
+    setWatch: act((symbol, on) => game.setWatch(symbol, on)),
   };
   return store;
 }

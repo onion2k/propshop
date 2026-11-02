@@ -565,3 +565,22 @@ code {
 .layout.single {
   grid-template-columns: 1fr;
 }
+
+.watchlist tbody tr {
+  cursor: pointer;
+}
+.watchlist tbody tr:hover td {
+  background: #1d232c;
+}
+.watchlist tr.picked td {
+  background: #202a38;
+}
+.watchlist tr.unwatched td {
+  opacity: 0.6;
+}
+.watchlist input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+.chart {
+  height: 160px;
+}

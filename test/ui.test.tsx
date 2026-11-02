@@ -138,7 +138,7 @@ describe('App', () => {
       for (let i = 0; i < (90 * 1000) / TICK_MS; i++) store.game.step();
       store.publish();
     });
-    expect(document.querySelector('.script-log')?.textContent).toMatch(/hello from 3 stocks/);
+    expect(document.querySelector('.script-log')?.textContent).toMatch(/hello from 4 stocks/);
     fireEvent.change(source, { target: { value: 'nope(' } });
     fireEvent.click(screen.getByText('Apply'));
     act(() => {
@@ -217,6 +217,24 @@ describe('App', () => {
     expect(['Calm day', 'Trending day', 'Choppy day', 'News-heavy day']).toContain(name);
   });
 
+  it('lists every symbol on the watchlist, watches as many as the computer allows, and shows the picked one', () => {
+    const store = createStore(CONTENT, null, 16);
+    render(<App store={store} />);
+    expect(document.querySelectorAll('.watchlist tbody tr')).toHaveLength(13);
+    expect(document.querySelector('.market h2')?.textContent).toMatch(/watching 4 of 4/);
+    // Four watched, so an unwatched box is disabled until one is freed.
+    const idx = screen.getByLabelText('Watch IDX');
+    expect(idx).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Watch ABC'));
+    expect(store.game.firm.watching(CONTENT.stocks.map((x) => x.symbol))).toEqual(['QNT', 'LMN', 'VRT']);
+    fireEvent.click(screen.getByLabelText('Watch IDX'));
+    expect(store.game.firm.watching(CONTENT.stocks.map((x) => x.symbol))).toEqual(['QNT', 'LMN', 'VRT', 'IDX']);
+    // Picking a row shows its exchanges beneath.
+    fireEvent.click(screen.getByText('Meridian Oil'));
+    expect(document.querySelector('.stock')?.getAttribute('data-symbol')).toBe('MNO');
+    expect(document.querySelectorAll('.quotes tbody tr')).toHaveLength(3);
+  });
+
   it('shows your own shares in the ladder', () => {
     const store = createStore(CONTENT, null, 15);
     store.setBlock('arbitrage', { enabled: false });
@@ -235,9 +253,8 @@ describe('App', () => {
     );
     expect(withMine.length).toBeGreaterThan(0);
     const [symbol, exchange] = withMine[0]!;
-    const row = [...document.querySelectorAll('.quotes tr')].find(
-      (r) => r.textContent.includes(exchange) && (r.closest('.stock')?.textContent ?? '').includes(symbol),
-    );
+    fireEvent.click(screen.getByText(CONTENT.stocks.find((x) => x.symbol === symbol)!.name));
+    const row = [...document.querySelectorAll('.quotes tr')].find((r) => r.textContent.includes(exchange));
     fireEvent.mouseOver(row!);
     expect(document.querySelector('.ladder .mine')).not.toBeNull();
     expect(document.querySelectorAll('.ladder tbody .mine').length).toBeGreaterThan(0);

@@ -85,7 +85,11 @@ export interface Fill {
 /** What a block gets to see: the market as it has reached the firm, and the firm's own book. */
 export interface MarketView {
   now: number;
+  /** The symbols the firm watches: all a block may trade. */
   symbols: readonly string[];
+  /** Every symbol's sector, and an index's constituents, watched or not. */
+  sectors: Readonly<Record<string, string>>;
+  constituents: Readonly<Record<string, readonly string[]>>;
   exchanges: readonly string[];
   /** quotes[exchange][symbol], as of what has arrived; missing until the first quote lands. */
   quotes: Readonly<Record<string, Readonly<Record<string, SeenQuote>>>>;

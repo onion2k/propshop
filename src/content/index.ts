@@ -3,7 +3,7 @@ import type { Content } from '../sim';
 import { EXCHANGES } from './exchanges';
 import { NEWS } from './news';
 import { REGIMES } from './regimes';
-import { STOCKS } from './stocks';
+import { FACTORS, STOCKS } from './stocks';
 import { COMPETITORS, COMPUTERS, LOCATIONS, NETWORKS, START, STARTING_CASH } from './upgrades';
 
 export const CONTENT: Content = {
@@ -15,6 +15,7 @@ export const CONTENT: Content = {
   computers: COMPUTERS,
   competitors: COMPETITORS,
   regimes: REGIMES,
+  factors: FACTORS,
   startingCash: STARTING_CASH,
   start: START,
   firmName: 'Your firm',

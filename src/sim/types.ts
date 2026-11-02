@@ -4,6 +4,10 @@ export interface StockSpec {
   symbol: string;
   name: string;
   sector: string;
+  /** How much of the market's move this stock takes: one is the market's own. */
+  beta?: number;
+  /** An index: its fair value is the average of these symbols', and it has no wander of its own. */
+  constituents?: string[];
   /** Opening price, cents. */
   startPrice: number;
   /** How far the fair value wanders in an hour, in cents, one standard deviation. */
@@ -61,6 +65,8 @@ export interface ComputerSpec {
   ordersPerSecond: number;
   /** How often, in ms, the strategy gets to decide. */
   decisionEveryMs: number;
+  /** How many symbols it can watch at once. */
+  maxSymbols: number;
   explain: string;
 }
 
@@ -125,6 +131,19 @@ export interface RegimeSpec {
   driftBps: number;
 }
 
+/** How the market and each sector wander together, in basis points. */
+export interface FactorSpec {
+  /** One standard deviation of the market factor's move in an hour, basis points. */
+  marketHourlyBps: number;
+  /** The same for each sector's own factor. */
+  sectorHourlyBps: number;
+  /**
+   * How fast a stock's own wander comes back to its anchor, per hour: four is a half-life of about ten minutes.
+   * The factors and the news move the anchor itself, so only the stock's own noise is what reverts.
+   */
+  ownReversionPerHour: number;
+}
+
 /** Everything the content hands the sim. */
 export interface Content {
   stocks: StockSpec[];
@@ -135,6 +154,7 @@ export interface Content {
   computers: ComputerSpec[];
   competitors: CompetitorSpec[];
   regimes: RegimeSpec[];
+  factors: FactorSpec;
   /** Cents. */
   startingCash: number;
   start: { location: string; network: string; computer: string };
