@@ -179,7 +179,7 @@ export class Firm {
   }
 
   static defaultBlocks(enabled: string[] = []): BlockSetting[] {
-    return ['arbitrage', 'marketMaker', 'momentum', 'newsReaction', SCRIPT_ID].map((id) => ({
+    return ['arbitrage', 'marketMaker', 'momentum', 'meanReversion', 'sniper', 'newsReaction', SCRIPT_ID].map((id) => ({
       id,
       enabled: enabled.includes(id),
       params: paramsFrom(blockById(id).spec),

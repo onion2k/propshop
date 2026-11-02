@@ -334,6 +334,75 @@ describe('strategy blocks', () => {
     });
   });
 
+  describe('mean reversion', () => {
+    const mr = blockById('meanReversion');
+    const p = paramsFrom(mr.spec, { lookback: 5, threshold: 3, size: 200 });
+    it('fades a lurch above the average and flattens once it is back', () => {
+      // Average of the last five is 4100; the last is 4104: four above.
+      expect(mr.decide(view({ mids: { ABC: [4100, 4100, 4100, 4096, 4104] } }), p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'sell', price: 4100, size: 200, ioc: true },
+      ]);
+      expect(mr.decide(view({ mids: { ABC: [4100, 4100, 4100, 4104, 4096] } }), p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: 4101, size: 200, ioc: true },
+      ]);
+      const back = view({
+        mids: { ABC: [4100, 4100, 4100, 4100, 4101] },
+        positions: { ABC: -200 },
+        blockPositions: { meanReversion: { ABC: -200 } },
+      });
+      expect(mr.decide(back, p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: 4101, size: 200, ioc: true },
+      ]);
+    });
+    it('holds between the threshold and half of it, and waits for enough history', () => {
+      const between = view({
+        mids: { ABC: [4100, 4100, 4100, 4100, 4102] },
+        positions: { ABC: -200 },
+        blockPositions: { meanReversion: { ABC: -200 } },
+      });
+      expect(mr.decide(between, p)).toEqual([]);
+      expect(mr.decide(view({ mids: { ABC: [4100, 4110] } }), p)).toEqual([]);
+    });
+  });
+
+  describe('stale-quote sniper', () => {
+    const sn = blockById('sniper');
+    const p = paramsFrom(sn.spec, { threshold: 1, size: 200, maxPosition: 600 });
+    it('buys an ask under the other exchanges and sells a bid over them', () => {
+      // LAKESIDE still quotes 4100/4101 while HARBOR has moved to 4103/4104: LAKESIDE's ask is stale.
+      // The recent midpoints say the price was 4100: LAKESIDE is the one still there.
+      const stale = view({
+        mids: { ABC: [4100, 4100.5] },
+        quotes: { HARBOR: { ABC: quote(4103, 4104) }, LAKESIDE: { ABC: quote(4100, 4101, 300) } },
+      });
+      expect(sn.decide(stale, p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'LAKESIDE', side: 'buy', price: 4101, size: 200, ioc: true },
+      ]);
+      const staleBid = view({
+        mids: { ABC: [4100.5, 4100.5] },
+        quotes: { HARBOR: { ABC: quote(4096, 4097) }, LAKESIDE: { ABC: quote(4100, 4101) } },
+      });
+      expect(sn.decide(staleBid, p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'LAKESIDE', side: 'sell', price: 4100, size: 200, ioc: true },
+      ]);
+    });
+    it('does nothing within the threshold, and flattens once the gap has closed', () => {
+      expect(sn.decide(view(), p)).toEqual([]);
+      const holding = view({ positions: { ABC: 200 }, blockPositions: { sniper: { ABC: 200 } } });
+      expect(sn.decide(holding, p)).toEqual([
+        { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'sell', price: 4100, size: 200, ioc: true },
+      ]);
+      const full = view({
+        mids: { ABC: [4100, 4100.5] },
+        quotes: { HARBOR: { ABC: quote(4103, 4104) }, LAKESIDE: { ABC: quote(4100, 4101) } },
+        positions: { ABC: 600 },
+        blockPositions: { sniper: { ABC: 600 } },
+      });
+      // At the limit it will not add; with the gap still open it holds rather than flattening into it.
+      expect(sn.decide(full, p)).toEqual([]);
+    });
+  });
+
   describe('news reaction', () => {
     const nr = blockById('newsReaction');
     const p = paramsFrom(nr.spec, { size: 300, window: 30 });

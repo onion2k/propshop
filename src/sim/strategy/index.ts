@@ -1,8 +1,10 @@
 // The blocks the game ships, by id. A scripted block would register here too.
 import { arbitrage } from './arbitrage';
 import { marketMaker } from './marketMaker';
+import { meanReversion } from './meanReversion';
 import { momentum } from './momentum';
 import { newsReaction } from './newsReaction';
+import { sniper } from './sniper';
 import { EXAMPLE_SOURCE, SCRIPT_ID, scriptBlock } from './script';
 import type { StrategyBlock } from './types';
 
@@ -10,6 +12,8 @@ export const BLOCKS: readonly StrategyBlock[] = [
   arbitrage,
   marketMaker,
   momentum,
+  meanReversion,
+  sniper,
   newsReaction,
   scriptBlock(EXAMPLE_SOURCE),
 ];

@@ -144,6 +144,26 @@ export const GLOSSARY: GlossaryEntry[] = [
       'that only wobbles they bleed.',
   },
   {
+    id: 'mean-reversion',
+    term: 'Mean reversion',
+    short: 'A price that has lurched tends to come part of the way back.',
+    long:
+      'A lurch is often one trader\u2019s hurry: an order too big for the touch walks the book, and once it is ' +
+      'done the crowd re-centres. Fading the lurch collects that. It is the mirror of momentum and it loses the ' +
+      'mirror way: on a day that trends, the average lags the price all session and every fade is run over. ' +
+      'Which of the two to run is a question about the day, not the strategy.',
+  },
+  {
+    id: 'stale-quote',
+    term: 'Stale quotes',
+    short: 'A quote on one exchange that has not caught up with the price on the others.',
+    long:
+      'When news or a burst of orders moves the price, each exchange\u2019s crowd hears at its own pace. For a ' +
+      'moment one of them still quotes the old price. That quote is free money to whoever reaches it first, ' +
+      'and the firm that posted it is the one who pays: picked off. The sniper block takes stale quotes; the ' +
+      'market maker block is what gets taken. Every firm in this market is on one side of that or the other.',
+  },
+  {
     id: 'pnl',
     term: 'P&L: realised and unrealised',
     short: 'Money made on trades you have closed, and on positions you still hold.',

@@ -10,6 +10,8 @@ const TERM_FOR: Record<string, string> = {
   arbitrage: 'arbitrage',
   marketMaker: 'market-maker',
   momentum: 'momentum',
+  meanReversion: 'mean-reversion',
+  sniper: 'stale-quote',
   newsReaction: 'news',
 };
 

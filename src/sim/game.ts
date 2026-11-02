@@ -633,6 +633,9 @@ export class Game {
     g.news.load(s.news);
     g.dark.load(s.dark);
     const firm = Firm.load(s.firm, infrastructureFrom(content, s.firmInfra));
+    // A save from before a block existed has no setting for it: the default stands in, off. The rivals keep
+    // their own single block as saved.
+    firm.blocks = Firm.defaultBlocks().map((d) => firm.blocks.find((b) => b.id === d.id) ?? d);
     Object.assign(g, { firm });
     const competitors = s.competitors.map((c) => {
       const spec = content.competitors.find((x) => `bot:${x.id}` === c.id);

@@ -1,4 +1,5 @@
 import { CONTENT } from '../src/content';
+import { Firm } from '../src/sim/firm';
 import {
   FLOOD_DROPPED,
   Game,
@@ -297,6 +298,17 @@ describe('Game', () => {
     expect(b.fingerprint()).toBe(a.fingerprint());
     expect(b.snapshot().blocks).toEqual(a.snapshot().blocks);
     expect(b.firm.infra.location.id).toBe(a.firm.infra.location.id);
+  });
+
+  it('fills in blocks a save from before them lacks, and leaves the rivals theirs', () => {
+    const g = new Game(CONTENT, 20);
+    const saved = g.save();
+    saved.firm.blocks = saved.firm.blocks.filter((b) => b.id === 'arbitrage' || b.id === 'momentum');
+    const b = Game.load(CONTENT, JSON.parse(JSON.stringify(saved)) as SavedGame);
+    expect(b.firm.blocks.map((x) => x.id)).toEqual(Firm.defaultBlocks().map((x) => x.id));
+    expect(b.firm.blocks.find((x) => x.id === 'arbitrage')?.enabled).toBe(true);
+    expect(b.firm.blocks.find((x) => x.id === 'sniper')?.enabled).toBe(false);
+    expect(b.competitors[0]!.blocks.map((x) => x.id)).toEqual(['arbitrage']);
   });
 
   it('refuses a save from another version', () => {

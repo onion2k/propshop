@@ -25,6 +25,10 @@ const CONFIGS: Config[] = [
   ['colo mm half0', COLO, ['marketMaker'], { marketMaker: { halfSpread: 0 } }],
   ['home momentum', HOME, ['momentum']],
   ['home news', HOME, ['newsReaction']],
+  ['home revert', HOME, ['meanReversion']],
+  ['colo revert', COLO, ['meanReversion']],
+  ['home sniper', HOME, ['sniper']],
+  ['colo sniper', COLO, ['sniper']],
   ['city arb', CITY, ['arbitrage']],
   ['city arb near', CITY, ['arbitrage'], { arbitrage: { maxLatency: 10 } }],
   ['city mm', CITY, ['marketMaker']],
@@ -47,7 +51,7 @@ measure('paces', { timeout: 3_600_000 }, () => {
   };
   for (const seed of SEEDS) {
     for (const [name, infra, blocks, params] of CONFIGS) {
-      if (ONLY && !name.includes(ONLY)) continue;
+      if (ONLY && !ONLY.split(',').some((o) => name.includes(o))) continue;
       const g = new Game(CONTENT, seed);
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
