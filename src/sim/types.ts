@@ -106,6 +106,25 @@ export interface CompetitorSpec {
   maxLatency?: number;
 }
 
+/** The character of a trading day: multipliers on the market's own behaviour. */
+export interface RegimeSpec {
+  id: string;
+  name: string;
+  /** How often this kind of day comes, relative to the others. */
+  weight: number;
+  explain: string;
+  /** On the fair value's hourly wander. */
+  vol: number;
+  /** On how often and how far the fair value jumps. */
+  jumpRate: number;
+  jumpSize: number;
+  /** On how many headlines the day gets and how big they are. */
+  newsRate: number;
+  newsSize: number;
+  /** A drift over the session, in basis points of the price, signed per stock at the open. */
+  driftBps: number;
+}
+
 /** Everything the content hands the sim. */
 export interface Content {
   stocks: StockSpec[];
@@ -115,6 +134,7 @@ export interface Content {
   networks: NetworkSpec[];
   computers: ComputerSpec[];
   competitors: CompetitorSpec[];
+  regimes: RegimeSpec[];
   /** Cents. */
   startingCash: number;
   start: { location: string; network: string; computer: string };

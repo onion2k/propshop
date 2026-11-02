@@ -1,5 +1,5 @@
 import { CONTENT, LESSONS } from '../src/content';
-import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, type Snapshot } from '../src/sim';
+import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, isMarketOpen, type Snapshot } from '../src/sim';
 import { infrastructureFrom } from '../src/sim/upgrades';
 
 function fresh(): Snapshot {
@@ -67,8 +67,9 @@ describe('lessons', () => {
     g.skipToOpen();
     let done = false;
     for (let d = 0; d < 5 && !done; d++) {
-      for (let i = 0; i < 400 && !done; i++) {
-        g.step(MS_PER_SECOND);
+      while (!isMarketOpen(g.now)) g.step(MS_PER_SECOND);
+      while (isMarketOpen(g.now) && !done) {
+        g.step(MS_PER_MINUTE);
         done = LESSONS[5]!.done(g.snapshot());
       }
       g.skipToOpen();

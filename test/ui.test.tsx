@@ -192,6 +192,19 @@ describe('App', () => {
     expect(dual).toMatch(/HARBOR 12.1ms/);
   });
 
+  it('names the kind of day from the open', () => {
+    const store = createStore(CONTENT, null, 14);
+    render(<App store={store} />);
+    expect(document.querySelector('.regime')).toBeNull();
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (2 * 60 * 1000) / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    const name = document.querySelector('.regime')?.textContent ?? '';
+    expect(['Calm day', 'Trending day', 'Choppy day', 'News-heavy day']).toContain(name);
+  });
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;

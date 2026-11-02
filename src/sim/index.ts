@@ -14,6 +14,7 @@ export type { Level, Quote } from './orderbook';
 export type { UpgradeKind, UpgradeOffer } from './upgrades';
 export type {
   Content,
+  RegimeSpec,
   StockSpec,
   ExchangeSpec,
   LocationSpec,
@@ -35,3 +36,4 @@ export {
   MS_PER_MINUTE,
   MS_PER_SECOND,
 } from './clock';
+export { regimeFor } from './regime';

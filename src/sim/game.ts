@@ -18,9 +18,10 @@ import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
 import { Random } from './random';
+import { driftPerMs, driftSign, regimeFor } from './regime';
 import { BLOCKS, SCRIPT_ID, scriptState, type Fill, type OpenOrder, type Params } from './strategy';
 import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
-import type { Content } from './types';
+import type { Content, RegimeSpec } from './types';
 
 /** One tick of simulated time, in ms. A colocated firm is within a tick of its exchange; a home office is twenty
     away; a trading day is nearly twelve million. */
@@ -70,6 +71,8 @@ export interface DayReport {
   /** Why the firm was halted, if it was, and what the regulator noted. Missing in a report saved before them. */
   halts?: string[];
   regulator?: string[];
+  /** The kind of day it was. Missing in a report saved before regimes. */
+  regime?: string;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -81,6 +84,8 @@ export interface DayRecord {
 
 export interface SavedGame {
   version: 1;
+  /** The seed the game began from, which the day's regime is drawn from. */
+  seed?: number;
   now: number;
   speed: Speed;
   random: number;
@@ -142,6 +147,8 @@ export interface Snapshot {
   calendar: Calendar;
   open: boolean;
   nextChange: number;
+  /** The kind of day it is, once the market has opened on it. */
+  regime: RegimeSpec | null;
   speed: Speed;
   cash: number;
   equity: number;
@@ -221,6 +228,7 @@ export interface OrderStory extends OpenOrder {
 
 export class Game {
   readonly content: Content;
+  seed: number;
   now: number;
   speed: Speed = 1;
   random: Random;
@@ -242,6 +250,7 @@ export class Game {
 
   constructor(content: Content, seed: number) {
     this.content = content;
+    this.seed = seed >>> 0;
     // The game begins at six on Monday morning: the market opens in a few hours, so the player has time to look.
     this.now = 6 * 60 * MS_PER_MINUTE;
     this.random = new Random(seed);
@@ -269,7 +278,13 @@ export class Game {
     this.dayStartEquity = content.startingCash;
     this.weekStartEquity = content.startingCash;
     this.wasOpen = false;
+    this.news.regimeFor = (day) => this.regimeFor(day);
     this.news.step(this.now, this.market, this.random);
+  }
+
+  /** Which kind of day a day is: from the seed and the day, the same every time it is asked. */
+  regimeFor(day: number): RegimeSpec {
+    return regimeFor(this.content.regimes, this.seed, day);
   }
 
   on(listener: (e: GameEvent) => void): () => void {
@@ -340,6 +355,16 @@ export class Game {
   }
 
   private onOpen(): void {
+    const day = calendar(this.now).day;
+    const regime = this.regimeFor(day);
+    const drifts = new Map<string, number>();
+    this.market.stocks.forEach((s, i) => {
+      drifts.set(
+        s.symbol,
+        driftPerMs(regime, this.market.fair.get(s.symbol) ?? s.startPrice, driftSign(this.seed, day, i)),
+      );
+    });
+    this.market.setRegime(regime, drifts);
     this.dayStartEquity = this.firm.equity(this.market, this.now);
     if (calendar(this.now).weekday === 'Mon') this.weekStartEquity = this.dayStartEquity;
     this.today = freshToday();
@@ -400,6 +425,7 @@ export class Game {
       })),
       halts: this.today.halts,
       regulator: this.today.regulator,
+      regime: this.market.regime.id,
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -476,6 +502,7 @@ export class Game {
       calendar: calendar(now),
       open,
       nextChange: open ? nextClose(now) : nextOpen(now),
+      regime: open || this.days.some((d) => d.day === calendar(now).day) ? this.market.regime : null,
       speed: this.speed,
       cash: firm.cash,
       equity,
@@ -571,6 +598,7 @@ export class Game {
   save(): SavedGame {
     return {
       version: 1,
+      seed: this.seed,
       now: this.now,
       speed: this.speed,
       random: this.random.save(),
@@ -597,7 +625,7 @@ export class Game {
   static load(content: Content, s: SavedGame): Game {
     const version: number = s.version;
     if (version !== 1) throw new Error(`Cannot load a save of version ${String(version)}`);
-    const g = new Game(content, 0);
+    const g = new Game(content, s.seed ?? 0);
     g.now = s.now;
     g.speed = s.speed;
     g.random = Random.load(s.random);

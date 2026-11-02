@@ -535,3 +535,9 @@ code {
 .risk {
   margin-bottom: 6px;
 }
+
+.regime {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+}

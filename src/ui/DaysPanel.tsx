@@ -2,6 +2,7 @@
 // The report says what the day was in numbers the top bar cannot: by block, by stock, by race.
 
 import { useEffect, useRef } from 'react';
+import { REGIMES } from '../content';
 import { BLOCKS, type DayReport, type Snapshot, type Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
@@ -35,7 +36,11 @@ export function DaysPanel({ s }: { s: Snapshot }) {
               {d.weekday}, week {d.week}
             </strong>{' '}
             <span className={`num ${d.pnl >= 0 ? 'up' : 'down'}`}>{money(d.pnl, true)}</span>
-            <span className="muted small"> · {verdict(d)}</span>
+            <span className="muted small">
+              {' '}
+              · {d.regime ? `${REGIMES.find((r) => r.id === d.regime)?.name.toLowerCase() ?? d.regime} · ` : ''}
+              {verdict(d)}
+            </span>
           </summary>
           <Report d={d} />
         </details>

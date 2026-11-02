@@ -26,6 +26,11 @@ export function TopBar({ s, store }: { s: Snapshot; store: Store }) {
             · {s.open ? 'closes' : 'opens'} in {formatSpan(until)}
           </span>
         </span>
+        {s.regime && (
+          <span className="regime" title={s.regime.explain}>
+            <Term id="regimes">{s.regime.name}</Term>
+          </span>
+        )}
       </div>
       <div className="speed" role="group" aria-label="Speed">
         {SPEEDS.map((sp) => (

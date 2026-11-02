@@ -4,7 +4,21 @@
 import { MS_PER_HOUR, MS_PER_SECOND, activity, isMarketOpen } from './clock';
 import { Exchange, type SavedExchange } from './exchange';
 import type { Random } from './random';
-import type { ExchangeSpec, StockSpec } from './types';
+import type { ExchangeSpec, RegimeSpec, StockSpec } from './types';
+
+/** A day with no character: every multiplier one, no drift. What the market runs on until the game says. */
+export const PLAIN_DAY: RegimeSpec = {
+  id: 'plain',
+  name: 'Plain day',
+  weight: 0,
+  explain: 'A day like any other.',
+  vol: 1,
+  jumpRate: 1,
+  jumpSize: 1,
+  newsRate: 1,
+  newsSize: 1,
+  driftBps: 0,
+};
 
 /** How often, in ms, the history samples a price, and how many samples it keeps (fifteen minutes). */
 export const HISTORY_EVERY = MS_PER_SECOND;
@@ -27,6 +41,8 @@ export interface HistoryPoint {
 }
 
 export interface SavedMarket {
+  regime?: RegimeSpec;
+  drifts?: Record<string, number>;
   fair: Record<string, number>;
   anchor: Record<string, number>;
   impulses: Impulse[];
@@ -46,6 +62,9 @@ export class Market {
   readonly history = new Map<string, HistoryPoint[]>();
   private lastSample = -Infinity;
   private wasOpen = false;
+  /** The day's character, and the drift it gives each stock in cents per ms while the market is open. */
+  regime: RegimeSpec = PLAIN_DAY;
+  private drifts = new Map<string, number>();
 
   constructor(stocks: StockSpec[], exchanges: ExchangeSpec[]) {
     this.stocks = stocks;
@@ -69,6 +88,12 @@ export class Market {
     return s;
   }
 
+  /** The day's character, set at the open with each stock's drift. */
+  setRegime(regime: RegimeSpec, drifts: ReadonlyMap<string, number>): void {
+    this.regime = regime;
+    this.drifts = new Map(drifts);
+  }
+
   /** News: move the anchor by so many cents, spread over a window. */
   shock(symbol: string, cents: number, overMs: number): void {
     if (cents === 0) return;
@@ -78,9 +103,12 @@ export class Market {
   /**
    * One tick. Returns whether the market just closed, so the game can tell its firms their orders are gone.
    */
+  private open = false;
+
   step(now: number, dt: number, random: Random): { closed: { symbol: string; owner: string; id: number }[] | null } {
-    this.drift(dt, random);
     const open = isMarketOpen(now);
+    this.open = open;
+    this.drift(dt, random);
     const act = activity(now);
     for (const e of this.exchanges) e.step(now, dt, this.fair, act, random);
     let closed: { symbol: string; owner: string; id: number }[] | null = null;
@@ -104,13 +132,18 @@ export class Market {
       if (imp.remaining === 0) this.impulses.splice(i, 1);
     }
     const hours = dt / MS_PER_HOUR;
+    const r = this.regime;
     for (const s of this.stocks) {
       const fair = this.fair.get(s.symbol) ?? s.startPrice;
       const anchor = this.anchor.get(s.symbol) ?? s.startPrice;
-      // Mean reversion pulls a tenth of the gap back each hour; the wander is the stock's own volatility; and now
-      // and then a burst of orders shoves the price a few cents at once, which is what the fast firms live on.
-      let next = fair + (anchor - fair) * 0.1 * hours + s.hourlyVol * Math.sqrt(hours) * random.normal();
-      if (random.chance((s.jumpsPerSecond * dt) / 1000)) next += s.jumpSize * random.normal();
+      // Mean reversion pulls a tenth of the gap back each hour; the wander is the stock's own volatility, scaled
+      // by the day; a trending day adds a drift, which moves the anchor too so reversion does not fight it; and
+      // now and then a burst of orders shoves the price a few cents at once, which is what the fast firms live on.
+      const drift = this.open ? (this.drifts.get(s.symbol) ?? 0) * dt : 0;
+      let next =
+        fair + (anchor - fair) * 0.1 * hours + s.hourlyVol * r.vol * Math.sqrt(hours) * random.normal() + drift;
+      if (drift !== 0) this.anchor.set(s.symbol, anchor + drift);
+      if (random.chance((s.jumpsPerSecond * r.jumpRate * dt) / 1000)) next += s.jumpSize * r.jumpSize * random.normal();
       this.fair.set(s.symbol, Math.max(100, next));
     }
   }
@@ -131,6 +164,8 @@ export class Market {
     const exchanges: Record<string, SavedExchange> = {};
     for (const e of this.exchanges) exchanges[e.id] = e.save();
     return {
+      regime: this.regime,
+      drifts: Object.fromEntries(this.drifts),
       fair: Object.fromEntries(this.fair),
       anchor: Object.fromEntries(this.anchor),
       impulses: this.impulses.map((i) => ({ ...i })),
@@ -141,6 +176,8 @@ export class Market {
   }
 
   load(saved: SavedMarket): void {
+    if (saved.regime) this.regime = saved.regime;
+    this.drifts = new Map(Object.entries(saved.drifts ?? {}));
     for (const [k, v] of Object.entries(saved.fair)) this.fair.set(k, v);
     for (const [k, v] of Object.entries(saved.anchor)) this.anchor.set(k, v);
     this.impulses = saved.impulses.map((i) => ({ ...i }));

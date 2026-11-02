@@ -182,6 +182,13 @@ describe('Game', () => {
     const g = new Game(CONTENT, 17);
     g.setRisk({ dailyLossLimit: 500 });
     expect(g.snapshot().risk.dailyLossLimit).toBe(500);
+    // Pay the spread every decision: a strategy that can only lose.
+    g.setBlock('arbitrage', { enabled: false });
+    g.setBlock('script', {
+      enabled: true,
+      source:
+        'const b = best("ABC"); if (b.bid && b.ask) { buy("ABC", b.ask.exchange, b.ask.price, 100); sell("ABC", b.bid.exchange, b.bid.price, 100); }',
+    });
     g.skipToOpen();
     let halted = false;
     for (let i = 0; i < (20 * MS_PER_MINUTE) / TICK_MS && !halted; i++) {

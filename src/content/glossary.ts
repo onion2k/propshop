@@ -202,6 +202,17 @@ export const GLOSSARY: GlossaryEntry[] = [
       'as another. In the game, either at the close adds to your heat, and the fines that heat brings follow.',
   },
   {
+    id: 'regimes',
+    term: 'Market regimes',
+    short: 'Kinds of day: calm, trending, choppy, news-heavy. The right block depends on which.',
+    long:
+      'Markets have moods, and a strategy tuned to one loses in another. On a calm day little happens and the ' +
+      'maker earns the bounce. On a trending day each stock sets off and keeps going, which momentum rides and ' +
+      'a maker leans against all day. On a choppy day the exchanges disagree often, which arbitrage lives on, ' +
+      'and momentum bleeds. On a news-heavy day the headlines come all session, and the news reaction block ' +
+      'has its day. The top bar names the day from the open; the day report keeps it; the player switches.',
+  },
+  {
     id: 'hft',
     term: 'High-frequency trading',
     short: 'Trading by machine, in large numbers, on tiny edges, as fast as physics allows.',

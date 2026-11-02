@@ -5,7 +5,7 @@
 import { MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, isMarketOpen, isWeekday, nextOpen } from './clock';
 import type { Market } from './market';
 import type { Random } from './random';
-import type { Headline, NewsTemplate, StockSpec } from './types';
+import type { Headline, NewsTemplate, RegimeSpec, StockSpec } from './types';
 
 /** How far ahead the schedule is kept full, and how many published headlines are remembered. */
 export const LOOKAHEAD = MS_PER_DAY;
@@ -37,6 +37,8 @@ export interface SavedNews {
 export class News {
   private templates: readonly NewsTemplate[];
   private stocks: readonly StockSpec[];
+  /** How many headlines a day gets and how big, by day; every day plain unless the game says. */
+  regimeFor: (day: number) => Pick<RegimeSpec, 'newsRate' | 'newsSize'> = () => ({ newsRate: 1, newsSize: 1 });
   private nextId = 1;
   scheduled: Scheduled[] = [];
   published: Published[] = [];
@@ -75,19 +77,20 @@ export class News {
     const day = Math.floor(dayStart / MS_PER_DAY);
     this.scheduledThrough = (day + 1) * MS_PER_DAY;
     if (!isWeekday(day)) return;
-    const count = Math.max(0, Math.round(PER_DAY + random.normal() * 3));
+    const regime = this.regimeFor(day);
+    const count = Math.max(0, Math.round(PER_DAY * regime.newsRate + random.normal() * 3));
     for (let i = 0; i < count; i++) {
       // Most news lands in the session; some lands overnight and is waiting at the open.
       const inSession = random.chance(0.8);
       const at = inSession
         ? dayStart + 9.5 * MS_PER_HOUR + random.range(0, 6.5 * MS_PER_HOUR)
         : dayStart + random.range(6 * MS_PER_HOUR, 9.5 * MS_PER_HOUR);
-      this.scheduled.push(this.draw(Math.floor(at), random, market));
+      this.scheduled.push(this.draw(Math.floor(at), random, market, regime.newsSize));
     }
     this.scheduled.sort((a, b) => a.at - b.at);
   }
 
-  private draw(at: number, random: Random, market: Market): Scheduled {
+  private draw(at: number, random: Random, market: Market, size: number): Scheduled {
     const t = random.pick(this.templates);
     const stock = random.pick(this.stocks);
     const sector = stock.sector;
@@ -107,7 +110,7 @@ export class News {
     const noise = t.magnitudeBps === 0;
     for (const symbol of symbols) {
       const price = market.fair.get(symbol) ?? market.stock(symbol).startPrice;
-      const bps = t.magnitudeBps * (0.6 + 0.8 * random.next());
+      const bps = t.magnitudeBps * size * (0.6 + 0.8 * random.next());
       moves[symbol] = noise ? 0 : Math.round(((t.direction * bps) / 10_000) * price);
     }
     return {
