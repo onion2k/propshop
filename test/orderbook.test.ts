@@ -154,4 +154,27 @@ describe('OrderBook', () => {
     expect(next.order.id).toBe(3);
     expect(next.trades).toHaveLength(1);
   });
+
+  it('says whether it has changed since last asked: new, after an add, after a cancel, but not a refusal', () => {
+    const b = new OrderBook();
+    expect(b.takeChanged()).toBe(true);
+    expect(b.takeChanged()).toBe(false);
+    b.add({ owner: 'a', side: 'buy', price: 4100, size: 10 }, 0);
+    expect(b.takeChanged()).toBe(true);
+    b.add({ owner: 'a', side: 'sell', price: 4100, size: 10, ioc: true }, 1);
+    expect(b.takeChanged()).toBe(true);
+    b.quote();
+    b.depth(5);
+    expect(b.takeChanged()).toBe(false);
+    b.add({ owner: 'a', side: 'sell', price: 4103, size: 10 }, 2);
+    b.takeChanged();
+    expect(b.cancel(999)).toBeNull();
+    expect(b.cancelWhere('nobody', () => true)).toHaveLength(0);
+    expect(b.takeChanged()).toBe(false);
+    b.add({ owner: 'a', side: 'buy', price: 4104, size: 1, postOnly: true }, 3);
+    expect(b.takeChanged()).toBe(false);
+    expect(b.cancelWhere('a', () => true)).toHaveLength(1);
+    expect(b.takeChanged()).toBe(true);
+    expect(OrderBook.load(b.save()).takeChanged()).toBe(true);
+  });
 });

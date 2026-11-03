@@ -118,9 +118,13 @@ export class Exchange {
     return null;
   }
 
-  /** Called at the end of every tick, once everyone has acted, so the log holds the tick's closing quote. */
+  /**
+   * Called at the end of every tick, once everyone has acted, so the log holds the tick's closing quote. Only a
+   * book that something touched is looked at: the rest cannot have moved, and this runs for every book every tick.
+   */
   logQuotes(now: number): void {
     for (const s of this.stocks.values()) {
+      if (!s.book.takeChanged()) continue;
       const q = s.book.quote();
       const last = s.quoteLog[s.quoteLog.length - 1];
       // A tick on which nothing changed needs no entry: the last one still answers for it.

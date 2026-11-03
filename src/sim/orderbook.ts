@@ -78,6 +78,8 @@ export class OrderBook {
   private asks: Order[] = [];
   private nextId: number;
   lastPrice: number | null = null;
+  /** Whether anything has rested, filled or left since the quote log last looked; a new or loaded book counts. */
+  private changed = true;
 
   constructor(nextId = 1) {
     this.nextId = nextId;
@@ -107,6 +109,7 @@ export class OrderBook {
       shown: display ?? req.size,
     };
     if (order.postOnly && this.wouldCross(order)) return { order, trades: [], refused: REFUSED_CROSSED };
+    this.changed = true;
     const trades = this.match(order, at);
     if (order.remaining > 0 && !order.ioc) {
       order.shown = order.display === null ? order.remaining : Math.min(order.display, order.remaining);
@@ -182,6 +185,7 @@ export class OrderBook {
       const i = side.findIndex((o) => o.id === id);
       if (i >= 0) {
         const [order] = side.splice(i, 1);
+        this.changed = true;
         return order ?? null;
       }
     }
@@ -200,7 +204,15 @@ export class OrderBook {
         }
       }
     }
+    if (gone.length > 0) this.changed = true;
     return gone;
+  }
+
+  /** Whether the book has changed since this was last asked, and clears it: so the quote log looks only where it must. */
+  takeChanged(): boolean {
+    const c = this.changed;
+    this.changed = false;
+    return c;
   }
 
   /** The best two levels of each side. Runs every tick for every book, so it walks the arrays once and allocates nothing but the result. */
