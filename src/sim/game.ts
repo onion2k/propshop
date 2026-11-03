@@ -12,7 +12,7 @@ import {
   type Calendar,
 } from './clock';
 import { DarkWeb, HEAT_FINE_LINE, type Fine, type SavedDarkWeb, type Tip } from './darkweb';
-import { Firm, type BlockSetting, type Halt, type RiskSettings, type SavedFirm } from './firm';
+import { Firm, type BlockSetting, type Halt, type RiskSettings, type SavedFirm, type Wire } from './firm';
 import { tick } from './flow';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
@@ -21,7 +21,7 @@ import { Random } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
 import { BLOCKS, SCRIPT_ID, scriptState, type Fill, type OpenOrder, type Params } from './strategy';
 import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
-import type { Content, RegimeSpec } from './types';
+import { DEFAULT_RULES, type Content, type ExchangeRules, type RegimeSpec } from './types';
 
 /** One tick of simulated time, in ms. A colocated firm is within a tick of its exchange; a home office is twenty
     away; a trading day is nearly twelve million. */
@@ -44,6 +44,7 @@ export type GameEvent =
   | { kind: 'tip'; at: number; tip: Tip }
   | { kind: 'upgrade'; at: number; kind2: UpgradeKind; id: string }
   | { kind: 'halt'; at: number; reason: string; until: number }
+  | { kind: 'rules'; at: number; exchange: string; rules: ExchangeRules }
   | { kind: 'regulator'; at: number; note: string; heat: number };
 
 export interface Tally {
@@ -102,6 +103,9 @@ export interface SavedGame {
   log: GameEvent[];
   wasOpen: boolean;
   today?: Today;
+  /** When the rules last changed, and each firm's equity then, for the lab's scoreboard. */
+  rulesChangedAt?: number;
+  equityAtRulesChange?: Record<string, number>;
 }
 
 /** The day's tallies, from the open. */
@@ -212,6 +216,12 @@ export interface Snapshot {
   news: Published[];
   dark: { unlocked: boolean; offers: Tip[]; bought: Tip[]; fines: Fine[] };
   competitors: { id: string; name: string; latency: Record<string, number>; fills: number; pnl: number }[];
+  /** For the microscope: every firm's messages on the wire, and each exchange's belief per symbol. */
+  wire: Wire[];
+  beliefs: Record<string, Record<string, number>>;
+  /** The rules each exchange runs, and each firm's P&L since the rules last changed. */
+  rules: Record<string, ExchangeRules>;
+  lab: { since: number; scores: { id: string; name: string; pnl: number }[] };
   shop: UpgradeOffer[];
   days: DayReport[];
   log: GameEvent[];
@@ -251,6 +261,8 @@ export class Game {
   private weekStartEquity: number;
   days: DayReport[] = [];
   private today: Today = freshToday();
+  private rulesChangedAt = 0;
+  private equityAtRulesChange: Record<string, number> = {};
   log: GameEvent[] = [];
   private wasOpen: boolean;
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -444,6 +456,11 @@ export class Game {
     }
   }
 
+  /** So many ticks, whatever the speed: the microscope's step. */
+  stepTicks(n: number): void {
+    for (let i = 0; i < n; i++) this.step();
+  }
+
   /** Run as much simulated time as the speed says this many wall milliseconds are worth. */
   advance(wallMs: number): void {
     if (this.speed === 0) return;
@@ -466,6 +483,17 @@ export class Game {
 
   setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params>; source?: string }): void {
     this.firm.setBlock(id, change);
+    this.version++;
+  }
+
+  /** Set an exchange's rules from the lab, and start the scoreboard again from here. */
+  setRules(exchange: string, change: Partial<ExchangeRules>): void {
+    const e = this.market.exchange(exchange);
+    e.rules = { ...e.rules, ...change };
+    this.rulesChangedAt = this.now;
+    this.equityAtRulesChange = {};
+    for (const f of [this.firm, ...this.competitors]) this.equityAtRulesChange[f.id] = f.equity(this.market, this.now);
+    this.emit({ kind: 'rules', at: this.now, exchange, rules: { ...e.rules } });
     this.version++;
   }
 
@@ -600,6 +628,22 @@ export class Game {
           pnl: c.realised - c.feesPaid + c.unrealised(this.market, now),
         };
       }),
+      wire: [this.firm, ...this.competitors].flatMap((f) => f.inFlight()),
+      beliefs: Object.fromEntries(
+        this.market.exchanges.map((e) => [
+          e.id,
+          Object.fromEntries([...e.stocks].map(([sym, st]) => [sym, st.belief])),
+        ]),
+      ),
+      rules: Object.fromEntries(this.market.exchanges.map((e) => [e.id, { ...e.rules }])),
+      lab: {
+        since: this.rulesChangedAt,
+        scores: [this.firm, ...this.competitors].map((f) => ({
+          id: f.id,
+          name: f.id === 'firm' ? 'You' : f.name,
+          pnl: f.equity(this.market, now) - (this.equityAtRulesChange[f.id] ?? f.equity(this.market, now)),
+        })),
+      },
       shop: catalogue(this.content, firm, this.owned),
       days: this.days,
       log: this.log,
@@ -670,6 +714,8 @@ export class Game {
       log: this.log,
       wasOpen: this.wasOpen,
       today: this.today,
+      rulesChangedAt: this.rulesChangedAt,
+      equityAtRulesChange: this.equityAtRulesChange,
     };
   }
 
@@ -702,6 +748,8 @@ export class Game {
     g.today = s.today ? { ...freshToday(), ...s.today } : freshToday();
     g.log = s.log.map((e) => ({ ...e }));
     g.wasOpen = s.wasOpen;
+    g.rulesChangedAt = s.rulesChangedAt ?? 0;
+    g.equityAtRulesChange = { ...(s.equityAtRulesChange ?? {}) };
     return g;
   }
 
@@ -725,7 +773,7 @@ export class Game {
   }
 }
 
-export { BLOCKS, MARKET_OPEN, MS_PER_DAY };
+export { BLOCKS, DEFAULT_RULES, MARKET_OPEN, MS_PER_DAY };
 
 /** A day saved before the report existed: the number it had, and nothing else to say. */
 function upgraded(d: DayRecord): DayReport {

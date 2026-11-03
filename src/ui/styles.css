@@ -819,3 +819,42 @@ code {
     transform: none;
   }
 }
+
+.lab .knob {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.rule-grid td {
+  padding: 3px 6px;
+}
+.rule-grid button {
+  margin-right: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.scores {
+  width: auto;
+  margin-bottom: 8px;
+}
+
+.micro {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #0c0f13;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.micro-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.micro-log {
+  margin-top: 6px;
+  max-height: 140px;
+  overflow: auto;
+  font-family: var(--mono);
+}

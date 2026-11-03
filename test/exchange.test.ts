@@ -60,7 +60,7 @@ describe('Exchange', () => {
     const ex = new Exchange(harbor, STOCKS);
     const now = run(ex, new Random(6), MARKET_OPEN, 2 * MS_PER_SECOND);
     const ask = ex.quote('ABC').ask!;
-    const { trades } = ex.submit('ABC', { owner: 'firm', side: 'buy', price: ask, size: 100, ioc: true }, now);
+    const { trades } = ex.submit('ABC', { owner: 'firm', side: 'buy', price: ask, size: 100, ioc: true }, now)!;
     expect(trades.length).toBeGreaterThan(0);
     expect(trades[0]!.buyer).toBe('firm');
     expect(ex.tickTrades.some((t) => t.trade.buyer === 'firm')).toBe(true);

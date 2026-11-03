@@ -39,6 +39,9 @@ export interface Store {
   buyTip: Game['buyTip'];
   setRisk: Game['setRisk'];
   setWatch: Game['setWatch'];
+  setRules: Game['setRules'];
+  /** The microscope's step: so many ticks, then a snapshot at once. */
+  stepTicks: (n: number) => void;
 }
 
 export interface Storage {
@@ -143,6 +146,8 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     buyTip: act((id) => game.buyTip(id)),
     setRisk: act((change) => game.setRisk(change)),
     setWatch: act((symbol, on) => game.setWatch(symbol, on)),
+    setRules: act((exchange, change) => game.setRules(exchange, change)),
+    stepTicks: act((n) => game.stepTicks(n)),
   };
   return store;
 }

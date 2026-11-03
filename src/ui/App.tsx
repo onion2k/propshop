@@ -8,8 +8,10 @@ import { DarkWebPanel } from './DarkWebPanel';
 import { DaysPanel } from './DaysPanel';
 import { FirmPanel } from './FirmPanel';
 import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
+import { LabPanel } from './LabPanel';
 import { LearnContext, LearnPanel } from './Glossary';
 import { MarketPanel } from './MarketPanel';
+import { Microscope } from './Microscope';
 import { NewsPanel } from './NewsPanel';
 import { RiskPanel } from './RiskPanel';
 import { RivalsPanel } from './RivalsPanel';
@@ -26,13 +28,14 @@ const PAGES: { id: Page; label: string }[] = [
   { id: 'reports', label: 'Reports' },
 ];
 
-type Tab = 'week' | 'days' | 'news' | 'dark' | 'rivals' | 'learn';
+type Tab = 'week' | 'days' | 'news' | 'dark' | 'rivals' | 'lab' | 'learn';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'week', label: 'First week' },
   { id: 'days', label: 'Days' },
   { id: 'news', label: 'News' },
   { id: 'dark', label: 'Dark web' },
   { id: 'rivals', label: 'Rivals' },
+  { id: 'lab', label: 'Lab' },
   { id: 'learn', label: 'Learn' },
 ];
 
@@ -42,6 +45,13 @@ export function App({ store }: { store: Store }) {
   const tutorial = useSyncExternalStore(store.subscribe, store.getTutorial, store.getTutorial);
   const [page, setPage] = useState<Page>('market');
   const goPage = useCallback((p: TutorialPage) => setPage(p), []);
+  const [micro, setMicro] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const openMicro = () => {
+    store.setSpeed(0);
+    setMicro(true);
+    setPage('market');
+  };
   const [tab, setTab] = useState<Tab>('week');
   const [term, setTerm] = useState<string | null>(null);
   // "new" on the Days tab from a close until it is opened.
@@ -67,7 +77,7 @@ export function App({ store }: { store: Store }) {
   const fresh = tutorial.state === 'fresh' && left === LESSONS.length && s.fills.length === 0;
   return (
     <LearnContext.Provider value={learn}>
-      <TopBar s={s} store={store} />
+      <TopBar s={s} store={store} micro={micro} onMicro={openMicro} />
       {fresh && <Welcome store={store} />}
       {tutorial.state === 'at' && <TutorialCard s={s} store={store} tutorial={tutorial} page={page} setPage={goPage} />}
       <nav className="pages" aria-label="Pages" data-tut="pages">
@@ -94,7 +104,15 @@ export function App({ store }: { store: Store }) {
       {page === 'market' && (
         <main className="layout">
           <div className="column">
-            <MarketPanel s={s} store={store} />
+            {micro && (
+              <Microscope
+                s={s}
+                store={store}
+                symbol={picked ?? s.stocks.find((st) => st.watched)?.symbol ?? s.stocks[0]?.symbol ?? ''}
+                onClose={() => setMicro(false)}
+              />
+            )}
+            <MarketPanel s={s} store={store} picked={picked} onPick={setPicked} />
           </div>
           <div className="column">
             <FirmPanel s={s} />
@@ -141,6 +159,7 @@ export function App({ store }: { store: Store }) {
               {tab === 'news' && <NewsPanel s={s} />}
               {tab === 'dark' && <DarkWebPanel s={s} store={store} />}
               {tab === 'rivals' && <RivalsPanel s={s} />}
+              {tab === 'lab' && <LabPanel s={s} store={store} />}
               {tab === 'learn' && <LearnPanel />}
             </div>
           </section>

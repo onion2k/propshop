@@ -313,6 +313,29 @@ describe('Game', () => {
     expect(b.competitors[0]!.blocks.map((x) => x.id)).toEqual(['arbitrage']);
   });
 
+  it('shows every message on the wire with where it is, and steps by the tick', () => {
+    const g = new Game(CONTENT, 21);
+    g.skipToOpen();
+    while (!isMarketOpen(g.now)) g.step();
+    let s = g.snapshot();
+    for (let i = 0; i < (5 * MS_PER_MINUTE) / TICK_MS && !s.wire.some((w) => w.owner === 'firm'); i++) {
+      g.step();
+      s = g.snapshot();
+    }
+    const mine = s.wire.filter((w) => w.owner === 'firm');
+    expect(mine.length).toBeGreaterThan(0);
+    for (const w of mine) {
+      expect(w.arrivesAt).toBeGreaterThanOrEqual(s.now);
+      expect(w.arrivesAt - w.sentAt).toBe(g.firm.latency(w.exchange));
+      expect(['order', 'cancel', 'ack', 'fill', 'cancelled', 'cancelRefused', 'rejected']).toContain(w.kind);
+    }
+    expect(Object.keys(s.beliefs)).toEqual(['HARBOR', 'LAKESIDE', 'PACIFIC']);
+    expect(typeof s.beliefs.HARBOR?.ABC).toBe('number');
+    const t = g.now;
+    g.stepTicks(5);
+    expect(g.now).toBe(t + 5 * TICK_MS);
+  });
+
   it('refuses a save from another version', () => {
     const g = new Game(CONTENT, 11);
     const saved = { ...g.save(), version: 2 } as unknown as SavedGame;

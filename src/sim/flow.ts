@@ -17,8 +17,17 @@ export function tick(
 ) {
   const { closed } = market.step(now, dt, random);
   const open = isMarketOpen(now);
+  const bumps: Record<string, number> = {};
+  const taxes: Record<string, number> = {};
+  for (const e of market.exchanges) {
+    bumps[e.id] = e.rules.speedBumpMs;
+    taxes[e.id] = e.rules.taxPerShare;
+  }
   for (const f of firms) {
     f.feeTable = fees(market);
+    f.bumps = bumps;
+    f.taxes = taxes;
+    f.batchedAt = now;
     f.step(now, market, news, open);
   }
   for (const e of market.exchanges) {

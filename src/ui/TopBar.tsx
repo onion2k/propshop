@@ -5,7 +5,17 @@ import { money, moneyShort } from './format';
 import { Term } from './Glossary';
 import type { Store } from './store';
 
-export function TopBar({ s, store }: { s: Snapshot; store: Store }) {
+export function TopBar({
+  s,
+  store,
+  micro,
+  onMicro,
+}: {
+  s: Snapshot;
+  store: Store;
+  micro: boolean;
+  onMicro: () => void;
+}) {
   const until = s.nextChange - s.now;
   return (
     <header className="topbar">
@@ -43,6 +53,14 @@ export function TopBar({ s, store }: { s: Snapshot; store: Store }) {
             skip to open
           </button>
         )}
+        <button
+          type="button"
+          className={`skip ${micro ? 'on' : ''}`}
+          onClick={onMicro}
+          aria-label="Open the microscope"
+        >
+          microscope
+        </button>
       </div>
       {s.halt && (
         <div className="halt" role="status">

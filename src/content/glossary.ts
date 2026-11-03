@@ -296,6 +296,17 @@ export const GLOSSARY: GlossaryEntry[] = [
       'has its day. The top bar names the day from the open; the day report keeps it; the player switches.',
   },
   {
+    id: 'market-structure',
+    term: 'Market structure',
+    short: 'The rules a market runs by, which decide who can earn in it.',
+    long:
+      'Continuous matching by price and then time is a choice, and it is the choice that makes speed worth ' +
+      'paying for. Other choices have been built or proposed: a speed bump in front of the matching engine, ' +
+      'batches that match everyone at once, a tax on every trade, a minimum time a quote must stand, a wider ' +
+      'tick. Each one blunts some strategies and spares others. The lab lets you run them here and watch who ' +
+      'earns, which is the whole argument about high-frequency trading in one afternoon.',
+  },
+  {
     id: 'hft',
     term: 'High-frequency trading',
     short: 'Trading by machine, in large numbers, on tiny edges, as fast as physics allows.',

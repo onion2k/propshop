@@ -9,8 +9,17 @@ import { price, shares } from './format';
 import { Term } from './Glossary';
 import type { Store } from './store';
 
-export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
-  const [picked, setPicked] = useState<string | null>(null);
+export function MarketPanel({
+  s,
+  store,
+  picked,
+  onPick,
+}: {
+  s: Snapshot;
+  store: Store;
+  picked: string | null;
+  onPick: (symbol: string) => void;
+}) {
   const [ladder, setLadder] = useState<string | null>(null);
   const selected = s.stocks.find((st) => st.symbol === picked) ?? s.stocks.find((st) => st.watched) ?? s.stocks[0];
   const full = s.watching.count >= s.watching.max;
@@ -44,7 +53,7 @@ export function MarketPanel({ s, store }: { s: Snapshot; store: Store }) {
             <tr
               key={st.symbol}
               className={`${st.symbol === selected?.symbol ? 'picked' : ''} ${st.watched ? '' : 'unwatched'}`}
-              onClick={() => setPicked(st.symbol)}
+              onClick={() => onPick(st.symbol)}
             >
               <td onClick={(e) => e.stopPropagation()}>
                 <input

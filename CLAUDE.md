@@ -67,6 +67,8 @@ For anything new, check what it does:
   its own orders in it (`touchExcluding`); what it still cannot beat is the fastest bot taking a quote in
   the tick before its cancel lands.
 - Latency below one tick (2ms) is one tick: a colocated firm and one a millisecond away are the same.
+- The lab's batch auction batches the firms' orders and not the crowd's, so a waiting order meets a market
+  that has moved; every firm loses under it, the fastest most. A real batch auction would hold the crowd too.
 - The crowd acts on each book once in five ticks, staggered. Every book is swept on its turn: a sweep keyed
   to the exchange's clock once left four books in five never swept, and everything fed on them.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the

@@ -289,6 +289,38 @@ describe('App', () => {
     expect(screen.getByText('Take the tutorial again')).toBeInTheDocument();
   }, 60_000);
 
+  it('sets an exchange rule from the lab and restarts the scoreboard', () => {
+    const store = createStore(CONTENT, null, 18);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: 'Lab' }));
+    expect(screen.getByText(/Since the rules changed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Batch auction on HARBOR: 50 ms'));
+    expect(store.game.market.exchange('HARBOR').rules.batchMs).toBe(50);
+    expect(store.game.market.exchange('LAKESIDE').rules.batchMs).toBe(0);
+    expect(screen.getByLabelText('Batch auction on HARBOR: 50 ms')).toHaveClass('on');
+    fireEvent.click(screen.getByLabelText('Post-only on PACIFIC: off'));
+    expect(store.game.market.exchange('PACIFIC').rules.postOnly).toBe(false);
+    expect(store.getSnapshot().lab.scores.map((r) => r.name)).toContain('You');
+  });
+
+  it('opens the microscope, pauses, and steps by the tick', () => {
+    const store = createStore(CONTENT, null, 19);
+    store.setTutorial({ state: 'done' });
+    store.skipToOpen();
+    store.setSpeed(10);
+    render(<App store={store} />);
+    fireEvent.click(screen.getByLabelText('Open the microscope'));
+    expect(store.game.speed).toBe(0);
+    expect(screen.getByRole('img', { name: /messages in flight/ })).toBeInTheDocument();
+    const t = store.game.now;
+    fireEvent.click(screen.getByLabelText('Step 10 milliseconds'));
+    expect(store.game.now).toBe(t + 10);
+    fireEvent.click(screen.getByText('Close the microscope'));
+    expect(screen.queryByRole('img', { name: /messages in flight/ })).toBeNull();
+  });
+
   it('shows the shop and refuses what cannot be afforded', () => {
     const store = createStore(CONTENT, null, 6);
     store.game.firm.cash = 1000;

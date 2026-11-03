@@ -160,3 +160,28 @@ export interface Content {
   start: { location: string; network: string; computer: string };
   firmName: string;
 }
+
+/** Rules an exchange may run: each a real policy built or proposed to blunt speed. */
+export interface ExchangeRules {
+  /** Added to every order's and every quote's latency through this exchange, ms. */
+  speedBumpMs: number;
+  /** Orders match only at the next batch, this often; zero is continuous matching. */
+  batchMs: number;
+  /** Charged to both sides of every fill, cents a share. */
+  taxPerShare: number;
+  /** A resting order cannot be cancelled before it has rested this long, ms. */
+  minRestMs: number;
+  /** Prices sit on this grid, cents. */
+  tickSize: number;
+  /** Whether a post-only order is honoured; off, it is a plain order. */
+  postOnly: boolean;
+}
+
+export const DEFAULT_RULES: ExchangeRules = {
+  speedBumpMs: 0,
+  batchMs: 0,
+  taxPerShare: 0,
+  minRestMs: 0,
+  tickSize: 1,
+  postOnly: true,
+};

@@ -3,7 +3,7 @@
 // P&L live here, and so does the regulator's interest in it.
 
 import { MS_PER_SECOND } from './clock';
-import type { Exchange } from './exchange';
+import type { Exchange, SubmitResult } from './exchange';
 import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
 import type { Market } from './market';
 import type { Side, Trade } from './orderbook';
@@ -75,6 +75,7 @@ type Inbound =
     }
   | { kind: 'fill'; localId: number; price: number; size: number; at: number; taker: boolean }
   | { kind: 'cancelled'; localId: number }
+  | { kind: 'cancelRefused'; localId: number; reason: string }
   | { kind: 'rejected'; localId: number; reason: string };
 
 export interface RiskSettings {
@@ -87,6 +88,20 @@ export interface RiskSettings {
 export interface Halt {
   until: number;
   reason: string;
+}
+
+/** A message on the wire, as the microscope shows it. */
+export interface Wire {
+  owner: string;
+  kind: 'order' | 'cancel' | 'ack' | 'fill' | 'cancelled' | 'cancelRefused' | 'rejected';
+  exchange: string;
+  symbol: string;
+  side: Side;
+  price: number;
+  size: number;
+  sentAt: number;
+  arrivesAt: number;
+  direction: 'out' | 'back';
 }
 
 export interface FirmStats {
@@ -207,14 +222,21 @@ export class Firm {
     return this.positions.get(symbol)?.qty ?? 0;
   }
 
-  /** How late an order reaches the exchange. */
+  /** The simulated time the exchanges are at, for a batch's answer, which arrives during their step. */
+  batchedAt = 0;
+  /** The speed bump each exchange runs, set by the game from the exchanges so the firm does not reach in. */
+  bumps: Record<string, number> = {};
+  /** The tax each exchange charges a fill, cents a share, set the same way. */
+  taxes: Record<string, number> = {};
+
+  /** How late an order reaches the exchange, the exchange's speed bump included. */
   latency(exchange: string): number {
-    return latencyTo(this.infra, exchange);
+    return latencyTo(this.infra, exchange) + (this.bumps[exchange] ?? 0);
   }
 
-  /** How late the exchange's quotes reach the firm. */
+  /** How late the exchange's quotes reach the firm, the bump included. */
   dataLatency(exchange: string): number {
-    return dataLatencyTo(this.infra, exchange);
+    return dataLatencyTo(this.infra, exchange) + (this.bumps[exchange] ?? 0);
   }
 
   setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params>; source?: string }): void {
@@ -310,6 +332,11 @@ export class Firm {
         case 'cancelled':
           if (order.status !== 'filled') order.status = 'cancelled';
           break;
+        case 'cancelRefused':
+          // The exchange would not let it go yet: it is still resting, and the block will try again.
+          if (order.status === 'cancelling') order.status = 'resting';
+          order.reason = msg.reason;
+          break;
         case 'rejected':
           order.status = 'rejected';
           order.reason = msg.reason;
@@ -327,8 +354,11 @@ export class Firm {
 
   private book(order: OpenOrder, price: number, size: number, at: number, taker: boolean): void {
     order.filled += size;
-    // Maker-taker: the order that crossed the spread pays the exchange; the one that was resting does not.
-    const fee = taker ? Math.round(this.feeFor(order.exchange) * size) : 0;
+    // Maker-taker: the order that crossed the spread pays the exchange; the one that was resting does not. A
+    // transaction tax, where the exchange runs one, is paid by both.
+    const fee =
+      (taker ? Math.round(this.feeFor(order.exchange) * size) : 0) +
+      Math.round((this.taxes[order.exchange] ?? 0) * size);
     const pos = this.positions.get(order.symbol) ?? { qty: 0, avgCost: 0 };
     const signed = order.side === 'buy' ? size : -size;
     let realised = 0;
@@ -588,15 +618,39 @@ export class Firm {
       const exchange = market.exchange(msg.exchange);
       const back = now + this.latency(msg.exchange);
       if (msg.kind === 'cancel') {
-        exchange.cancel(msg.symbol, msg.exchangeOrderId);
-        this.inbound.push({ kind: 'cancelled', localId: msg.localId }, back);
+        const { refused } = exchange.cancel(msg.symbol, msg.exchangeOrderId, now);
+        if (refused) this.inbound.push({ kind: 'cancelRefused', localId: msg.localId, reason: refused }, back);
+        else this.inbound.push({ kind: 'cancelled', localId: msg.localId }, back);
         continue;
       }
       const mine = this.orders.get(msg.localId);
       // Before the order goes in, read who took the quote it was sent for since the firm saw it.
       const beatenBy =
         mine && mine.seenAt !== null ? exchange.takersSince(msg.symbol, mine.seenAt, msg.side, msg.price, this.id) : [];
-      const { order, refused } = exchange.submit(
+      // The answer, now or at the next batch: refused with a reason, or acked with what remains.
+      const answer = (result: SubmitResult, arrivedAt: number) => {
+        const reply = arrivedAt + this.latency(msg.exchange);
+        if (result.refused) {
+          this.inbound.push({ kind: 'rejected', localId: msg.localId, reason: result.refused }, reply);
+          return;
+        }
+        const o = this.orders.get(msg.localId);
+        if (o) o.arrivedAt = arrivedAt;
+        // The exchange's own trades for this order come back through onTrade, like any other fill.
+        this.inbound.push(
+          {
+            kind: 'ack',
+            localId: msg.localId,
+            exchangeOrderId: result.order.id,
+            remaining: result.order.remaining,
+            resting: result.order.remaining > 0 && !result.order.ioc,
+            arrivedAt,
+            beatenBy,
+          },
+          reply,
+        );
+      };
+      const result = exchange.submit(
         msg.symbol,
         {
           owner: this.id,
@@ -608,24 +662,9 @@ export class Firm {
           display: msg.display,
         },
         now,
+        (r) => answer(r, this.batchedAt),
       );
-      if (refused) {
-        this.inbound.push({ kind: 'rejected', localId: msg.localId, reason: refused }, back);
-        continue;
-      }
-      // The exchange's own trades for this order come back through onTrade, like any other fill.
-      this.inbound.push(
-        {
-          kind: 'ack',
-          localId: msg.localId,
-          exchangeOrderId: order.id,
-          remaining: order.remaining,
-          resting: order.remaining > 0 && !order.ioc,
-          arrivedAt: now,
-          beatenBy,
-        },
-        back,
-      );
+      if (result) answer(result, now);
     }
   }
 
@@ -662,6 +701,45 @@ export class Firm {
       }
     }
     return null;
+  }
+
+  /** Every message on the wire, for the microscope: orders and cancels on their way out, acks and fills on their way back. */
+  inFlight(): Wire[] {
+    const out: Wire[] = [];
+    for (const d of this.outbound.save()) {
+      const m = d.item;
+      const o = this.orders.get(m.localId);
+      out.push({
+        owner: this.id,
+        kind: m.kind,
+        exchange: m.exchange,
+        symbol: m.symbol,
+        side: m.kind === 'order' ? m.side : (o?.side ?? 'buy'),
+        price: m.kind === 'order' ? m.price : (o?.price ?? 0),
+        size: m.kind === 'order' ? m.size : (o?.size ?? 0),
+        sentAt: d.at - this.latency(m.exchange),
+        arrivesAt: d.at,
+        direction: 'out',
+      });
+    }
+    for (const d of this.inbound.save()) {
+      const m = d.item;
+      const o = this.orders.get(m.localId);
+      if (!o) continue;
+      out.push({
+        owner: this.id,
+        kind: m.kind,
+        exchange: o.exchange,
+        symbol: o.symbol,
+        side: o.side,
+        price: m.kind === 'fill' ? m.price : o.price,
+        size: m.kind === 'fill' ? m.size : o.size,
+        sentAt: d.at - this.latency(o.exchange),
+        arrivesAt: d.at,
+        direction: 'back',
+      });
+    }
+    return out;
   }
 
   /** The close: whatever was resting is gone, and the firm hears so at once. */
