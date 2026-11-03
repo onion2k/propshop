@@ -1,6 +1,6 @@
 # The lab, and the microscope
 
-State: building, part 1 of 4.
+State: landed on main at c0efea6, 2026-11-03.
 
 ## Context
 
