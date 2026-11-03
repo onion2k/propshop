@@ -316,3 +316,141 @@ describe('Firm risk', () => {
     expect(f.stats.ordersSent).toBeGreaterThan(sentAfter);
   });
 });
+
+describe('Firm gap log', () => {
+  // The firm's view of two exchanges, held by hand: one quote per exchange, changed between decisions.
+  function crossable() {
+    const f = new Firm('firm', 'Mine', MILLION, FAST, []);
+    const market = new Market(STOCKS, EXCHANGES);
+    const seen: Record<string, { bid: number | null; ask: number | null }> = {
+      HARBOR: { bid: 4099, ask: 4101 },
+      LAKESIDE: { bid: 4099, ask: 4101 },
+    };
+    for (const e of market.exchanges) {
+      e.quoteAsOf = (symbol: string, at: number) =>
+        symbol === 'ABC'
+          ? {
+              bid: seen[e.id]!.bid,
+              ask: seen[e.id]!.ask,
+              bidSize: 100,
+              askSize: 100,
+              bid2: null,
+              ask2: null,
+              bid2Size: 0,
+              ask2Size: 0,
+              at,
+            }
+          : null;
+    }
+    f.feeTable = { HARBOR: 0.3, LAKESIDE: 0.25 };
+    f.taxes = { HARBOR: 0, LAKESIDE: 0 };
+    f.watch = ['ABC'];
+    let now = MARKET_OPEN;
+    const decide = (n = 1) => {
+      for (let i = 0; i < n; i++) {
+        now += FAST.computer.decisionEveryMs;
+        f.step(now, market, [], true);
+      }
+    };
+    // Lakeside's ask is under Harbor's bid: buy at Lakeside, sell at Harbor.
+    const cross = () => {
+      seen.HARBOR = { bid: 4105, ask: 4107 };
+      seen.LAKESIDE = { bid: 4101, ask: 4103 };
+    };
+    const uncross = () => {
+      seen.HARBOR = { bid: 4099, ask: 4101 };
+      seen.LAKESIDE = { bid: 4099, ask: 4101 };
+    };
+    return { f, seen, decide, cross, uncross, now: () => now };
+  }
+
+  it('records one episode across consecutive decisions, with its prices, edge after both taker fees, and times', () => {
+    const w = crossable();
+    w.decide(2);
+    expect(w.f.gapLog).toEqual([]);
+    w.cross();
+    w.decide();
+    const first = w.now();
+    w.decide(4);
+    expect(w.f.gapLog).toHaveLength(1);
+    expect(w.f.gapLog[0]).toEqual({
+      symbol: 'ABC',
+      buyOn: 'LAKESIDE',
+      sellOn: 'HARBOR',
+      ask: 4103,
+      bid: 4105,
+      // 4105 - 4103 = 2 cents, less 0.25 to buy and 0.30 to sell.
+      edge: 1.45,
+      firstSeen: first,
+      lastSeen: w.now(),
+    });
+    expect(w.f.stats.gapsSeen).toBe(5);
+  });
+
+  it('charges a tax as well as the fee on each leg', () => {
+    const w = crossable();
+    w.f.taxes = { HARBOR: 0.1, LAKESIDE: 0 };
+    w.cross();
+    w.decide();
+    expect(w.f.gapLog[0]!.edge).toBe(1.35);
+  });
+
+  it('keeps a gap smaller than the fees, with a negative edge', () => {
+    const w = crossable();
+    w.seen.HARBOR = { bid: 4104, ask: 4107 };
+    w.seen.LAKESIDE = { bid: 4101, ask: 4103 };
+    w.f.feeTable = { HARBOR: 0.8, LAKESIDE: 0.5 };
+    w.decide();
+    // One cent of gap, 1.3 cents of fees.
+    expect(w.f.gapLog[0]!.edge).toBe(-0.3);
+  });
+
+  it('closes an episode when the books uncross, and starts a second when they cross again', () => {
+    const w = crossable();
+    w.cross();
+    w.decide(3);
+    w.uncross();
+    w.decide(2);
+    w.cross();
+    w.decide(2);
+    expect(w.f.gapLog).toHaveLength(2);
+    expect(w.f.gapLog[0]!.lastSeen).toBeLessThan(w.f.gapLog[1]!.firstSeen);
+  });
+
+  it('starts a new episode when the same symbol crosses the other way round', () => {
+    const w = crossable();
+    w.cross();
+    w.decide(2);
+    w.seen.HARBOR = { bid: 4101, ask: 4103 };
+    w.seen.LAKESIDE = { bid: 4105, ask: 4107 };
+    w.decide();
+    expect(w.f.gapLog.map((g) => [g.buyOn, g.sellOn])).toEqual([
+      ['LAKESIDE', 'HARBOR'],
+      ['HARBOR', 'LAKESIDE'],
+    ]);
+  });
+
+  it('holds twenty episodes at most, the newest', () => {
+    const w = crossable();
+    for (let i = 0; i < 25; i++) {
+      w.cross();
+      w.seen.HARBOR = { bid: 4105 + i, ask: 4107 + i };
+      w.decide();
+      w.uncross();
+      w.decide();
+    }
+    expect(w.f.gapLog).toHaveLength(20);
+    expect(w.f.gapLog[0]!.bid).toBe(4105 + 5);
+    expect(w.f.gapLog[19]!.bid).toBe(4105 + 24);
+  });
+
+  it('is not saved, and a loaded firm starts with an empty log', () => {
+    const w = crossable();
+    w.cross();
+    w.decide(2);
+    expect(w.f.gapLog).toHaveLength(1);
+    const saved = w.f.save();
+    expect(JSON.stringify(saved)).not.toMatch(/gapLog|firstSeen/);
+    expect(Firm.load(JSON.parse(JSON.stringify(saved)) as ReturnType<Firm['save']>, FAST).gapLog).toEqual([]);
+  });
+});

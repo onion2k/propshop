@@ -35,15 +35,21 @@ export function Race({ o, names, now }: { o: OrderStory; names: Record<string, s
   if (o.ackAt !== null) ticks.push({ at: o.ackAt, label: 'heard back', cls: 'heard' });
   return (
     <div className="race">
-      <div className="race-line" aria-hidden="true">
-        {ticks.map((t, i) => (
-          <span
-            key={i}
-            className={`tick ${t.cls}`}
-            style={{ left: x(t.at) }}
-            title={`${t.label}, +${ms(t.at - start)}`}
-          />
-        ))}
+      <div className="race-bar">
+        <div className="race-line" aria-hidden="true">
+          {ticks.map((t, i) => (
+            <span
+              key={i}
+              className={`tick ${t.cls}`}
+              style={{ left: x(t.at) }}
+              title={`${t.label}, +${ms(t.at - start)}`}
+            />
+          ))}
+        </div>
+        <span className="race-span muted small num">
+          {ms(span)}
+          {o.ackAt === null && ' so far'}
+        </span>
       </div>
       <div className="race-words small">
         <span className="muted">

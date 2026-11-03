@@ -355,3 +355,33 @@ describe('Game', () => {
     expect(ticksPerSecond).toBeGreaterThan(75_000);
   });
 });
+
+describe('Game gap log', () => {
+  function withGaps() {
+    const g = new Game(CONTENT, 7);
+    g.skipToOpen();
+    for (let i = 0; i < 40 && g.firm.gapLog.length === 0; i++) run(g, MS_PER_MINUTE);
+    return g;
+  }
+
+  it('carries the gaps the firm saw in the snapshot, newest first, as copies', () => {
+    const g = withGaps();
+    const s = g.snapshot();
+    expect(s.gaps.length).toBeGreaterThan(0);
+    expect(s.gaps.length).toBeLessThanOrEqual(20);
+    for (let i = 1; i < s.gaps.length; i++)
+      expect(s.gaps[i - 1]!.firstSeen).toBeGreaterThanOrEqual(s.gaps[i]!.firstSeen);
+    s.gaps[0]!.edge = 999;
+    expect(g.snapshot().gaps[0]!.edge).not.toBe(999);
+  });
+
+  it('saves and loads mid-session to the same future', () => {
+    const a = withGaps();
+    expect(a.firm.gapLog.length).toBeGreaterThan(0);
+    const b = Game.load(CONTENT, JSON.parse(JSON.stringify(a.save())) as SavedGame);
+    expect(b.snapshot().gaps).toEqual([]);
+    run(a, 50_000 * TICK_MS);
+    run(b, 50_000 * TICK_MS);
+    expect(JSON.stringify(b.save())).toBe(JSON.stringify(a.save()));
+  });
+});

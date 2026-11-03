@@ -3,9 +3,10 @@
 // computer says how many that may be.
 
 import { useState } from 'react';
-import type { Level, Snapshot } from '../sim';
+import { TICK_MS, type Level, type Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
 import { price, shares } from './format';
+import { GapLine, GapList } from './Gaps';
 import { Term } from './Glossary';
 import type { Store } from './store';
 
@@ -22,6 +23,10 @@ export function MarketPanel({
 }) {
   const [ladder, setLadder] = useState<string | null>(null);
   const selected = s.stocks.find((st) => st.symbol === picked) ?? s.stocks.find((st) => st.watched) ?? s.stocks[0];
+  const seenBids = selected?.exchanges.flatMap((ex) => (ex.seen && ex.seen.bid !== null ? [ex.seen.bid] : [])) ?? [];
+  const seenAsks = selected?.exchanges.flatMap((ex) => (ex.seen && ex.seen.ask !== null ? [ex.seen.ask] : [])) ?? [];
+  const topBid = seenBids.length ? Math.max(...seenBids) : null;
+  const topAsk = seenAsks.length ? Math.min(...seenAsks) : null;
   const full = s.watching.count >= s.watching.max;
   return (
     <section className="panel market">
@@ -96,6 +101,9 @@ export function MarketPanel({
                 <th className="num">Bid</th>
                 <th className="num">Ask</th>
                 <th className="num col-spread">Spread</th>
+                <th className="num col-now">
+                  <Term id="latency">now</Term>
+                </th>
                 <th className="num">Last</th>
                 <th className="num col-size">Size</th>
               </tr>
@@ -104,6 +112,11 @@ export function MarketPanel({
               {selected.exchanges.map((ex) => {
                 const key = `${selected.symbol}:${ex.id}`;
                 const q = ex.seen;
+                const bestBid = q?.bid === topBid && topBid !== null;
+                const bestAsk = q?.ask === topAsk && topAsk !== null;
+                const live = (s.dataLatency[ex.id] ?? 0) <= TICK_MS;
+                const nowBid = ex.depth.bids[0]?.price ?? null;
+                const nowAsk = ex.depth.asks[0]?.price ?? null;
                 const spread = q && q.bid !== null && q.ask !== null ? q.ask - q.bid : null;
                 return (
                   <tr
@@ -115,9 +128,12 @@ export function MarketPanel({
                     <td>
                       <span className="dot" style={{ background: exchangeColour(ex.id) }} /> {ex.id}
                     </td>
-                    <td className="num bid">{price(q?.bid ?? null)}</td>
-                    <td className="num ask">{price(q?.ask ?? null)}</td>
+                    <td className={`num bid ${bestBid ? 'best' : ''}`}>{price(q?.bid ?? null)}</td>
+                    <td className={`num ask ${bestAsk ? 'best' : ''}`}>{price(q?.ask ?? null)}</td>
                     <td className="num col-spread">{spread === null ? '—' : `${spread}¢`}</td>
+                    <td className="num muted col-now">
+                      {live ? 'live' : nowBid === null && nowAsk === null ? '—' : `${price(nowBid)} / ${price(nowAsk)}`}
+                    </td>
                     <td className="num">{price(ex.last)}</td>
                     <td className="num muted col-size">{q ? `${shares(q.bidSize)} × ${shares(q.askSize)}` : '—'}</td>
                   </tr>
@@ -125,6 +141,8 @@ export function MarketPanel({
               })}
             </tbody>
           </table>
+          <GapLine s={s} stock={selected} />
+          <GapList s={s} stock={selected} onPick={onPick} />
           {selected.exchanges.map(
             (ex) =>
               ladder === `${selected.symbol}:${ex.id}` && (

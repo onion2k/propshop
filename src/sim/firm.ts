@@ -27,6 +27,24 @@ const ORDER_LOG = 200;
 export const MID_SAMPLE_EVERY = 250;
 /** Ten minutes of samples: enough for a pair's ratio to have somewhere to come back from. */
 const MID_LOG = 2400;
+/** How many gap episodes a firm remembers, oldest dropped first. Not saved: a display of the past. */
+const GAP_LOG = 20;
+
+/** A run of consecutive decisions in which the firm's own view had one exchange's ask under another's bid. */
+export interface GapEpisode {
+  symbol: string;
+  /** Where the best ask was, so where the firm would buy. */
+  buyOn: string;
+  /** Where the best bid was, so where it would sell. */
+  sellOn: string;
+  /** Integer cents at first sight. */
+  ask: number;
+  bid: number;
+  /** Cents a share after both legs' taker fees and any tax; negative where the gap is smaller than the costs. */
+  edge: number;
+  firstSeen: number;
+  lastSeen: number;
+}
 
 export interface BlockSetting {
   id: string;
@@ -137,6 +155,8 @@ export interface SavedFirm {
   nextFillSeq: number;
   /** Null where the firm has not decided or sent yet: JSON has no minus infinity. */
   lastDecision: number | null;
+  /** When the midpoint history was last sampled; absent in a save from before it was kept. */
+  midSampledAt?: number | null;
   secondStarted: number | null;
   ordersThisSecond: number;
   stats: FirmStats;
@@ -404,6 +424,16 @@ export class Firm {
     return this.feeTable[exchange] ?? 0;
   }
 
+  /** The gaps the view has seen, oldest first, at most GAP_LOG. Never saved and never read by a decision. */
+  gapLog: GapEpisode[] = [];
+  /** The episode still running per symbol, one at most each. */
+  private openGaps = new Map<string, GapEpisode>();
+
+  /** What a taker pays a share on an exchange: the fee and the tax. */
+  private takerCost(exchange: string): number {
+    return this.feeFor(exchange) + (this.taxes[exchange] ?? 0);
+  }
+
   /** Set by the game from the market's exchanges, so the firm does not reach into them to find out. */
   feeTable: Record<string, number> = {};
 
@@ -451,7 +481,27 @@ export class Firm {
           askOn = e.id;
         }
       }
-      if (bestBid !== null && bestAsk !== null && bestAsk < bestBid && bidOn !== askOn) this.stats.gapsSeen++;
+      if (bestBid !== null && bestAsk !== null && bestAsk < bestBid && bidOn !== askOn) {
+        this.stats.gapsSeen++;
+        const open = this.openGaps.get(s.symbol);
+        if (open && open.buyOn === askOn && open.sellOn === bidOn) open.lastSeen = now;
+        else {
+          const edge = bestBid - bestAsk - this.takerCost(askOn!) - this.takerCost(bidOn!);
+          const ep: GapEpisode = {
+            symbol: s.symbol,
+            buyOn: askOn!,
+            sellOn: bidOn!,
+            ask: bestAsk,
+            bid: bestBid,
+            edge: Math.round(edge * 1000) / 1000,
+            firstSeen: now,
+            lastSeen: now,
+          };
+          this.gapLog.push(ep);
+          if (this.gapLog.length > GAP_LOG) this.gapLog.splice(0, this.gapLog.length - GAP_LOG);
+          this.openGaps.set(s.symbol, ep);
+        }
+      } else if (this.openGaps.size > 0) this.openGaps.delete(s.symbol);
       if (sample && bestBid !== null && bestAsk !== null) {
         const log = this.mids.get(s.symbol) ?? [];
         log.push((bestBid + bestAsk) / 2);
@@ -784,6 +834,7 @@ export class Firm {
       nextLocalId: this.nextLocalId,
       nextFillSeq: this.nextFillSeq,
       lastDecision: Number.isFinite(this.lastDecision) ? this.lastDecision : null,
+      midSampledAt: Number.isFinite(this.midSampledAt) ? this.midSampledAt : null,
       secondStarted: Number.isFinite(this.secondStarted) ? this.secondStarted : null,
       ordersThisSecond: this.ordersThisSecond,
       stats: this.stats,
@@ -815,6 +866,7 @@ export class Firm {
     f.nextLocalId = s.nextLocalId;
     f.nextFillSeq = s.nextFillSeq;
     f.lastDecision = s.lastDecision === null ? -Infinity : s.lastDecision;
+    f.midSampledAt = s.midSampledAt === null || s.midSampledAt === undefined ? -Infinity : s.midSampledAt;
     f.secondStarted = s.secondStarted === null ? -Infinity : s.secondStarted;
     f.ordersThisSecond = s.ordersThisSecond;
     // A save from before the count has none; it starts at nought.

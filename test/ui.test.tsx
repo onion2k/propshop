@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { CONTENT } from '../src/content';
-import { TICK_MS } from '../src/sim';
+import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
+import { MarketPanel } from '../src/ui/MarketPanel';
+import { FirmPanel } from '../src/ui/FirmPanel';
 import { App } from '../src/ui/App';
 import { createStore, PROGRESS_KEY, SAVE_KEY, type Storage } from '../src/ui/store';
 
@@ -331,5 +333,287 @@ describe('App', () => {
     expect(screen.getByText('Colocation at HARBOR')).toBeInTheDocument();
     const buttons = screen.getAllByRole('button', { name: /\$120\.0k/ });
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+  });
+});
+
+describe('MarketPanel: the gap', () => {
+  /** A real snapshot with the first stock's quotes, fees and latencies set by hand, so the words are exact. */
+  function fixture(
+    over: {
+      aSeen?: { bid: number | null; ask: number | null };
+      bSeen?: { bid: number | null; ask: number | null };
+      latency?: number;
+      watched?: boolean;
+      gaps?: Snapshot['gaps'];
+      orders?: OrderStory[];
+    } = {},
+  ) {
+    const store = createStore(CONTENT, null, 7);
+    store.skipToOpen();
+    for (let i = 0; i < 200; i++) store.game.step();
+    store.publish();
+    const base = store.getSnapshot();
+    const st = base.stocks[0]!;
+    const [a, b] = [st.exchanges[0]!.id, st.exchanges[1]!.id];
+    const quote = (q: { bid: number | null; ask: number | null }) => ({ ...q, bidSize: 100, askSize: 100 });
+    const book = (bid: number, ask: number) => ({
+      bids: [{ price: bid, size: 100, mine: 0, orders: 1 }],
+      asks: [{ price: ask, size: 100, mine: 0, orders: 1 }],
+    });
+    const aSeen = over.aSeen ?? { bid: 4130, ask: 4132 };
+    const bSeen = over.bSeen ?? { bid: 4133, ask: 4136 };
+    const s: Snapshot = {
+      ...base,
+      exchanges: base.exchanges.map((e) =>
+        e.id === a ? { ...e, feePerShare: 0.3 } : e.id === b ? { ...e, feePerShare: 0.25 } : e,
+      ),
+      rules: Object.fromEntries(Object.entries(base.rules).map(([k, r]) => [k, { ...r, taxPerShare: 0 }])),
+      dataLatency: { ...base.dataLatency, [a]: over.latency ?? 15, [b]: 44 },
+      gaps: over.gaps ?? [],
+      orders: over.orders ?? [],
+      names: { ...base.names, rival: 'Harbor Quant' },
+      stocks: base.stocks.map((x, i) =>
+        i !== 0
+          ? x
+          : {
+              ...x,
+              watched: over.watched ?? true,
+              exchanges: x.exchanges.map((e) =>
+                e.id === a
+                  ? { ...e, seen: quote(aSeen), depth: book(4131, 4133) }
+                  : e.id === b
+                    ? { ...e, seen: quote(bSeen), depth: book(4134, 4137) }
+                    : { ...e, seen: null, depth: { bids: [], asks: [] } },
+              ),
+            },
+      ),
+    };
+    return { s, store, sym: st.symbol, a, b };
+  }
+  const show = (f: ReturnType<typeof fixture>) =>
+    render(<MarketPanel s={f.s} store={f.store} picked={f.sym} onPick={() => {}} />);
+  const story = (f: ReturnType<typeof fixture>, over: Partial<OrderStory>): OrderStory => ({
+    localId: 1,
+    exchange: f.a,
+    exchangeOrderId: 1,
+    symbol: f.sym,
+    side: 'buy',
+    price: 4132,
+    size: 100,
+    filled: 0,
+    ioc: true,
+    status: 'cancelled',
+    block: 'arbitrage',
+    sentAt: 1000,
+    seenAt: 900,
+    arrivedAt: 1030,
+    ackAt: 1060,
+    beatenBy: [],
+    fee: 0,
+    realised: 0,
+    ...over,
+  });
+
+  it('names both exchanges, the cents and the edge after both taker fees', () => {
+    const f = fixture();
+    show(f);
+    const line = document.querySelector('.gap-line')!;
+    expect(line.textContent).toBe(
+      `Gap: buy on ${f.a} at 41.32, sell on ${f.b} at 41.33 · 1¢ a share, 0.45¢ after both taker fees · as you see it: ${f.a} 15ms ago, ${f.b} 44ms ago.`,
+    );
+  });
+
+  it('shows no gap line when the view is not crossed, and still marks the best bid and ask', () => {
+    const f = fixture({ bSeen: { bid: 4129, ask: 4136 } });
+    show(f);
+    expect(document.querySelector('.gap-line')).toBeNull();
+    const best = [...document.querySelectorAll('.quotes td.best')].map((e) => e.textContent);
+    expect(best).toEqual(['41.30', '41.32']);
+  });
+
+  it('marks every one of a tie', () => {
+    const f = fixture({ aSeen: { bid: 4130, ask: 4136 }, bSeen: { bid: 4130, ask: 4136 } });
+    show(f);
+    expect(document.querySelectorAll('.quotes td.best')).toHaveLength(4);
+  });
+
+  it('says the fees are bigger than the gap when the edge is negative', () => {
+    const f = fixture({ aSeen: { bid: 4130, ask: 4133 }, bSeen: { bid: 4134, ask: 4136 } });
+    f.s.exchanges.find((e) => e.id === f.a)!.feePerShare = 1.2;
+    show(f);
+    const line = document.querySelector('.gap-line')!.textContent;
+    expect(line).toContain('1¢ a share, −0.45¢ after both taker fees: the fees are bigger than the gap');
+  });
+
+  it('shows the true touch now, or live where the data is a tick old or less', () => {
+    const f = fixture({ latency: 15 });
+    show(f);
+    const now = [...document.querySelectorAll('.quotes td.col-now')].map((e) => e.textContent);
+    expect(now[0]).toBe('41.31 / 41.33');
+    expect(now[1]).toBe('41.34 / 41.37');
+  });
+
+  it('says live in place of the touch when the data latency is one tick', () => {
+    const f = fixture({ latency: TICK_MS });
+    show(f);
+    expect(document.querySelectorAll('.quotes td.col-now')[0]!.textContent).toBe('live');
+    expect(document.querySelectorAll('.quotes td.col-now')[1]!.textContent).toBe('41.34 / 41.37');
+  });
+
+  it('says so, and shows no gap list rows, for a stock that is not watched', () => {
+    const f = fixture({ watched: false });
+    show(f);
+    expect(document.querySelector('.gap-line')!.textContent).toBe(
+      `Not watched: your blocks cannot see ${f.sym}, so its gaps are not yours.`,
+    );
+    expect(document.querySelectorAll('.gap-row')).toHaveLength(0);
+  });
+
+  it('lists a gap with its edge, a one-look duration and what the orders on it did', () => {
+    const f = fixture();
+    f.s.gaps = [
+      { symbol: f.sym, buyOn: f.a, sellOn: f.b, ask: 4132, bid: 4133, edge: 0.45, firstSeen: 1000, lastSeen: 1000 },
+      { symbol: f.sym, buyOn: f.b, sellOn: f.a, ask: 4100, bid: 4102, edge: -0.2, firstSeen: 500, lastSeen: 560 },
+    ];
+    f.s.orders = [
+      story(f, { localId: 1, sentAt: 1000, filled: 100, status: 'filled' }),
+      story(f, { localId: 2, sentAt: 1000, beatenBy: [{ owner: 'rival', at: 1010, price: 4132, size: 100 }] }),
+      story(f, { localId: 3, sentAt: 90000 }),
+    ];
+    show(f);
+    const rows = [...document.querySelectorAll('.gap-row')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('one look');
+    expect(rows[0]!.textContent).toContain('+0.45¢');
+    expect(rows[0]!.textContent).toContain(`buy ${f.a} 41.32 / sell ${f.b} 41.33`);
+    expect(rows[0]!.textContent).toContain('2 sent: 1 filled, 1 beaten by Harbor Quant');
+    expect(rows[1]!.textContent).toContain('−0.20¢');
+    expect(rows[1]!.textContent).toContain('60ms');
+    expect(rows[1]!.textContent).toContain('you sent nothing');
+  });
+
+  it('says no gaps seen when the list is empty on a watched stock', () => {
+    const f = fixture();
+    show(f);
+    expect(screen.getByText('No gaps seen yet.')).toBeInTheDocument();
+    expect(screen.getByText('Gaps you saw')).toBeInTheDocument();
+  });
+
+  it('lists gaps on every symbol, and clicking a row picks its stock', () => {
+    const f = fixture();
+    const other = f.s.stocks[1]!.symbol;
+    f.s.gaps = [
+      { symbol: other, buyOn: f.a, sellOn: f.b, ask: 2000, bid: 2002, edge: 1, firstSeen: 2000, lastSeen: 2000 },
+      { symbol: f.sym, buyOn: f.a, sellOn: f.b, ask: 4132, bid: 4133, edge: 0.45, firstSeen: 1000, lastSeen: 1000 },
+    ];
+    const picked: string[] = [];
+    render(<MarketPanel s={f.s} store={f.store} picked={f.sym} onPick={(x) => picked.push(x)} />);
+    const rows = [...document.querySelectorAll('.gap-row')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain(other);
+    expect(rows[1]!.textContent).toContain(f.sym);
+    expect(rows[1]!.classList.contains('picked')).toBe(true);
+    fireEvent.click(rows[0]!);
+    expect(picked).toEqual([other]);
+  });
+
+  it('closed hours: empty books give no marks, no gap line, and a dash for now', () => {
+    const f = fixture({ aSeen: { bid: null, ask: null }, bSeen: { bid: null, ask: null }, latency: 15 });
+    for (const e of f.s.stocks[0]!.exchanges) e.depth = { bids: [], asks: [] };
+    show(f);
+    expect(document.querySelector('.gap-line')).toBeNull();
+    expect(document.querySelectorAll('.quotes td.best')).toHaveLength(0);
+    expect(document.querySelectorAll('.quotes td.col-now')[0]!.textContent).toBe('—');
+  });
+});
+
+describe('FirmPanel: races by exchange, net, legend and span', () => {
+  function firm(over: Partial<Snapshot> = {}) {
+    const store = createStore(CONTENT, null, 7);
+    store.publish();
+    const base = store.getSnapshot();
+    const [a, b] = [base.exchanges[0]!.id, base.exchanges[1]!.id];
+    const s: Snapshot = { ...base, orders: [], latency: { ...base.latency, [a]: 2, [b]: 30 }, ...over };
+    return { s, a, b };
+  }
+  let n = 0;
+  const order = (exchange: string, over: Partial<OrderStory> = {}): OrderStory => ({
+    localId: ++n,
+    exchange,
+    exchangeOrderId: n,
+    symbol: 'AAA',
+    side: 'buy',
+    price: 4132,
+    size: 100,
+    filled: 0,
+    ioc: true,
+    status: 'cancelled',
+    block: 'arbitrage',
+    sentAt: 1000,
+    seenAt: 900,
+    arrivedAt: 1030,
+    ackAt: 1060,
+    beatenBy: [],
+    fee: 0,
+    realised: 0,
+    ...over,
+  });
+  const beat = [{ owner: 'rival', at: 1010, price: 4132, size: 100 }];
+
+  it('counts the finished immediate-or-cancel races on each exchange', () => {
+    const { s, a, b } = firm();
+    s.orders = [
+      order(a, { filled: 100, status: 'filled' }),
+      order(a, { filled: 100, status: 'filled' }),
+      order(a, { beatenBy: beat }),
+      order(b, { beatenBy: beat }),
+      order(b),
+      order(a, { status: 'inflight', ackAt: null }),
+      order(a, { status: 'resting', ioc: false }),
+    ];
+    render(<FirmPanel s={s} />);
+    const card = document.querySelector('.scorecard')!;
+    expect(card.textContent).toContain('your last 5');
+    const rows = [...card.querySelectorAll('tbody tr')];
+    const cells = (id: string) =>
+      [...rows.find((r) => r.textContent.includes(id))!.querySelectorAll('td')].map((c) => c.textContent.trim());
+    expect(cells(a)).toEqual([a, '2ms', '2', '1', '0', '67%']);
+    expect(cells(b)).toEqual([b, '30ms', '0', '1', '1', '0%']);
+    expect(rows.some((r) => r.textContent.includes('—'))).toBe(s.exchanges.length > 2);
+  });
+
+  it('hides the scorecard when no race is counted', () => {
+    const { s, a } = firm();
+    s.orders = [order(a, { status: 'inflight', ackAt: null })];
+    render(<FirmPanel s={s} />);
+    expect(document.querySelector('.scorecard')).toBeNull();
+  });
+
+  it('shows net after fees and fines in the heading', () => {
+    const { s } = firm({ realised: 1000, unrealised: 250.4, feesPaid: 300, finesPaid: 100 });
+    render(<FirmPanel s={s} />);
+    expect(document.querySelector('.firm h2')!.textContent).toContain('net +$8.50');
+  });
+
+  it('draws the legend once when there are orders, and not with none', () => {
+    const { s, a } = firm();
+    const { unmount } = render(<FirmPanel s={s} />);
+    expect(document.querySelector('.race-legend')).toBeNull();
+    unmount();
+    s.orders = [order(a), order(a)];
+    render(<FirmPanel s={s} />);
+    const legends = document.querySelectorAll('.race-legend');
+    expect(legends).toHaveLength(1);
+    for (const w of ['saw the quote', 'sent', 'a rival took it', 'arrived', 'heard back'])
+      expect(legends[0]!.textContent).toContain(w);
+  });
+
+  it('writes the span at the end of each bar, and so far while unheard', () => {
+    const { s, a } = firm();
+    s.now = 1200;
+    s.orders = [order(a), order(a, { ackAt: null, status: 'inflight' })];
+    render(<FirmPanel s={s} />);
+    const spans = [...document.querySelectorAll('.race-span')].map((e) => e.textContent);
+    expect(spans).toEqual(['160ms', '300ms so far']);
   });
 });

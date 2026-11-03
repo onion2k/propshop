@@ -645,6 +645,7 @@ code {
   }
   .col-sector,
   .col-name,
+  .col-now,
   .col-size {
     display: none;
   }
@@ -857,4 +858,99 @@ code {
   max-height: 140px;
   overflow: auto;
   font-family: var(--mono);
+}
+
+/* The best seen bid and ask across exchanges, and the gap between them. */
+.quotes td.best {
+  font-weight: 700;
+  outline: 1px solid currentColor;
+  outline-offset: -2px;
+}
+.quotes td.col-now {
+  opacity: 0.7;
+}
+.gap-line {
+  margin: 8px 0 4px;
+}
+.gaps h3 {
+  margin: 10px 0 2px;
+  font-size: 13px;
+}
+.gaps p {
+  margin: 2px 0;
+}
+.gap-row {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1.6fr) max-content max-content minmax(0, 1.4fr);
+  gap: 2px 10px;
+  padding: 3px 4px;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+.gap-row:hover,
+.gap-row.picked {
+  background: #202a38;
+}
+@media (max-width: 600px) {
+  .gap-row {
+    grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  }
+  .gap-row > :nth-child(5),
+  .gap-row > :nth-child(6) {
+    grid-column: span 2;
+  }
+}
+.race-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.race-bar .race-line {
+  flex: 1;
+}
+.race-span {
+  white-space: nowrap;
+  text-align: right;
+}
+.race-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 4px 0;
+}
+.race-legend .swatch {
+  display: inline-block;
+  width: 3px;
+  height: 10px;
+  vertical-align: middle;
+  background: var(--muted);
+}
+.race-legend .swatch.sent {
+  background: var(--accent);
+}
+.race-legend .swatch.beaten {
+  background: var(--down);
+}
+.race-legend .swatch.arrived {
+  background: var(--text);
+}
+.race-legend .swatch.heard {
+  background: var(--up);
+}
+.scorecard table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.scorecard th {
+  font-weight: 400;
+  color: var(--muted);
+  text-align: left;
+}
+.scorecard th.num,
+.scorecard td.num {
+  text-align: right;
+}
+.scorecard p {
+  margin: 4px 0;
 }

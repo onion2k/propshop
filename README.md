@@ -24,9 +24,16 @@ http://localhost:5181.
   building it is a tenth of one. With racks at several exchanges your
   orders land at once, and what still takes time is the other exchange's
   quote crossing the link to you.
+- **The gap, on the page.** When your view of two exchanges crosses, the
+  stock says so in money: buy here, sell there, so many cents a share and
+  what is left after fees, as you see it so many milliseconds ago. Beside
+  each quote you see is the market as it is now. Every gap you saw is kept,
+  with what your orders on it did.
 - **Every order tells its race.** When was the quote you priced from
   published, when did your order leave, when did it arrive, and who took
-  the quote before you, by how many milliseconds and by name.
+  the quote before you, by how many milliseconds and by name. A scorecard
+  counts your races by exchange beside your latency to each, so what a
+  millisecond is worth can be read off it.
 - **Eight strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day

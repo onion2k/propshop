@@ -12,7 +12,15 @@ import {
   type Calendar,
 } from './clock';
 import { DarkWeb, HEAT_FINE_LINE, type Fine, type SavedDarkWeb, type Tip } from './darkweb';
-import { Firm, type BlockSetting, type Halt, type RiskSettings, type SavedFirm, type Wire } from './firm';
+import {
+  Firm,
+  type BlockSetting,
+  type GapEpisode,
+  type Halt,
+  type RiskSettings,
+  type SavedFirm,
+  type Wire,
+} from './firm';
 import { tick } from './flow';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
@@ -186,6 +194,8 @@ export interface Snapshot {
   };
   /** How many times the firm has seen a gap between the exchanges it could have raced for. */
   gapsSeen: number;
+  /** The gaps the firm saw, newest first, the last twenty. A display of the past: not saved. */
+  gaps: GapEpisode[];
   /** How many symbols the computer can watch, and how many the firm does. */
   watching: { count: number; max: number };
   infra: { location: string; network: string; computer: string };
@@ -583,6 +593,7 @@ export class Game {
         decisionEveryMs: firm.infra.computer.decisionEveryMs,
       },
       gapsSeen: firm.stats.gapsSeen,
+      gaps: firm.gapLog.map((g) => ({ ...g })).reverse(),
       infra: { location: firm.infra.location.id, network: firm.infra.network.id, computer: firm.infra.computer.id },
       latency,
       dataLatency,
