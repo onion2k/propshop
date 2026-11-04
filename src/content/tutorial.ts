@@ -4,7 +4,7 @@
 
 import type { Snapshot } from '../sim';
 
-export type TutorialPage = 'market' | 'strategy' | 'reports';
+export type TutorialPage = 'market' | 'desk' | 'strategy' | 'reports';
 
 export interface TutorialStep {
   id: string;
@@ -96,6 +96,17 @@ export const TUTORIAL: TutorialStep[] = [
     enter: { speed: 0 },
   },
   {
+    id: 'desk',
+    title: 'The desk',
+    text:
+      'Your blocks are not the only way to trade. The desk is a ticket: pick a stock, buy or sell, and send. ' +
+      'The order waits a quarter of a second, a person’s reaction time, then goes out like any other and gets ' +
+      'a race of its own. Try a big one later and see how much the market has moved by the time it arrives.',
+    page: 'desk',
+    target: 'desk-ticket',
+    enter: { speed: 0 },
+  },
+  {
     id: 'blocks',
     title: 'The strategy page',
     text:
@@ -136,7 +147,7 @@ export const TUTORIAL: TutorialStep[] = [
     id: 'reports',
     title: 'Reports',
     text:
-      'The first week is eight things to see, ticked off by the game as each happens. Days writes up each ' +
+      'The first week is ten things to see, ticked off by the game as each happens. Days writes up each ' +
       'close by block, by stock and by race. News is the feed, the dark web arrives when you have been ' +
       'profitable, and Learn is the glossary behind every underlined word.',
     page: 'reports',

@@ -6,6 +6,7 @@ import { useCallback, useState, useSyncExternalStore } from 'react';
 import { LESSONS, type TutorialPage } from '../content';
 import { DarkWebPanel } from './DarkWebPanel';
 import { DaysPanel } from './DaysPanel';
+import { DeskPanel } from './DeskPanel';
 import { FirmPanel } from './FirmPanel';
 import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
 import { LabPanel } from './LabPanel';
@@ -21,9 +22,10 @@ import { StrategyPanel } from './StrategyPanel';
 import { TopBar } from './TopBar';
 import { TutorialCard, Welcome } from './Tutorial';
 
-type Page = 'market' | 'strategy' | 'reports';
+type Page = 'market' | 'desk' | 'strategy' | 'reports';
 const PAGES: { id: Page; label: string }[] = [
   { id: 'market', label: 'Market' },
+  { id: 'desk', label: 'Desk' },
   { id: 'strategy', label: 'Strategy' },
   { id: 'reports', label: 'Reports' },
 ];
@@ -117,6 +119,11 @@ export function App({ store }: { store: Store }) {
           <div className="column">
             <FirmPanel s={s} />
           </div>
+        </main>
+      )}
+      {page === 'desk' && (
+        <main className="layout single">
+          <DeskPanel s={s} store={store} />
         </main>
       )}
       {page === 'strategy' && (

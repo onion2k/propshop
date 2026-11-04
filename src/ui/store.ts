@@ -42,6 +42,8 @@ export interface Store {
   setRisk: Game['setRisk'];
   setWatch: Game['setWatch'];
   setRules: Game['setRules'];
+  /** A click at the desk: the order leaves after the reaction time. */
+  hand: Game['hand'];
   /** The microscope's step: so many ticks, then a snapshot at once. */
   stepTicks: (n: number) => void;
 }
@@ -153,6 +155,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     setRisk: act((change) => game.setRisk(change)),
     setWatch: act((symbol, on) => game.setWatch(symbol, on)),
     setRules: act((exchange, change) => game.setRules(exchange, change)),
+    hand: act((intent) => game.hand(intent)),
     stepTicks: act((n) => game.stepTicks(n)),
   };
   return store;

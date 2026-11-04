@@ -1006,3 +1006,62 @@ code {
     }
   }
 }
+
+/* The desk: the ticket as a wrapping row of fields, the same one-under-the-other on a phone. */
+.ticket {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+  margin: 10px 0;
+}
+.ticket label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ticket label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+.ticket input[type='number'] {
+  width: 7em;
+}
+.ticket .seg {
+  display: flex;
+  gap: 4px;
+}
+.ticket .send {
+  font-weight: 600;
+  padding: 5px 20px;
+}
+.ticket-note {
+  flex-basis: 100%;
+  margin: 0;
+  min-height: 1.4em;
+}
+.pending {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.hand-total {
+  margin: 4px 0 8px;
+}
+.slippage {
+  margin-top: 2px;
+}
+@media (max-width: 600px) {
+  .ticket {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ticket input[type='number'],
+  .ticket select {
+    width: 100%;
+  }
+  .ticket .send {
+    padding: 10px 20px;
+  }
+}

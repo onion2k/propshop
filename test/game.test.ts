@@ -319,6 +319,8 @@ describe('Game', () => {
     const g = new Game(CONTENT, 22);
     const rival = g.competitors.find((c) => c.id === 'bot:shadow')!;
     expect(rival.blocks.map((b) => [b.id, b.enabled])).toEqual([['anticipate', true]]);
+    // The chase is parked by its own threshold: only the jump runs (measured, see the block's explanation).
+    expect(rival.blocks[0]!.params.bigPrint).toBe(10_000);
     expect(rival.infra.computer.decisionEveryMs).toBe(10);
     expect(Object.values(g.snapshot().competitors.find((c) => c.id === 'bot:shadow')!.latency)).toEqual([
       expect.any(Number),
@@ -437,5 +439,29 @@ describe('Game hand orders', () => {
       expect(sent[0]!.sentAt).toBe(clicked + CONTENT.desk.reactionMs);
     }
     expect(copy.fingerprint()).toBe(g.fingerprint());
+  });
+
+  it('shows a hand order in the snapshot while it waits, and in the orders, with its click touch, after', () => {
+    const g = new Game(CONTENT, 5);
+    while (!isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+    run(g, 5 * MS_PER_SECOND);
+    const symbol = CONTENT.stocks[0]!.symbol;
+    const clicked = g.now;
+    expect(g.snapshot().pendingHand).toEqual([]);
+    g.hand({ symbol, side: 'buy', size: 100, exchange: 'best', type: 'market' });
+    const waiting = g.snapshot();
+    expect(waiting.pendingHand).toHaveLength(1);
+    expect(waiting.pendingHand[0]).toMatchObject({ clickedAt: clicked, dueAt: clicked + CONTENT.desk.reactionMs });
+    expect(waiting.pendingHand[0]!.clickTouch).toEqual(expect.any(Number));
+    expect(waiting.orders.filter((o) => o.block === HAND_BLOCK)).toHaveLength(0);
+    run(g, CONTENT.desk.reactionMs + 200);
+    const after = g.snapshot();
+    expect(after.pendingHand).toEqual([]);
+    const hand = after.orders.filter((o) => o.block === HAND_BLOCK && o.status !== 'rejected');
+    expect(hand.length).toBeGreaterThan(0);
+    expect(hand[0]!.clickTouch).toBe(waiting.pendingHand[0]!.clickTouch);
+    expect(hand[0]!.arrivalTouch).toEqual(expect.any(Number));
+    const filled = hand.filter((o) => o.avgFill !== null);
+    for (const o of filled) expect(o.slippage).toBeCloseTo(o.avgFill! - o.clickTouch!, 6);
   });
 });

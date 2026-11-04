@@ -10,7 +10,7 @@ import { Root } from '../src/ui/Root';
 import { createStore, PROGRESS_KEY, SAVE_KEY, type Storage } from '../src/ui/store';
 
 /** The page switcher under the top bar. */
-function goTo(page: 'Market' | 'Strategy' | 'Reports') {
+function goTo(page: 'Market' | 'Desk' | 'Strategy' | 'Reports') {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${page}`) }));
 }
 
@@ -95,6 +95,47 @@ describe('App', () => {
     const words = [...document.querySelectorAll('.race-words')].map((e) => e.textContent);
     expect(words.some((w) => /Filled|Missed|took/.test(w))).toBe(true);
     expect(words.some((w) => /old when sent/.test(w))).toBe(true);
+  });
+
+  it('disables the desk ticket while the market is closed, and says why', () => {
+    const store = createStore(CONTENT, null, 9);
+    render(<App store={store} />);
+    goTo('Desk');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('market closed');
+  });
+
+  it('sends a hand order from the desk, counts down its wait, and reads its slippage and the day total', () => {
+    const store = createStore(CONTENT, null, 9);
+    store.skipToOpen();
+    while (!store.game.snapshot().open) store.game.step(TICK_MS);
+    for (let i = 0; i < (10 * 1000) / TICK_MS; i++) store.game.step(TICK_MS);
+    store.publish();
+    render(<App store={store} />);
+    goTo('Desk');
+    expect(screen.getByLabelText('Size')).toHaveValue(5000);
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(screen.getByLabelText('Orders waiting to be sent')).toHaveTextContent(/sending in 250ms/);
+    act(() => {
+      for (let i = 0; i < 100 / TICK_MS; i++) store.game.step(TICK_MS);
+      store.publish();
+    });
+    expect(screen.getByLabelText('Orders waiting to be sent')).toHaveTextContent(/sending in 150ms/);
+    // Past the reaction time and the trip to the exchange and back.
+    act(() => {
+      for (let i = 0; i < 2000 / TICK_MS; i++) store.game.step(TICK_MS);
+      store.publish();
+    });
+    expect(screen.queryByLabelText('Orders waiting to be sent')).toBeNull();
+    const line = document.querySelector('.slippage');
+    expect(line).not.toBeNull();
+    expect(line!.textContent).toMatch(
+      /^Slippage: touch at your click \d+\.\d\d, at arrival \d+\.\d\d, filled at \d+\.\d\d/,
+    );
+    expect(screen.getByTestId('hand-total')).toHaveTextContent(
+      /Hand trading today: [-+]?\$[\d,]+\.\d\d against the quote at the click/,
+    );
+    expect(screen.getAllByRole('button', { name: 'Slippage' }).length).toBeGreaterThan(0);
   });
 
   it('opens on the first week, ticks a lesson when it happens, and keeps the progress', () => {
@@ -413,6 +454,8 @@ describe('MarketPanel: the gap', () => {
     beatenBy: [],
     fee: 0,
     realised: 0,
+    avgFill: null,
+    slippage: null,
     ...over,
   });
 
@@ -558,6 +601,8 @@ describe('FirmPanel: races by exchange, net, legend and span', () => {
     beatenBy: [],
     fee: 0,
     realised: 0,
+    avgFill: null,
+    slippage: null,
     ...over,
   });
   const beat = [{ owner: 'rival', at: 1010, price: 4132, size: 100 }];

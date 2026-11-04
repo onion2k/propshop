@@ -63,6 +63,10 @@ export interface OpenOrder {
   beatenBy: BeatenBy[];
   /** Why it was refused before it left, where it was. */
   reason?: string;
+  /** A hand order: the far side's best price on screen at the click (the price the player thought they were getting). */
+  clickTouch?: number | null;
+  /** A hand order: the far side's best price on its exchange as it arrived, before it went in. */
+  arrivalTouch?: number | null;
 }
 
 export interface Fill {

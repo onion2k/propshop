@@ -15,10 +15,21 @@ function memory(): Storage & { data: Map<string, string> } {
 describe('the tutorial', () => {
   it('has a dozen or so steps, each with words and a page, pointing at things that exist', () => {
     expect(TUTORIAL.length).toBeGreaterThan(10);
-    const targets = ['pages', 'watchlist', 'quotes', 'speed', 'firm', 'strategy', 'shop', 'risk', 'tabs'];
+    const targets = [
+      'pages',
+      'watchlist',
+      'quotes',
+      'speed',
+      'firm',
+      'desk-ticket',
+      'strategy',
+      'shop',
+      'risk',
+      'tabs',
+    ];
     for (const step of TUTORIAL) {
       expect(step.text.length).toBeGreaterThan(80);
-      expect(['market', 'strategy', 'reports']).toContain(step.page);
+      expect(['market', 'desk', 'strategy', 'reports']).toContain(step.page);
       if (step.target) expect(targets).toContain(step.target);
     }
     expect(TUTORIAL[0]!.enter?.speed).toBe(0);

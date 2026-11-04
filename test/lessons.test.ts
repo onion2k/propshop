@@ -7,8 +7,8 @@ function fresh(): Snapshot {
 }
 
 describe('lessons', () => {
-  it('are eight, in order, each with words', () => {
-    expect(LESSONS).toHaveLength(8);
+  it('are ten, in order, each with words', () => {
+    expect(LESSONS).toHaveLength(10);
     for (const l of LESSONS) {
       expect(l.task.length).toBeGreaterThan(20);
       expect(l.lesson.length).toBeGreaterThan(100);
@@ -98,4 +98,35 @@ describe('lessons', () => {
     g.now = 7 * 24 * 60 * MS_PER_MINUTE;
     expect(LESSONS[7]!.done(g.snapshot())).toBe(true);
   });
+
+  it(
+    'hand and used: done by a 5,000 market buy read, and by a bid that has rested two seconds',
+    { timeout: 60_000 },
+    () => {
+      const [hand, used] = [LESSONS.find((l) => l.id === 'hand')!, LESSONS.find((l) => l.id === 'used')!];
+      const g = new Game(CONTENT, 3);
+      g.skipToOpen();
+      while (!isMarketOpen(g.now)) g.step();
+      for (let i = 0; i < (10 * MS_PER_SECOND) / TICK_MS; i++) g.step();
+      expect(hand.done(g.snapshot())).toBe(false);
+      expect(used.done(g.snapshot())).toBe(false);
+      const stock = g.snapshot().stocks[0]!;
+      g.hand({ symbol: stock.symbol, side: 'buy', size: 5000, exchange: 'best', type: 'market' });
+      g.hand({
+        symbol: stock.symbol,
+        side: 'buy',
+        size: 5000,
+        exchange: 'HARBOR',
+        type: 'limit',
+        price: (stock.bid ?? 100) - 1,
+      });
+      for (let i = 0; i < (6 * MS_PER_SECOND) / TICK_MS; i++) g.step();
+      const s = g.snapshot();
+      expect(hand.done(s)).toBe(
+        s.orders.some((o) => o.block === 'hand' && o.beatenBy.length > 0) ||
+          new Set(s.fills.filter((f) => f.block === 'hand').map((f) => f.exchange)).size >= 2,
+      );
+      expect(used.done(s)).toBe(true);
+    },
+  );
 });

@@ -135,6 +135,47 @@ export const LESSONS: Lesson[] = [
       'someone on the dark web has noticed. Read the glossary’s entry on insider trading before you take ' +
       'them up on it: the tips are sometimes real, the fines always are.',
   },
+  {
+    id: 'hand',
+    title: 'Trade by hand',
+    task: 'Open the Desk. Send a 5,000-share market buy on Best, then step or run the clock until it has been sent and heard back.',
+    watch:
+      'The order’s race, and the name of whoever took the shares ahead of you, or the second exchange your order had to reach.',
+    terms: ['slippage', 'order-anticipation', 'latency'],
+    done: (s) => {
+      const hand = s.orders.filter((o) => o.block === 'hand' && o.ioc);
+      const beaten = hand.some((o) => o.ackAt !== null && o.beatenBy.length > 0);
+      const exchanges = new Set(s.fills.filter((f) => f.block === 'hand').map((f) => f.exchange));
+      return beaten || exchanges.size >= 2;
+    },
+    lesson:
+      'A person takes about a quarter of a second to click, which is a hundred and twenty-five ticks to a ' +
+      'colocated firm. A large order prints on one exchange and a faster firm has already bought on the others ' +
+      'by the time yours reaches them, and offers you the shares back a cent dearer. That is slippage. The ' +
+      'order did what the screen said; the screen was the past.',
+  },
+  {
+    id: 'used',
+    title: 'See your order used',
+    task: 'On the Desk, rest a 5,000-share limit bid a cent under the best bid and leave it for a few seconds, running the clock.',
+    watch:
+      'A level appearing in the book just in front of your bid, and whether yours fills when the price falls through it or not at all when it rises.',
+    terms: ['order-anticipation', 'quote-fade', 'order-book'],
+    // The snapshot does not say which book level is a rival's reply to the order, so this is the simpler check:
+    // a resting hand limit order that has sat in the book for two seconds or more, still there or since filled.
+    done: (s) =>
+      s.orders.some((o) => {
+        if (o.block !== 'hand' || o.ioc || o.size < 2000 || o.arrivedAt === null) return false;
+        if (o.status === 'resting') return s.now - o.arrivedAt >= 2000;
+        const lastFill = s.fills.filter((f) => f.localId === o.localId).reduce((t, f) => Math.max(t, f.at), 0);
+        return o.status === 'filled' && lastFill - o.arrivedAt >= 2000;
+      }),
+    lesson:
+      'A big resting order is a message to everyone who can read the book: someone wants to buy a lot here. A ' +
+      'faster firm quotes a cent in front of it. If the price rises, it keeps the shares; if it falls, it sells ' +
+      'them to you for a cent loss and you have bought on a falling price. Your order fills when the price ' +
+      'is coming through it, and rarely when it is not. A resting order gives away what you mean to do.',
+  },
 ];
 
 export function lesson(id: string): Lesson | undefined {

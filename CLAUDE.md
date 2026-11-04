@@ -75,6 +75,16 @@ For anything new, check what it does:
   its own orders in it (`touchExcluding`); what it still cannot beat is the fastest bot taking a quote in
   the tick before its cancel lands.
 - Latency below one tick (2ms) is one tick: a colocated firm and one a millisecond away are the same.
+- Hand trading is a measured loser, as the desk is meant to show. One seed, twenty minutes, dollars a day: a
+  person at the desk sending momentum's calls as 2,000-share market orders from home loses about 23,000, and
+  65,000 to 134,000 at 5,000 shares; Harbor Quant earns 8,000 to 11,000 more a day while a 2,000-share hand is
+  sweeping, because the sweep opens gaps that the arbitrage firms race for. The crowd's visible top is mostly
+  2,000 shares or more, so a 2,000-share order fits one exchange and only 5,000 sweeps.
+- Chasing a sweep's print (`anticipate`) loses here, however it is cut: -27,000 to -165,000 a day across five
+  designs, and the rival Shadow Trading runs the jump alone, near nought. The first child's print comes from
+  PACIFIC, whose data takes 15 ms to reach even racks at every exchange; a slow trader's children spread over
+  about 20 ms; and with a cleared-level trigger and a one-tick FPGA the chaser was still second in 32 of 43
+  races. The jump on a large single resting order (`largest` in the depth) is about break-even.
 - The lab's batch auction batches the firms' orders and not the crowd's, so a waiting order meets a market
   that has moved; every firm loses under it, the fastest most. A real batch auction would hold the crowd too.
 - The crowd acts on each book once in five ticks, staggered. Every book is swept on its turn: a sweep keyed

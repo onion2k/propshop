@@ -11,7 +11,9 @@ export function raceSentence(o: OrderStory, names: Record<string, string>, now: 
   if (o.status === 'inflight') return `On its way, ${ms(now - o.sentAt)} so far.`;
   if (o.status === 'resting') return `Resting at ${price(o.price)}, ${shares(o.size - o.filled)} left.`;
   if (o.status === 'cancelling') return 'Being pulled.';
-  if (o.filled >= o.size) return `Filled ${shares(o.size)} at ${price(o.price)}.`;
+  // What it paid, not what it was willing to: a market order through the touch fills under its limit.
+  const at = o.avgFill ?? o.price;
+  if (o.filled >= o.size) return `Filled ${shares(o.size)} at ${price(Math.round(at))}.`;
   const last = o.beatenBy[o.beatenBy.length - 1];
   const part = o.filled > 0 ? `Filled ${shares(o.filled)} of ${shares(o.size)}; ` : 'Missed: ';
   if (last && o.arrivedAt !== null) {

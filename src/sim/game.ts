@@ -16,7 +16,9 @@ import {
   Firm,
   type BlockSetting,
   type GapEpisode,
+  HAND_BLOCK,
   type HandResult,
+  type PendingHand,
   type Halt,
   type RiskSettings,
   type SavedFirm,
@@ -188,6 +190,10 @@ export interface Snapshot {
   openOrders: OpenOrder[];
   /** Recent orders, open and finished, newest first, each with what its fills made. */
   orders: OrderStory[];
+  /** Hand orders between the click and the send, oldest first, as the firm keeps them. */
+  pendingHand: PendingHand[];
+  /** Today's hand trading against the touch at each click, cents: positive is what it cost the player. */
+  handSlippage: number;
   /** Who the rivals are, by owner id, so a race can name who won it. */
   names: Record<string, string>;
   fills: Fill[];
@@ -264,6 +270,13 @@ export interface OrderStory extends OpenOrder {
   /** Fee paid and P&L realised by this order's fills, cents. */
   fee: number;
   realised: number;
+  /** The average price its fills got, cents, or null with none. */
+  avgFill: number | null;
+  /**
+   * A hand order: cents a share its fills cost against the touch at the click (positive is worse for the
+   * player, negative is better), or null with no fill or no touch to go on.
+   */
+  slippage: number | null;
 }
 
 export class Game {
@@ -607,6 +620,8 @@ export class Game {
         (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
       ),
       orders: this.stories(),
+      pendingHand: firm.pendingHand.map((p) => ({ ...p, children: p.children.map((c) => ({ ...c })) })),
+      handSlippage: this.handSlippage(),
       names: Object.fromEntries([
         ['bg', 'the crowd'],
         ...this.competitors.map((c): [string, string] => [c.id, c.name]),
@@ -722,14 +737,35 @@ export class Game {
 
   private stories(): OrderStory[] {
     const orders = [...this.firm.orders.values()].slice(-ORDER_STORIES).reverse();
-    const byOrder = new Map<number, { fee: number; realised: number }>();
+    const byOrder = new Map<number, { fee: number; realised: number; shares: number; notional: number }>();
     for (const f of this.firm.fills) {
-      const t = byOrder.get(f.localId) ?? { fee: 0, realised: 0 };
+      const t = byOrder.get(f.localId) ?? { fee: 0, realised: 0, shares: 0, notional: 0 };
       t.fee += f.fee;
       t.realised += f.realised;
+      t.shares += f.size;
+      t.notional += f.size * f.price;
       byOrder.set(f.localId, t);
     }
-    return orders.map((o) => ({ ...o, ...(byOrder.get(o.localId) ?? { fee: 0, realised: 0 }) }));
+    return orders.map((o) => {
+      const t = byOrder.get(o.localId);
+      const avgFill = t && t.shares > 0 ? t.notional / t.shares : null;
+      const touch = o.clickTouch ?? null;
+      const slippage =
+        avgFill !== null && touch !== null ? (o.side === 'buy' ? avgFill - touch : touch - avgFill) : null;
+      return { ...o, fee: t?.fee ?? 0, realised: t?.realised ?? 0, avgFill, slippage };
+    });
+  }
+
+  /** What today's hand fills cost against the touch at each click, cents; fills whose order has aged out are not counted. */
+  private handSlippage(): number {
+    let total = 0;
+    for (const f of this.firm.fills) {
+      if (f.block !== HAND_BLOCK || f.at < this.today.openedAt) continue;
+      const touch = this.firm.orders.get(f.localId)?.clickTouch;
+      if (touch === undefined || touch === null) continue;
+      total += (f.side === 'buy' ? f.price - touch : touch - f.price) * f.size;
+    }
+    return total;
   }
 
   save(): SavedGame {

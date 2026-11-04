@@ -202,7 +202,9 @@ export const COMPETITORS: CompetitorSpec[] = [
     network: 'laser',
     computer: 'rack',
     minEdge: 0,
-    blocks: [{ id: 'anticipate' }],
+    // The chase is measured a loser in this market (see the block's explanation), so the rival runs the jump
+    // alone: a sweep child of ten thousand shares never comes.
+    blocks: [{ id: 'anticipate', params: { bigPrint: 10_000 } }],
   },
 ];
 

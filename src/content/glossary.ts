@@ -176,6 +176,50 @@ export const GLOSSARY: GlossaryEntry[] = [
       'its quote when a big print hits that side elsewhere.',
   },
   {
+    id: 'slippage',
+    term: 'Slippage',
+    short: 'What an order got, against the price on the screen when you clicked.',
+    long:
+      'You click on a price. By the time the order arrives, a quarter of a second of reaction and the trip to ' +
+      'the exchange later, the market has moved, or someone faster has taken what you saw. Slippage is the ' +
+      'gap between the price at the click and the price you were filled at, in cents a share. It is not always ' +
+      'a loss: a quote can move your way. On a large order it is mostly the sweep itself, each exchange you ' +
+      'reach being a little worse than the last, and the fast firms that read the first fill and get to the ' +
+      'rest before you do.',
+  },
+  {
+    id: 'quote-fade',
+    term: 'Quote fade',
+    short: 'The price you were about to take vanishing as you reach for it.',
+    long:
+      'A market maker\u2019s quote is an offer it will cancel the moment it learns the price is about to move. ' +
+      'When a large order hits one exchange, the makers on the others pull their quotes before it arrives, ' +
+      'because they can see the print and you cannot yet. The slow order finds the touch gone and walks to ' +
+      'the next level. Nothing was wrong with the quote: it was shown to everyone and withdrawn from the ' +
+      'slowest.',
+  },
+  {
+    id: 'price-improvement',
+    term: 'Price improvement',
+    short: 'A fill at a better price than the one quoted when the order was sent.',
+    long:
+      'A buy that fills below the best ask, or a sell above the best bid, has been improved. It happens when ' +
+      'the quote moves your way during the wait, or when someone offers a better price than the screen ' +
+      'showed. Real brokers advertise it; here it is the negative side of slippage, and it is the market ' +
+      'moving, not a favour.',
+  },
+  {
+    id: 'payment-for-order-flow',
+    term: 'Payment for order flow',
+    short: 'A wholesaler paying a broker to receive its customers\u2019 orders.',
+    long:
+      'Most retail orders in the real world are not sent to an exchange. A broker sells them to a wholesaler, ' +
+      'which fills them itself, usually at or a little better than the best quote, and pays the broker for the ' +
+      'privilege. Retail orders are thought to be less informed than professional ones, which is why they are ' +
+      'worth buying. This is an entry only: the wholesaler is not in the game yet, so your hand orders go to the ' +
+      'exchanges directly and nobody pays for them.',
+  },
+  {
     id: 'fpga',
     term: 'FPGA',
     short: 'A chip whose logic is the strategy itself: no software between the price and the order.',

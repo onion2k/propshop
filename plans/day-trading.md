@@ -1,6 +1,6 @@
 # The desk: trading by hand against the machines
 
-State: agreed 2026-11-04, being built.
+State: built 2026-11-04, on main past c610fe6 and uncommitted after it; the chase measured out, see CLAUDE.md.
 
 ## Context
 
@@ -60,11 +60,11 @@ a plan of its own if the desk earns it.
 
 ## Parts
 
-- [ ] 1. Sim: hand orders with reaction time, `best` routing, the closed-market refusal, the save; tape and
+- [x] 1. Sim: hand orders with reaction time, `best` routing, the closed-market refusal, the save; tape and
       depth in the view; tests on a hand order's race from home and from colocation.
-- [ ] 2. Sim: the `anticipate` block and its rival, the maker's fade; tests on hand-built views for each of
+- [x] 2. Sim: the `anticipate` block and its rival, the maker's fade; tests on hand-built views for each of
       the three; the harness setup, run over three seeds, numbers written into the project file.
-- [ ] 3. UI: the desk page, the slippage line and total, the lessons, the tutorial step, the glossary; a UI
+- [x] 3. UI: the desk page, the slippage line and total, the lessons, the tutorial step, the glossary; a UI
       test that sends a hand order and reads its slippage line.
 
 ## Verification

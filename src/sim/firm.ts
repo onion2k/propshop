@@ -107,6 +107,8 @@ export interface PendingHand {
   dueAt: number;
   /** When the exchange published the best quote it was priced from, stamped on every child. */
   seenAt: number | null;
+  /** The far side's best price on screen at the click, the price the player thought they were getting. */
+  clickTouch: number | null;
   /** One order per exchange it goes to. */
   children: OrderIntent[];
 }
@@ -778,12 +780,21 @@ export class Firm {
     const plan = this.routeHand(intent, this.view(now, market, news));
     if (!plan) return refuse(REJECT_NO_QUOTE);
     const dueAt = now + this.reactionMs;
-    this.pendingHand.push({ clickedAt: now, dueAt, seenAt: plan.seenAt, children: plan.children });
+    this.pendingHand.push({
+      clickedAt: now,
+      dueAt,
+      seenAt: plan.seenAt,
+      clickTouch: plan.clickTouch,
+      children: plan.children,
+    });
     return { ok: true, dueAt };
   }
 
   /** The orders a hand intent becomes, from the view at the click; null where there is no price to go on. */
-  private routeHand(intent: HandIntent, view: MarketView): { children: OrderIntent[]; seenAt: number | null } | null {
+  private routeHand(
+    intent: HandIntent,
+    view: MarketView,
+  ): { children: OrderIntent[]; seenAt: number | null; clickTouch: number | null } | null {
     const { symbol, side, size } = intent;
     const buy = side === 'buy';
     const through = (price: number) => Math.max(1, price + (buy ? HAND_REACH : -HAND_REACH));
@@ -806,14 +817,19 @@ export class Firm {
       })
       .sort((a, b) => (buy ? a.price - b.price : b.price - a.price));
     const market = intent.type === 'market';
+    const clickTouch =
+      (intent.exchange === BEST ? far[0] : far.find((f) => f.exchange === intent.exchange))?.price ?? null;
     if (intent.exchange !== BEST) {
       if (!view.exchanges.includes(intent.exchange)) return null;
       const here = far.find((f) => f.exchange === intent.exchange);
       if (market)
-        return here ? { children: [child(here.exchange, through(here.price), size, true)], seenAt: here.at } : null;
+        return here
+          ? { children: [child(here.exchange, through(here.price), size, true)], seenAt: here.at, clickTouch }
+          : null;
       return {
         children: [child(intent.exchange, intent.price!, size, false)],
         seenAt: view.quotes[intent.exchange]?.[symbol]?.at ?? null,
+        clickTouch,
       };
     }
     const limit = market ? (far[0] ? through(far[0].price) : null) : intent.price!;
@@ -830,7 +846,7 @@ export class Firm {
         .sort((a, b) => (buy ? b.price - a.price : a.price - b.price));
       const where = own[0]?.exchange ?? far[0]?.exchange ?? view.exchanges[0];
       if (where === undefined || market) return null;
-      return { children: [child(where, limit, size, false)], seenAt: own[0]?.at ?? null };
+      return { children: [child(where, limit, size, false)], seenAt: own[0]?.at ?? null, clickTouch };
     }
     const children: OrderIntent[] = [];
     let left = size;
@@ -842,7 +858,7 @@ export class Firm {
     }
     // What the visible quotes cannot cover rides with the best exchange's order, to walk its deeper levels or rest.
     if (left > 0) children[0]!.size += left;
-    return { children, seenAt: reachable[0]!.at };
+    return { children, seenAt: reachable[0]!.at, clickTouch };
   }
 
   /** Hand orders whose reaction time is up leave now, all stamped as seen at the click; at the close they are refused. */
@@ -850,8 +866,12 @@ export class Firm {
     while (this.pendingHand[0] && this.pendingHand[0].dueAt <= now) {
       const p = this.pendingHand.shift()!;
       for (const c of p.children) {
-        if (open) this.send(c, HAND_BLOCK, now, null, false, p.seenAt);
-        else this.tickResolved.push(this.orders.get(this.recordRejected(c, HAND_BLOCK, now, REJECT_MARKET_CLOSED))!);
+        if (open) {
+          const id = this.nextLocalId;
+          this.send(c, HAND_BLOCK, now, null, false, p.seenAt);
+          const sent = this.nextLocalId > id ? this.orders.get(id) : undefined;
+          if (sent) sent.clickTouch = p.clickTouch;
+        } else this.tickResolved.push(this.orders.get(this.recordRejected(c, HAND_BLOCK, now, REJECT_MARKET_CLOSED))!);
       }
     }
   }
@@ -868,6 +888,11 @@ export class Firm {
         continue;
       }
       const mine = this.orders.get(msg.localId);
+      // A hand order notes the touch it finds, to set against the one the player clicked.
+      if (mine && mine.block === HAND_BLOCK) {
+        const q = exchange.quote(msg.symbol);
+        mine.arrivalTouch = msg.side === 'buy' ? q.ask : q.bid;
+      }
       // Before the order goes in, read who took the quote it was sent for since the firm saw it.
       const beatenBy =
         mine && mine.seenAt !== null ? exchange.takersSince(msg.symbol, mine.seenAt, msg.side, msg.price, this.id) : [];
