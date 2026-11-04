@@ -32,6 +32,7 @@ const CONFIGS: Config[] = [
   ['colo pairs', COLO, ['pairs']],
   ['home indexArb', HOME, ['indexArb']],
   ['colo indexArb', COLO, ['indexArb']],
+  ['city momentum', CITY, ['momentum']],
   ['city arb', CITY, ['arbitrage']],
   ['city arb near', CITY, ['arbitrage'], { arbitrage: { maxLatency: 10 } }],
   ['city mm', CITY, ['marketMaker']],

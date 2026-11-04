@@ -18,7 +18,7 @@ export const LOCATIONS: LocationSpec[] = [
   {
     id: 'city',
     name: 'Office in Harbor City',
-    price: 25 * K,
+    price: 8 * K,
     distance: { HARBOR: 2, LAKESIDE: 7, PACIFIC: 30 },
     explain: 'Downtown, a few miles from the HARBOR data centre. Latency to HARBOR falls to a couple of milliseconds.',
   },
@@ -81,7 +81,7 @@ export const NETWORKS: NetworkSpec[] = [
   {
     id: 'fibre',
     name: 'Leased fibre',
-    price: 15 * K,
+    price: 5 * K,
     factor: 1,
     overhead: 1,
     explain:
@@ -126,7 +126,7 @@ export const COMPUTERS: ComputerSpec[] = [
   {
     id: 'server',
     name: 'Server',
-    price: 15 * K,
+    price: 5 * K,
     maxBlocks: 2,
     ordersPerSecond: 100,
     decisionEveryMs: 20,

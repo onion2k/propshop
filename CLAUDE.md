@@ -61,7 +61,12 @@ For anything new, check what it does:
   momentum 2,200; home arbitrage about nought; colocated arbitrage 6,900; the fastest rival 11,000; the
   colocated maker 3,300 at two cents and 38,000 joining the touch on every book; pairs 600 colocated; mean
   reversion -4,000 to -10,000; index arbitrage fires a few hundred times an hour from a rack and loses about
-  a thousand on scratched legs. The shop is sized to weeks of that.
+  a thousand on scratched legs.
+- From home the laptop runs one block and only momentum earns, so the first rung of the shop (city office,
+  leased fibre, server) is priced at 18,000 together: about a week of momentum, so the first latency lesson
+  comes early. Colocation and the links keep their weight. Measured on 2026-11-04 from the city, dollars a
+  day over three seeds: momentum 2,600; the maker 1,900; arbitrage -400, and 200 held to gaps within ten
+  milliseconds; arbitrage with the maker 1,300. The city teaches that a few miles is not colocation.
 - The market maker is near break-even and lives by the day's regime: about -900 dollars a day over three
   seeds at home and colocated, with a calm day positive and a trending day not. It reads the book without
   its own orders in it (`touchExcluding`); what it still cannot beat is the fastest bot taking a quote in
