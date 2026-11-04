@@ -891,13 +891,32 @@ code {
 .gap-row.picked {
   background: #202a38;
 }
+/* On a phone a gap is three lines: when and what, the two legs, then how long it lasted and what you sent. */
 @media (max-width: 600px) {
   .gap-row {
-    grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    grid-template-areas:
+      'time symbol edge'
+      'legs legs legs'
+      'span summary summary';
   }
-  .gap-row > :nth-child(5),
+  .gap-row > :nth-child(1) {
+    grid-area: time;
+  }
+  .gap-row > :nth-child(2) {
+    grid-area: symbol;
+  }
+  .gap-row > :nth-child(3) {
+    grid-area: legs;
+  }
+  .gap-row > :nth-child(4) {
+    grid-area: edge;
+  }
+  .gap-row > :nth-child(5) {
+    grid-area: span;
+  }
   .gap-row > :nth-child(6) {
-    grid-column: span 2;
+    grid-area: summary;
   }
 }
 .race-bar {
