@@ -4,9 +4,31 @@
 export { Game, SPEEDS, TICK_MS, STUFFING_ORDERS, STUFFING_CANCEL_SHARE, FLOOD_DROPPED } from './game';
 export type { GameEvent, SavedGame, Snapshot, Speed, DayRecord, DayReport, Tally, OrderStory } from './game';
 export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById } from './strategy';
-export type { BeatenBy, BlockSpec, Fill, OpenOrder, ParamSpec, Params } from './strategy';
-export type { BlockSetting, GapEpisode, RiskSettings, Halt, Wire } from './firm';
-export { REJECT_EXPOSURE, REJECT_FLOOD } from './firm';
+export type {
+  BeatenBy,
+  BlockSpec,
+  Fill,
+  HandIntent,
+  OpenOrder,
+  ParamSpec,
+  Params,
+  SeenDepth,
+  SeenLevel,
+  SeenPrint,
+} from './strategy';
+export { BEST, TAPE_VIEW } from './strategy';
+export type { BlockSetting, GapEpisode, HandResult, PendingHand, RiskSettings, Halt, Wire } from './firm';
+export {
+  HAND_BLOCK,
+  HAND_REACH,
+  MAX_PENDING_HAND,
+  REJECT_BAD_ORDER,
+  REJECT_EXPOSURE,
+  REJECT_FLOOD,
+  REJECT_HAND_BACKLOG,
+  REJECT_MARKET_CLOSED,
+  REJECT_NO_QUOTE,
+} from './firm';
 export type { Tip, Fine } from './darkweb';
 export type { Published } from './news';
 export type { HistoryPoint } from './market';

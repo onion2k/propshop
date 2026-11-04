@@ -164,6 +164,29 @@ export const GLOSSARY: GlossaryEntry[] = [
       'market maker block is what gets taken. Every firm in this market is on one side of that or the other.',
   },
   {
+    id: 'order-anticipation',
+    term: 'Order anticipation',
+    short: 'Trading ahead of a large order that the tape or the book has already given away.',
+    long:
+      'A big order cannot hide. Sent as one it prints large on the tape; resting, it shows as a wall in the ' +
+      'book. A fast firm reads either and acts first: buy on the other exchanges before a sweep reaches them ' +
+      'and offer the shares back a cent dearer, or quote a cent in front of a big resting bid and sell into it ' +
+      'if the price turns. The large order\u2019s owner pays a cent or two a share for being seen. Nothing is ' +
+      'predicted: it is reading, faster. Direct exchange feeds show every order and every print, which is what the rival reads; a level is a sum of many small orders and says little, but one big order in it does. The anticipate block does both, and a market maker answers by pulling ' +
+      'its quote when a big print hits that side elsewhere.',
+  },
+  {
+    id: 'fpga',
+    term: 'FPGA',
+    short: 'A chip whose logic is the strategy itself: no software between the price and the order.',
+    long:
+      'A field-programmable gate array is wired, rather than programmed, to do one job. A strategy burned into ' +
+      'one reads the market and sends the order in the time signals take to cross the chip, which is far less ' +
+      'than software on a server needs. Decisions here come every tick. It costs a great deal and is hard to ' +
+      'change, which is the trade: the fastest firms run them because at their speed a software stack is the ' +
+      'slowest thing in the path.',
+  },
+  {
     id: 'factors',
     term: 'Factors and correlation',
     short: 'Stocks move together: with the market, with their sector, and on their own.',
@@ -200,7 +223,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     short: 'A computer can follow so many symbols; the firm chooses which.',
     long:
       'Real high-frequency firms watch thousands of names, and the edge per name is tiny: the business is ' +
-      'scale. In the game a laptop can follow four symbols, a server eight and a rack all of them. The blocks ' +
+      'scale. In the game a laptop can follow four symbols, a server eight and a rack all of them; an FPGA, the top tier, decides every tick (see the FPGA entry). The blocks ' +
       'see only what is watched, so a pair needs both its stocks on the list and index arbitrage needs the ' +
       'whole basket. Pick the list on the market page.',
   },

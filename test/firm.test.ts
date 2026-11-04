@@ -1,5 +1,7 @@
 import { MARKET_CLOSE, MARKET_OPEN, MS_PER_SECOND } from '../src/sim/clock';
-import { Firm, REJECT_EXPOSURE } from '../src/sim/firm';
+import { Firm, HAND_BLOCK, MAX_PENDING_HAND, REJECT_EXPOSURE, REJECT_MARKET_CLOSED } from '../src/sim/firm';
+import type { HandIntent } from '../src/sim/strategy';
+import { TAPE_VIEW } from '../src/sim/strategy';
 import { REFUSED_CROSSED } from '../src/sim/orderbook';
 import { tick } from '../src/sim/flow';
 import { Market } from '../src/sim/market';
@@ -452,5 +454,203 @@ describe('Firm gap log', () => {
     const saved = w.f.save();
     expect(JSON.stringify(saved)).not.toMatch(/gapLog|firstSeen/);
     expect(Firm.load(JSON.parse(JSON.stringify(saved)) as ReturnType<Firm['save']>, FAST).gapLog).toEqual([]);
+  });
+});
+
+describe('hand orders', () => {
+  const REACTION = 250;
+  const buy = (over: Partial<HandIntent> = {}): HandIntent => ({
+    symbol: 'ABC',
+    side: 'buy',
+    size: 100,
+    exchange: 'HARBOR',
+    type: 'market',
+    ...over,
+  });
+  const firmAt = (infra: typeof SLOW, id = 'firm') => {
+    const f = new Firm(id, 'Mine', MILLION, infra, Firm.defaultBlocks());
+    f.reactionMs = REACTION;
+    return f;
+  };
+  /** A rival reaches in as a block would and takes the whole of HARBOR's ask. */
+  const takeTheAsk = (rival: Firm, w: ReturnType<typeof world>) => {
+    const q = w.market.exchange('HARBOR').quote('ABC');
+    (rival as unknown as { send: (i: unknown, b: string, now: number, view: unknown) => void }).send(
+      { kind: 'order', symbol: 'ABC', exchange: 'HARBOR', side: 'buy', price: q.ask!, size: q.askSize, ioc: true },
+      'test',
+      w.now(),
+      { quotes: {} },
+    );
+  };
+  const handOrders = (f: Firm) => [...f.orders.values()].filter((o) => o.block === HAND_BLOCK);
+
+  it('waits the reaction time from home, then races and is beaten by a rival it names', () => {
+    const me = firmAt(SLOW);
+    const rival = firmAt(FAST, 'fast');
+    const w = world(31, [me, rival]);
+    w.run(2 * MS_PER_SECOND);
+    const clicked = w.now();
+    const result = me.hand(buy(), clicked, w.market, []);
+    expect(result).toEqual({ ok: true, dueAt: clicked + REACTION });
+    w.run(100);
+    takeTheAsk(rival, w);
+    w.run(REACTION - 100 - TICK);
+    // Not yet gone: nothing of it is on the wire, and it waits in the pending list.
+    expect(handOrders(me)).toHaveLength(0);
+    expect(me.pendingHand).toHaveLength(1);
+    w.run(2 * TICK);
+    const order = handOrders(me)[0]!;
+    expect(me.pendingHand).toHaveLength(0);
+    expect(order.sentAt).toBe(clicked + REACTION);
+    w.run(150);
+    expect(order.arrivedAt! - order.sentAt).toBe(me.latency('HARBOR'));
+    expect(order.seenAt).not.toBeNull();
+    expect(order.beatenBy.map((b) => b.owner)).toContain('fast');
+    expect(order.beatenBy[0]!.at).toBeLessThanOrEqual(order.arrivedAt!);
+  });
+
+  it('fills the same order from colocation', () => {
+    const me = firmAt(FAST);
+    const w = world(31, [me]);
+    w.run(2 * MS_PER_SECOND);
+    me.hand(buy(), w.now(), w.market, []);
+    w.run(REACTION + 50);
+    const order = handOrders(me)[0]!;
+    expect(order.status).toBe('filled');
+    expect(order.beatenBy).toEqual([]);
+    expect(me.position('ABC')).toBe(100);
+  });
+
+  it('is refused with the reason while the market is closed, and says so in the order log', () => {
+    const me = firmAt(FAST);
+    const w = world(32, [me], MARKET_CLOSE + 10 * MS_PER_SECOND);
+    w.run(MS_PER_SECOND);
+    const result = me.hand(buy(), w.now(), w.market, []);
+    expect(result).toMatchObject({ ok: false, reason: REJECT_MARKET_CLOSED });
+    expect(REJECT_MARKET_CLOSED).toBe('market closed');
+    expect(me.pendingHand).toHaveLength(0);
+    expect(me.orders.get((result as { localId: number }).localId)).toMatchObject({
+      status: 'rejected',
+      reason: REJECT_MARKET_CLOSED,
+      block: HAND_BLOCK,
+    });
+  });
+
+  it('refuses a click that lands after the close has come', () => {
+    const me = firmAt(FAST);
+    // A click a tenth of a second before the close leaves a quarter second later, into a closed market.
+    const w = world(33, [me], MARKET_CLOSE - 2 * MS_PER_SECOND);
+    w.run(2 * MS_PER_SECOND - 100);
+    expect(me.hand(buy(), w.now(), w.market, []).ok).toBe(true);
+    w.run(REACTION + 2 * TICK);
+    expect(me.pendingHand).toHaveLength(0);
+    expect(handOrders(me).map((o) => [o.status, o.reason])).toEqual([['rejected', REJECT_MARKET_CLOSED]]);
+  });
+
+  it('refuses a click while halted, with the halt\u2019s reason, and takes it again after', () => {
+    const me = firmAt(FAST);
+    const w = world(34, [me]);
+    w.run(2 * MS_PER_SECOND);
+    me.haltUntil(w.now() + 10 * MS_PER_SECOND, 'daily loss limit', w.now(), w.market, []);
+    const result = me.hand(buy(), w.now(), w.market, []);
+    expect(result).toMatchObject({ ok: false, reason: 'daily loss limit' });
+    expect(me.pendingHand).toHaveLength(0);
+    expect(handOrders(me).map((o) => [o.status, o.reason])).toEqual([['rejected', 'daily loss limit']]);
+    w.run(11 * MS_PER_SECOND);
+    expect(me.hand(buy(), w.now(), w.market, []).ok).toBe(true);
+  });
+
+  it('sweeps on to a second exchange for a size past the first quote, all stamped with one seenAt', () => {
+    const me = firmAt(FAST);
+    const w = world(34, [me]);
+    w.run(2 * MS_PER_SECOND);
+    const asks = ['HARBOR', 'LAKESIDE'].map((id) => w.market.exchange(id).quote('ABC'));
+    expect(asks.every((q) => q.ask !== null)).toBe(true);
+    const bestFirst = asks[0]!.ask! <= asks[1]!.ask! ? 0 : 1;
+    const first = asks[bestFirst]!;
+    me.hand(buy({ exchange: 'best', size: first.askSize + 1 }), w.now(), w.market, []);
+    w.run(REACTION + TICK);
+    const children = handOrders(me);
+    expect(new Set(children.map((o) => o.exchange)).size).toBe(2);
+    expect(children[0]!.exchange).toBe(bestFirst === 0 ? 'HARBOR' : 'LAKESIDE');
+    expect(children[0]!.size).toBe(first.askSize);
+    expect(children.reduce((n, o) => n + o.size, 0)).toBe(first.askSize + 1);
+    expect(new Set(children.map((o) => o.seenAt)).size).toBe(1);
+    expect(children[0]!.seenAt).not.toBeNull();
+  });
+
+  it('rests a limit order it cannot yet fill', () => {
+    const me = firmAt(FAST);
+    const w = world(35, [me]);
+    w.run(2 * MS_PER_SECOND);
+    const bid = w.market.exchange('HARBOR').quote('ABC').bid!;
+    me.hand(buy({ type: 'limit', price: bid - 2 }), w.now(), w.market, []);
+    w.run(REACTION + 20);
+    const order = handOrders(me)[0]!;
+    expect(order.ioc).toBe(false);
+    expect(order.status).toBe('resting');
+  });
+
+  it('saves its pending hand orders and loads them to the same future', () => {
+    const me = firmAt(SLOW);
+    const w = world(36, [me]);
+    w.run(2 * MS_PER_SECOND);
+    me.hand(buy({ exchange: 'best', size: 700 }), w.now(), w.market, []);
+    w.run(100);
+    const saved = JSON.parse(JSON.stringify(me.save())) as ReturnType<Firm['save']>;
+    expect(saved.pendingHand).toHaveLength(1);
+    const loaded = Firm.load(saved, SLOW);
+    expect(loaded.pendingHand).toEqual(me.pendingHand);
+    w.run(REACTION);
+    expect(loaded.pendingHand).toHaveLength(1);
+    // The saved firm, stepped past its due time, sends the same orders the original did.
+    loaded.reactionMs = REACTION;
+    loaded.step(me.pendingHand[0]?.dueAt ?? w.now(), w.market, [], true);
+    expect(handOrders(me).length).toBeGreaterThan(0);
+    expect(handOrders(loaded).map((o) => [o.exchange, o.size, o.price, o.seenAt])).toEqual(
+      handOrders(me).map((o) => [o.exchange, o.size, o.price, o.seenAt]),
+    );
+  });
+
+  it('keeps the pending list to its bound', () => {
+    const me = firmAt(FAST);
+    const w = world(37, [me]);
+    w.run(2 * MS_PER_SECOND);
+    for (let i = 0; i < MAX_PENDING_HAND + 5; i++) me.hand(buy(), w.now(), w.market, []);
+    expect(me.pendingHand).toHaveLength(MAX_PENDING_HAND);
+  });
+});
+
+describe('the view', () => {
+  it('carries the tape and the depth through the data latency, bounded and without owners', () => {
+    const f = new Firm('firm', 'Mine', MILLION, SLOW, Firm.defaultBlocks());
+    const w = world(38, [f]);
+    w.run(60 * MS_PER_SECOND);
+    const view = (
+      f as unknown as { view: (now: number, m: Market, n: unknown[]) => import('../src/sim/strategy').MarketView }
+    ).view(w.now(), w.market, []);
+    const exchange = w.market.exchange('HARBOR');
+    const seen = w.now() - f.dataLatency('HARBOR');
+    const tape = view.tape.HARBOR!.ABC!;
+    expect(tape.length).toBeGreaterThan(0);
+    expect(tape.length).toBeLessThanOrEqual(TAPE_VIEW);
+    // Only what had printed by the time the firm's data left the exchange.
+    for (const t of tape) expect(t.at).toBeLessThanOrEqual(seen);
+    expect(JSON.stringify(tape)).not.toMatch(/buyer|seller|owner|firm|bg/);
+    expect(Object.keys(tape[0]!).sort()).toEqual(['aggressor', 'at', 'cleared', 'price', 'size']);
+    const depth = view.depth.HARBOR!.ABC!;
+    const quote = view.quotes.HARBOR!.ABC!;
+    expect(depth.bids.length).toBeGreaterThan(0);
+    expect(depth.bids.length).toBeLessThanOrEqual(3);
+    expect(depth.asks.length).toBeLessThanOrEqual(3);
+    expect(depth.bids[0]).toMatchObject({ price: quote.bid, size: quote.bidSize });
+    for (const l of [...depth.bids, ...depth.asks]) {
+      expect(l.largest).toBeGreaterThan(0);
+      expect(l.largest).toBeLessThanOrEqual(l.size);
+    }
+    expect(depth.asks[0]).toMatchObject({ price: quote.ask, size: quote.askSize });
+    for (let i = 1; i < depth.bids.length; i++) expect(depth.bids[i]!.price).toBeLessThan(depth.bids[i - 1]!.price);
+    expect(exchange.tapeAsOf('ABC', w.now(), 5).length).toBeLessThanOrEqual(5);
+    expect(JSON.stringify(depth)).not.toMatch(/mine|owner/);
   });
 });

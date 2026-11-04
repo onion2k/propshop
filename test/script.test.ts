@@ -32,6 +32,8 @@ function view(over: Partial<MarketView> = {}): MarketView {
     constituents: {},
     exchanges: ['HARBOR', 'LAKESIDE'],
     quotes: { HARBOR: { ABC: quote(4100, 4101) }, LAKESIDE: { ABC: quote(4102, 4103, 100) } },
+    tape: {},
+    depth: {},
     fees: { HARBOR: 0.3, LAKESIDE: 0.25 },
     latency: { HARBOR: 1, LAKESIDE: 8 },
     mids: { ABC: [4100, 4101] },

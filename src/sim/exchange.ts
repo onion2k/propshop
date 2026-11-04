@@ -2,7 +2,16 @@
 // own slightly wrong idea of what each stock is worth. That last part is the whole game: two exchanges
 // disagree by a cent for a few hundred milliseconds, and whoever is fastest gets paid for noticing.
 
-import { OrderBook, type Order, type OrderRequest, type Quote, type SavedBook, type Trade } from './orderbook';
+import {
+  OrderBook,
+  type Level,
+  type Order,
+  type OrderRequest,
+  type Quote,
+  type SavedBook,
+  type Side,
+  type Trade,
+} from './orderbook';
 
 export type SubmitResult = ReturnType<OrderBook['add']>;
 import type { Random } from './random';
@@ -29,8 +38,24 @@ const INDEX_LAG = 4;
 /** How many ticks of quotes each book remembers, so a slow firm can be shown the past it is seeing. */
 const QUOTE_LOG_LENGTH = 400;
 
+/** One price on a side of the book as a reader sees it: no owner, only what rests there. */
+export interface DepthLevel {
+  price: number;
+  size: number;
+  /**
+   * The biggest single order's size at the level (an iceberg's shown slice). Exchanges' direct feeds are order
+   * by order, so a colocated firm sees this and not only the sum. Absent in a save from before it was kept.
+   */
+  largest?: number;
+}
+
+/** How many levels a side the quote log keeps for the depth a firm sees. */
+export const DEPTH_LEVELS = 3;
+
 export interface LoggedQuote extends Quote {
   at: number;
+  /** The top DEPTH_LEVELS a side at that moment; absent in a save from before depth was kept. */
+  depth?: { bids: DepthLevel[]; asks: DepthLevel[] };
 }
 
 export interface StockState {
@@ -59,7 +84,6 @@ export class Exchange {
   private pending: { symbol: string; req: OrderRequest; at: number; resolve: (r: SubmitResult) => void }[] = [];
   /** Trades made this tick, by anyone, for the game to route to their owners. */
   tickTrades: { symbol: string; trade: Trade }[] = [];
-
   constructor(spec: ExchangeSpec, symbols: { symbol: string; startPrice: number; constituents?: string[] }[]) {
     this.spec = spec;
     for (const s of symbols) {
@@ -90,6 +114,72 @@ export class Exchange {
   book(symbol: string): OrderBook {
     return this.stock(symbol).book;
   }
+
+  /**
+   * The trades that had printed by a past moment, newest last and at most `limit`: the tape a firm that far
+   * behind is reading. Owners are left off, as a tape leaves them.
+   */
+  tapeAsOf(
+    symbol: string,
+    at: number,
+    limit: number,
+  ): { price: number; size: number; aggressor: Side; at: number; cleared: boolean }[] {
+    const tape = this.stock(symbol).tape;
+    let end = tape.length;
+    while (end > 0 && (tape[end - 1]?.at ?? 0) > at) end--;
+    // The same answer is asked for every decision between two trades; keep it until the tape changes.
+    const version = this.tapeVersion.get(symbol) ?? 0;
+    const hit = this.printCache.get(symbol);
+    if (hit && hit.version === version && hit.end === end && hit.limit === limit) return hit.prints;
+    // Prints, not trades: one aggressor order's fills in one tick are summed into one entry. Direct feeds stamp
+    // a sweep's trades identically, and a fast firm reads them as the single order they are.
+    const prints: { price: number; size: number; aggressor: Side; at: number; notional: number; cleared: boolean }[] =
+      [];
+    let lastId = -1;
+    let i = end - 1;
+    // Newest first, stopping once `limit` prints are made, so a long tape is not walked for a short answer.
+    for (; i >= 0; i--) {
+      const t = tape[i]!;
+      const id = t.aggressor === 'buy' ? t.buyId : t.sellId;
+      const first = prints[prints.length - 1];
+      if (first && first.at === t.at && first.aggressor === t.aggressor && lastId === id) {
+        first.size += t.size;
+        first.notional += t.price * t.size;
+      } else {
+        if (prints.length === limit) break;
+        prints.push({
+          price: t.price,
+          size: t.size,
+          aggressor: t.aggressor,
+          at: t.at,
+          notional: t.price * t.size,
+          cleared: t.cleared ?? false,
+        });
+      }
+      lastId = id;
+    }
+    const result = prints.reverse().map((x) => ({
+      price: Math.round(x.notional / x.size),
+      size: x.size,
+      aggressor: x.aggressor,
+      at: x.at,
+      cleared: x.cleared,
+    }));
+    this.printCache.set(symbol, { version, end, limit, prints: result });
+    return result;
+  }
+
+  /** Bumped whenever a symbol's tape changes; never saved. One cached answer per symbol, so it is bounded. */
+  private tapeVersion = new Map<string, number>();
+  private printCache = new Map<
+    string,
+    {
+      version: number;
+      end: number;
+      limit: number;
+      prints: { price: number; size: number; aggressor: Side; at: number; cleared: boolean }[];
+    }
+  >();
 
   /**
    * Who took liquidity on this side, at this price or better, since a moment: the firms that beat an order
@@ -126,10 +216,17 @@ export class Exchange {
     for (const s of this.stocks.values()) {
       if (!s.book.takeChanged()) continue;
       const q = s.book.quote();
+      const d = s.book.depth(DEPTH_LEVELS);
+      const big = s.book.largestAt(DEPTH_LEVELS);
+      const depth = {
+        bids: d.bids.map((l, i) => levelOf(l, big.bids[i])),
+        asks: d.asks.map((l, i) => levelOf(l, big.asks[i])),
+      };
       const last = s.quoteLog[s.quoteLog.length - 1];
       // A tick on which nothing changed needs no entry: the last one still answers for it.
       if (
         last &&
+        sameDepth(last.depth, depth) &&
         last.bid === q.bid &&
         last.ask === q.ask &&
         last.bidSize === q.bidSize &&
@@ -141,7 +238,7 @@ export class Exchange {
       ) {
         continue;
       }
-      s.quoteLog.push({ ...q, at: now });
+      s.quoteLog.push({ ...q, at: now, depth });
       if (s.quoteLog.length > QUOTE_LOG_LENGTH) s.quoteLog.splice(0, s.quoteLog.length - QUOTE_LOG_LENGTH);
     }
   }
@@ -156,7 +253,7 @@ export class Exchange {
       this.pending.push({ symbol, req: shaped, at: now, resolve: done });
       return null;
     }
-    const result = this.stock(symbol).book.add(shaped, now);
+    const result = this.addMarked(symbol, shaped, now);
     this.record(symbol, result.trades);
     return result;
   }
@@ -178,7 +275,7 @@ export class Exchange {
       [batch[i], batch[j]] = [batch[j]!, batch[i]!];
     }
     for (const b of batch) {
-      const result = this.stock(b.symbol).book.add(b.req, now);
+      const result = this.addMarked(b.symbol, b.req, now);
       this.record(b.symbol, result.trades);
       b.resolve(result);
     }
@@ -194,12 +291,28 @@ export class Exchange {
     return { order: book.cancel(id), refused: null };
   }
 
+  /** Match an order, marking its trades `cleared` where it took the whole of the best level it met. */
+  private addMarked(symbol: string, req: OrderRequest, now: number) {
+    const book = this.stock(symbol).book;
+    const q = book.quote();
+    const topPrice = req.side === 'buy' ? q.ask : q.bid;
+    const topSize = req.side === 'buy' ? q.askSize : q.bidSize;
+    const result = book.add(req, now);
+    if (topPrice !== null && result.trades.length > 0) {
+      const took = result.trades.reduce((n, t) => (t.price === topPrice ? n + t.size : n), 0);
+      const cleared = took >= topSize;
+      for (const t of result.trades) t.cleared = cleared;
+    }
+    return result;
+  }
+
   private record(symbol: string, trades: Trade[]): void {
     if (trades.length === 0) return;
     const s = this.stock(symbol);
     for (const t of trades) {
       this.tickTrades.push({ symbol, trade: t });
       s.tape.push(t);
+      this.tapeVersion.set(symbol, (this.tapeVersion.get(symbol) ?? 0) + 1);
     }
     if (s.tape.length > TAPE_LENGTH) s.tape.splice(0, s.tape.length - TAPE_LENGTH);
   }
@@ -302,7 +415,7 @@ export class Exchange {
     if (side === 'buy' && q.ask !== null) price = Math.min(price, q.ask - tick);
     if (side === 'sell' && q.bid !== null) price = Math.max(price, q.bid + tick);
     if (price <= 0) return;
-    const result = s.book.add({ owner: BACKGROUND, side, price, size: 100 * random.int(1, 5) }, now);
+    const result = this.addMarked(symbol, { owner: BACKGROUND, side, price, size: 100 * random.int(1, 5) }, now);
     this.record(symbol, result.trades);
   }
 
@@ -339,4 +452,16 @@ export class Exchange {
       });
     }
   }
+}
+
+function levelOf(l: Level, largest = l.size): DepthLevel {
+  return { price: l.price, size: l.size, largest };
+}
+
+function sameDepth(a: LoggedQuote['depth'], b: NonNullable<LoggedQuote['depth']>): boolean {
+  if (!a) return false;
+  const same = (x: DepthLevel[], y: DepthLevel[]) =>
+    x.length === y.length &&
+    x.every((l, i) => l.price === y[i]!.price && l.size === y[i]!.size && l.largest === y[i]!.largest);
+  return same(a.bids, b.bids) && same(a.asks, b.asks);
 }

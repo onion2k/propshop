@@ -1,4 +1,5 @@
 // The blocks the game ships, by id. A scripted block would register here too.
+import { anticipate } from './anticipate';
 import { arbitrage } from './arbitrage';
 import { indexArb } from './indexArb';
 import { marketMaker } from './marketMaker';
@@ -19,6 +20,7 @@ export const BLOCKS: readonly StrategyBlock[] = [
   pairs,
   indexArb,
   newsReaction,
+  anticipate,
   scriptBlock(EXAMPLE_SOURCE),
 ];
 

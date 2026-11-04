@@ -34,6 +34,11 @@ export interface Trade {
   seller: string;
   /** The side that crossed the spread and caused the trade. */
   aggressor: Side;
+  /**
+   * True when the aggressor's order took the whole of the best level on the far side as it stood before the
+   * order was matched. Set by the exchange; absent in a save from before it was kept.
+   */
+  cleared?: boolean;
 }
 
 export interface Level {
@@ -241,6 +246,25 @@ export class OrderBook {
   mid(): number | null {
     const q = this.quote();
     return q.bid !== null && q.ask !== null ? (q.bid + q.ask) / 2 : null;
+  }
+
+  /** The biggest single shown order at each of the top levels of each side, in the order `depth` lists them. */
+  largestAt(levels: number): { bids: number[]; asks: number[] } {
+    const walk = (side: Order[]) => {
+      const out: number[] = [];
+      let price: number | null = null;
+      for (const o of side) {
+        if (o.price === price) {
+          if (o.shown > out[out.length - 1]!) out[out.length - 1] = o.shown;
+        } else {
+          if (out.length === levels) break;
+          price = o.price;
+          out.push(o.shown);
+        }
+      }
+      return out;
+    };
+    return { bids: walk(this.bids), asks: walk(this.asks) };
   }
 
   /** The top levels of each side, aggregated by price, for the ladder, with the owner's own shares marked. */

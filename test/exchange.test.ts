@@ -35,6 +35,32 @@ describe('Exchange', () => {
     expect(ex.book('ABC').lastPrice).not.toBeNull();
   });
 
+  it('reads a sweep split over several resting orders as one print, at the volume-weighted price', () => {
+    const ex = new Exchange(harbor, STOCKS);
+    const now = MARKET_OPEN;
+    ex.submit('ABC', { owner: 'a', side: 'sell', price: 5000, size: 400, ioc: false }, now);
+    ex.submit('ABC', { owner: 'b', side: 'sell', price: 5001, size: 400, ioc: false }, now);
+    ex.submit('ABC', { owner: 'c', side: 'sell', price: 5001, size: 400, ioc: false }, now);
+    ex.submit('ABC', { owner: 'x', side: 'buy', price: 5001, size: 1200, ioc: true }, now);
+    ex.submit('ABC', { owner: 'y', side: 'buy', price: 5001, size: 100, ioc: true }, now);
+    const prints = ex.tapeAsOf('ABC', now, 20);
+    expect(prints).toMatchObject([{ price: 5001, size: 1200, aggressor: 'buy', at: now }]);
+  });
+
+  it('marks a print that took the whole top level as cleared, and one that did not as not', () => {
+    const ex = new Exchange(harbor, STOCKS);
+    const now = MARKET_OPEN;
+    ex.submit('ABC', { owner: 'a', side: 'sell', price: 5000, size: 400, ioc: false }, now);
+    ex.submit('ABC', { owner: 'b', side: 'sell', price: 5001, size: 400, ioc: false }, now);
+    ex.submit('ABC', { owner: 'x', side: 'buy', price: 5000, size: 400, ioc: true }, now);
+    ex.submit('ABC', { owner: 'y', side: 'buy', price: 5001, size: 100, ioc: true }, now + TICK);
+    const prints = ex.tapeAsOf('ABC', now + TICK, 20);
+    expect(prints.map((x) => [x.size, x.cleared])).toEqual([
+      [400, true],
+      [100, false],
+    ]);
+  });
+
   it('follows a move in fair value within a few lags', () => {
     const ex = new Exchange(harbor, STOCKS);
     const random = new Random(3);

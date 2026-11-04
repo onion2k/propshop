@@ -13,6 +13,7 @@ import {
   type SavedGame,
 } from '../src/sim';
 import { MARKET_OPEN, MS_PER_DAY } from '../src/sim/clock';
+import { HAND_BLOCK, REJECT_MARKET_CLOSED } from '../src/sim/firm';
 
 function run(g: Game, ms: number) {
   for (let i = 0; i < ms / TICK_MS; i++) g.step();
@@ -35,12 +36,13 @@ describe('Game', () => {
     expect(s.blocks.find((b) => b.id === 'arbitrage')?.enabled).toBe(true);
     expect(s.fills).toEqual([]);
     expect(s.latency.HARBOR).toBe(44);
-    expect(s.shop.length).toBe(14);
+    expect(s.shop.length).toBe(15);
     expect(s.competitors.map((c) => c.name)).toEqual([
       'Midtown Capital',
       'Lakeside Partners',
       'Bayview Systems',
       'Harbor Quant',
+      'Shadow Trading',
     ]);
     expect(s.competitors[3]!.latency.LAKESIDE).toBe(1);
     expect(s.news.length).toBe(0);
@@ -313,6 +315,32 @@ describe('Game', () => {
     expect(b.competitors[0]!.blocks.map((x) => x.id)).toEqual(['arbitrage']);
   });
 
+  it('has the anticipation rival, running that block alone, at all three exchanges', () => {
+    const g = new Game(CONTENT, 22);
+    const rival = g.competitors.find((c) => c.id === 'bot:shadow')!;
+    expect(rival.blocks.map((b) => [b.id, b.enabled])).toEqual([['anticipate', true]]);
+    expect(rival.infra.computer.decisionEveryMs).toBe(10);
+    expect(Object.values(g.snapshot().competitors.find((c) => c.id === 'bot:shadow')!.latency)).toEqual([
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number),
+    ]);
+    for (const other of g.competitors.filter((c) => c !== rival)) {
+      expect(other.blocks.map((b) => b.id)).toEqual(['arbitrage']);
+    }
+  });
+
+  it('loads a save made before the anticipation rival and gives it the rival as it starts', () => {
+    const g = new Game(CONTENT, 23);
+    const saved = JSON.parse(JSON.stringify(g.save())) as SavedGame;
+    saved.competitors = saved.competitors.filter((c) => c.id !== 'bot:shadow');
+    const b = Game.load(CONTENT, saved);
+    expect(b.competitors.map((c) => c.id)).toEqual(CONTENT.competitors.map((c) => `bot:${c.id}`));
+    expect(b.competitors.at(-1)!.blocks.map((x) => x.id)).toEqual(['anticipate']);
+    b.skipToOpen();
+    for (let i = 0; i < 2000; i++) b.step();
+  });
+
   it('shows every message on the wire with where it is, and steps by the tick', () => {
     const g = new Game(CONTENT, 21);
     g.skipToOpen();
@@ -383,5 +411,31 @@ describe('Game gap log', () => {
     run(a, 50_000 * TICK_MS);
     run(b, 50_000 * TICK_MS);
     expect(JSON.stringify(b.save())).toBe(JSON.stringify(a.save()));
+  });
+});
+
+describe('Game hand orders', () => {
+  it('sends a hand order after the reaction time from content, and keeps it through a save', () => {
+    const g = new Game(CONTENT, 5);
+    expect(g.hand({ symbol: 'ABC', side: 'buy', size: 100, exchange: 'best', type: 'market' })).toMatchObject({
+      ok: false,
+      reason: REJECT_MARKET_CLOSED,
+    });
+    while (!isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+    run(g, 5 * MS_PER_SECOND);
+    const symbol = CONTENT.stocks[0]!.symbol;
+    const clicked = g.now;
+    const result = g.hand({ symbol, side: 'buy', size: 100, exchange: 'best', type: 'market' });
+    expect(result).toEqual({ ok: true, dueAt: clicked + CONTENT.desk.reactionMs });
+    run(g, CONTENT.desk.reactionMs / 2);
+    const copy = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
+    for (const game of [g, copy]) {
+      expect(game.firm.pendingHand).toHaveLength(1);
+      run(game, CONTENT.desk.reactionMs / 2 + TICK_MS);
+      const sent = [...game.firm.orders.values()].filter((o) => o.block === HAND_BLOCK && o.status !== 'rejected');
+      expect(sent.length).toBeGreaterThan(0);
+      expect(sent[0]!.sentAt).toBe(clicked + CONTENT.desk.reactionMs);
+    }
+    expect(copy.fingerprint()).toBe(g.fingerprint());
   });
 });

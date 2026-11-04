@@ -27,7 +27,8 @@ export const marketMaker: StrategyBlock = {
       'Its quotes are post-only: one that would cross is refused, so it never pays the taker fee by accident. ' +
       'Resting orders pay no exchange fee: the taker pays, which is the maker\u2019s other edge. Its enemy is ' +
       'adverse selection: a quote left behind when the price moves is taken by whoever is fastest, and in ' +
-      'this market somebody is always faster than you.',
+      'this market somebody is always faster than you. It also fades: after a large trade on one exchange it ' +
+      'pulls the quote on the side that trade hit, on the others, for a moment (order anticipation).',
     params: [
       {
         key: 'halfSpread',
@@ -86,6 +87,28 @@ export const marketMaker: StrategyBlock = {
         unit: 'shares',
         explain: 'The most stock to hold, long or short. Quotes skew toward flat as you approach it.',
       },
+      {
+        key: 'bigPrint',
+        name: 'Fade a print of',
+        min: 500,
+        max: 10_000,
+        step: 100,
+        default: 1500,
+        unit: 'shares',
+        explain:
+          'A trade this large on another exchange is a sweep that will reach this one next. The quote on the ' +
+          'side it hits is pulled before it arrives, and put back a moment later.',
+      },
+      {
+        key: 'fadeFor',
+        name: 'Stay out after a print for',
+        min: 0,
+        max: 1000,
+        step: 10,
+        default: 100,
+        unit: 'ms',
+        explain: 'How long the quote stays off after the print is seen. At zero the maker never fades.',
+      },
     ],
   },
 
@@ -96,6 +119,8 @@ export const marketMaker: StrategyBlock = {
     const max = p.maxInventory ?? 500;
     const tolerance = p.tolerance ?? 2;
     const pause = (p.newsPause ?? 30) * 1000;
+    const bigPrint = p.bigPrint ?? 1500;
+    const fadeFor = p.fadeFor ?? 100;
     for (const symbol of view.symbols) {
       const position = ownPosition(view, this.spec.id, symbol);
       // Lean the quotes away from the inventory, a full half spread (at least a cent) at the limit.
@@ -119,8 +144,23 @@ export const marketMaker: StrategyBlock = {
       for (const exchange of view.exchanges) {
         const q = view.quotes[exchange]?.[symbol];
         if (!q || q.bid === null || q.ask === null) continue;
-        const wantBid = position < max && !onNews ? Math.floor(mid - half + skew) : null;
-        const wantAsk = position > -max && !onNews ? Math.ceil(mid + half + skew) : null;
+        // A big sell on another exchange is about to hit the bids here; a big buy, the offers. Read the tape
+        // only when fading is on: it is built on first look.
+        let fadeBid = false;
+        let fadeAsk = false;
+        if (fadeFor > 0) {
+          for (const other of view.exchanges) {
+            if (other === exchange) continue;
+            for (const t of view.tape[other]?.[symbol] ?? []) {
+              // The print reached the firm after the data latency; the fade runs from when it was seen.
+              if (t.size < bigPrint || view.now - t.at - (view.latency[other] ?? 0) > fadeFor) continue;
+              if (t.aggressor === 'sell') fadeBid = true;
+              else fadeAsk = true;
+            }
+          }
+        }
+        const wantBid = position < max && !onNews && !fadeBid ? Math.floor(mid - half + skew) : null;
+        const wantAsk = position > -max && !onNews && !fadeAsk ? Math.ceil(mid + half + skew) : null;
         const mine = view.openOrders.filter(
           (o) => o.symbol === symbol && o.exchange === exchange && o.block === this.spec.id && o.status !== 'filled',
         );

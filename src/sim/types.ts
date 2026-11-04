@@ -110,6 +110,8 @@ export interface CompetitorSpec {
   minEdge: number;
   /** Exchanges further than this, in ms, it leaves alone. */
   maxLatency?: number;
+  /** The blocks it runs, with parameters over the block's defaults; arbitrage at its edge where absent. */
+  blocks?: { id: string; params?: Record<string, number> }[];
 }
 
 /** The character of a trading day: multipliers on the market's own behaviour. */
@@ -159,6 +161,8 @@ export interface Content {
   startingCash: number;
   start: { location: string; network: string; computer: string };
   firmName: string;
+  /** The desk, where the player trades by hand. */
+  desk: { reactionMs: number };
 }
 
 /** Rules an exchange may run: each a real policy built or proposed to blunt speed. */

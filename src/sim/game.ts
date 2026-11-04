@@ -16,6 +16,7 @@ import {
   Firm,
   type BlockSetting,
   type GapEpisode,
+  type HandResult,
   type Halt,
   type RiskSettings,
   type SavedFirm,
@@ -27,7 +28,17 @@ import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
 import { Random } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
-import { BLOCKS, SCRIPT_ID, scriptState, type Fill, type OpenOrder, type Params } from './strategy';
+import {
+  BLOCKS,
+  SCRIPT_ID,
+  blockById,
+  paramsFrom,
+  scriptState,
+  type Fill,
+  type HandIntent,
+  type OpenOrder,
+  type Params,
+} from './strategy';
 import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
 import { DEFAULT_RULES, type Content, type ExchangeRules, type RegimeSpec } from './types';
 
@@ -296,21 +307,31 @@ export class Game {
       infrastructureFrom(content, content.start),
       Firm.defaultBlocks(['arbitrage']),
     );
-    this.competitors = content.competitors.map(
-      (c) =>
-        new Firm(`bot:${c.id}`, c.name, content.startingCash * 10, infrastructureFrom(content, c), [
-          {
-            id: 'arbitrage',
-            enabled: true,
-            params: { minEdge: c.minEdge, size: 300, maxPosition: 3000, maxLatency: c.maxLatency ?? 100 },
-          },
-        ]),
-    );
+    this.firm.reactionMs = content.desk.reactionMs;
+    this.competitors = content.competitors.map((c) => Game.rival(content, c));
     this.dayStartEquity = content.startingCash;
     this.weekStartEquity = content.startingCash;
     this.wasOpen = false;
     this.news.regimeFor = (day) => this.regimeFor(day);
     this.news.step(this.now, this.market, this.random);
+  }
+
+  /** A rival firm from its spec: the blocks it names, else arbitrage at its edge. */
+  private static rival(content: Content, c: Content['competitors'][number]): Firm {
+    const blocks = c.blocks
+      ? c.blocks.map((b) => ({
+          id: b.id,
+          enabled: true,
+          params: paramsFrom(blockById(b.id).spec, b.params ?? {}),
+        }))
+      : [
+          {
+            id: 'arbitrage',
+            enabled: true,
+            params: { minEdge: c.minEdge, size: 300, maxPosition: 3000, maxLatency: c.maxLatency ?? 100 },
+          },
+        ];
+    return new Firm(`bot:${c.id}`, c.name, content.startingCash * 10, infrastructureFrom(content, c), blocks);
   }
 
   /** Which kind of day a day is: from the seed and the day, the same every time it is asked. */
@@ -494,6 +515,16 @@ export class Game {
   setBlock(id: string, change: { enabled?: boolean; params?: Partial<Params>; source?: string }): void {
     this.firm.setBlock(id, change);
     this.version++;
+  }
+
+  /**
+   * The player clicks: one order, sent as the block `hand` after the reaction time. Refused at once, with the
+   * reason, while the market is closed.
+   */
+  hand(intent: HandIntent): HandResult {
+    const result = this.firm.hand(intent, this.now, this.market, this.news.feed());
+    this.version++;
+    return result;
   }
 
   /** Set an exchange's rules from the lab, and start the scoreboard again from here. */
@@ -744,12 +775,17 @@ export class Game {
     // A save from before a block existed has no setting for it: the default stands in, off. The rivals keep
     // their own single block as saved.
     firm.blocks = Firm.defaultBlocks().map((d) => firm.blocks.find((b) => b.id === d.id) ?? d);
+    firm.reactionMs = content.desk.reactionMs;
     Object.assign(g, { firm });
-    const competitors = s.competitors.map((c) => {
+    const saved = s.competitors.map((c) => {
       const spec = content.competitors.find((x) => `bot:${x.id}` === c.id);
       if (!spec) throw new Error(`Unknown competitor ${c.id}`);
       return Firm.load(c, infrastructureFrom(content, spec));
     });
+    // A rival added since the save was made joins as it starts, with the starting cash; the saved keep theirs.
+    const competitors = content.competitors.map(
+      (spec, i) => saved.find((f) => f.id === `bot:${spec.id}`) ?? g.competitors[i]!,
+    );
     Object.assign(g, { competitors });
     g.owned.clear();
     for (const id of s.owned) g.owned.add(id);

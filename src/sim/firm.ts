@@ -2,21 +2,26 @@
 // allows, sends orders that arrive late, and books the fills that come back later still. Cash, positions and
 // P&L live here, and so does the regulator's interest in it.
 
-import { MS_PER_SECOND } from './clock';
+import { MS_PER_SECOND, isMarketOpen } from './clock';
 import type { Exchange, SubmitResult } from './exchange';
 import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
 import type { Market } from './market';
-import type { Side, Trade } from './orderbook';
+import type { Quote, Side, Trade } from './orderbook';
 import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
 import {
   flattenTo,
   type BeatenBy,
   type Fill,
+  type HandIntent,
   type Intent,
   type MarketView,
   type OpenOrder,
   type Params,
+  type SeenDepth,
   type SeenQuote,
+  type SeenPrint,
+  BEST,
+  TAPE_VIEW,
 } from './strategy';
 import type { Headline, Infrastructure } from './types';
 
@@ -79,6 +84,34 @@ type Outbound =
 /** Why an order was refused before it left. */
 export const REJECT_EXPOSURE = 'over the exposure limit';
 export const REJECT_FLOOD = 'over the orders a second the computer can send';
+
+/** Why a hand order was refused at the click. */
+export const REJECT_MARKET_CLOSED = 'market closed';
+export const REJECT_NO_QUOTE = 'no quote to trade against';
+export const REJECT_BAD_ORDER = 'price and size must be whole numbers above zero';
+export const REJECT_HAND_BACKLOG = 'too many hand orders waiting';
+
+/** The block id a hand order is sent under. */
+export const HAND_BLOCK = 'hand';
+/** How far, in cents, a hand market order reaches through the visible price: a limit, so never unbounded. */
+export const HAND_REACH = 5;
+/** Hand orders waiting out the reaction time at once. A person cannot click faster than the wait allows. */
+export const MAX_PENDING_HAND = 20;
+
+type OrderIntent = Extract<Intent, { kind: 'order' }>;
+
+/** A hand order between the click and the send: already priced and routed from what the screen showed. */
+export interface PendingHand {
+  clickedAt: number;
+  /** When it leaves: the click plus the reaction time. */
+  dueAt: number;
+  /** When the exchange published the best quote it was priced from, stamped on every child. */
+  seenAt: number | null;
+  /** One order per exchange it goes to. */
+  children: OrderIntent[];
+}
+
+export type HandResult = { ok: true; dueAt: number } | { ok: false; reason: string; localId: number };
 
 /** A message on its way back from an exchange. */
 type Inbound =
@@ -151,6 +184,8 @@ export interface SavedFirm {
   orders: OpenOrder[];
   fills: Fill[];
   mids: Record<string, number[]>;
+  /** Absent in a save from before the desk. */
+  pendingHand?: PendingHand[];
   nextLocalId: number;
   nextFillSeq: number;
   /** Null where the firm has not decided or sent yet: JSON has no minus infinity. */
@@ -198,6 +233,10 @@ export class Firm {
     arbRoundTrips: 0,
     gapsSeen: 0,
   };
+  /** How long a hand order waits before it leaves, ms; set by the game from the content, nought elsewhere. */
+  reactionMs = 0;
+  /** Hand orders waiting out the reaction time, oldest first, at most MAX_PENDING_HAND. */
+  pendingHand: PendingHand[] = [];
   private nextLocalId = 1;
   private nextFillSeq = 1;
   private lastDecision = -Infinity;
@@ -229,6 +268,7 @@ export class Firm {
       'pairs',
       'indexArb',
       'newsReaction',
+      'anticipate',
       SCRIPT_ID,
     ].map((id) => ({
       id,
@@ -321,6 +361,7 @@ export class Firm {
     this.tickResolved = [];
     this.receive(now);
     this.deliver(now, market);
+    this.releaseHand(now, open);
     if (!open) return;
     if (this.halt && now < this.halt.until) return;
     this.halt = null;
@@ -462,6 +503,32 @@ export class Firm {
     }
     const positions: Record<string, number> = {};
     for (const [symbol, pos] of this.positions) positions[symbol] = pos.qty;
+    // The tape and the depth are built when first read: the blocks that run every few milliseconds mostly never
+    // look, and a rival's view would otherwise pay for twelve books on every exchange each time.
+    let tape: Record<string, Record<string, readonly SeenPrint[]>> | undefined;
+    let depth: Record<string, Record<string, SeenDepth>> | undefined;
+    const buildTape = () => {
+      const out: Record<string, Record<string, readonly SeenPrint[]>> = {};
+      for (const e of market.exchanges) {
+        const seen = now - this.dataLatency(e.id);
+        const perSymbol: Record<string, readonly SeenPrint[]> = {};
+        for (const s of watched) perSymbol[s.symbol] = e.tapeAsOf(s.symbol, seen, TAPE_VIEW);
+        out[e.id] = perSymbol;
+      }
+      return out;
+    };
+    const buildDepth = () => {
+      const out: Record<string, Record<string, SeenDepth>> = {};
+      for (const e of market.exchanges) {
+        const perSymbol: Record<string, SeenDepth> = {};
+        for (const s of watched) {
+          const q = quotes[e.id]?.[s.symbol];
+          if (q) perSymbol[s.symbol] = depthOf(q);
+        }
+        out[e.id] = perSymbol;
+      }
+      return out;
+    };
     const sample = now - this.midSampledAt >= MID_SAMPLE_EVERY;
     if (sample) this.midSampledAt = now;
     for (const s of watched) {
@@ -528,6 +595,12 @@ export class Firm {
       constituents,
       exchanges: market.exchanges.map((e) => e.id),
       quotes,
+      get tape() {
+        return (tape ??= buildTape());
+      },
+      get depth() {
+        return (depth ??= buildDepth());
+      },
       fees: this.feeTable,
       latency,
       mids,
@@ -576,7 +649,18 @@ export class Firm {
     return total;
   }
 
-  private send(intent: Intent, block: string, now: number, view: MarketView, force = false): void {
+  /**
+   * `seenAt` overrides the quote time the order is stamped with, for a hand order priced at the click; and where
+   * it is given the view is not read.
+   */
+  private send(
+    intent: Intent,
+    block: string,
+    now: number,
+    view: Pick<MarketView, 'quotes'> | null,
+    force = false,
+    seenAt?: number | null,
+  ): void {
     if (now - this.secondStarted >= MS_PER_SECOND) {
       this.secondStarted = now;
       this.ordersThisSecond = 0;
@@ -591,26 +675,7 @@ export class Firm {
       const reduces = Math.sign(this.position(intent.symbol)) === (intent.side === 'buy' ? -1 : 1);
       if (!reduces && this.exposure() + intent.size * intent.price > this.equityNow * this.risk.maxLeverage) {
         this.stats.ordersRejected++;
-        const localId = this.nextLocalId++;
-        this.orders.set(localId, {
-          localId,
-          exchange: intent.exchange,
-          exchangeOrderId: null,
-          symbol: intent.symbol,
-          side: intent.side,
-          price: intent.price,
-          size: intent.size,
-          filled: 0,
-          ioc: intent.ioc,
-          status: 'rejected',
-          block,
-          sentAt: now,
-          seenAt: null,
-          arrivedAt: null,
-          ackAt: null,
-          beatenBy: [],
-          reason: REJECT_EXPOSURE,
-        });
+        this.recordRejected(intent, block, now, REJECT_EXPOSURE);
         return;
       }
     }
@@ -647,7 +712,7 @@ export class Firm {
       status: 'inflight',
       block,
       sentAt: now,
-      seenAt: view.quotes[intent.exchange]?.[intent.symbol]?.at ?? null,
+      seenAt: seenAt !== undefined ? seenAt : (view?.quotes[intent.exchange]?.[intent.symbol]?.at ?? null),
       arrivedAt: null,
       ackAt: null,
       beatenBy: [],
@@ -659,6 +724,135 @@ export class Firm {
       o.status = 'rejected';
       o.reason = REJECT_FLOOD;
       this.stats.ordersDropped++;
+    }
+  }
+
+  /** An order refused before it left, kept in the log with its reason so the player can read why. */
+  private recordRejected(intent: OrderIntent, block: string, now: number, reason: string): number {
+    const localId = this.nextLocalId++;
+    this.orders.set(localId, {
+      localId,
+      exchange: intent.exchange,
+      exchangeOrderId: null,
+      symbol: intent.symbol,
+      side: intent.side,
+      price: intent.price,
+      size: intent.size,
+      filled: 0,
+      ioc: intent.ioc,
+      status: 'rejected',
+      block,
+      sentAt: now,
+      seenAt: null,
+      arrivedAt: null,
+      ackAt: null,
+      beatenBy: [],
+      reason,
+    });
+    return localId;
+  }
+
+  /**
+   * A person clicks. The order is priced and routed now, from the screen as it reached the firm, and leaves
+   * after the reaction time: by then the screen it was priced from is the past. Refused at once, with the
+   * reason, when the market is closed, the order is malformed, or there is nothing to trade against.
+   */
+  hand(intent: HandIntent, now: number, market: Market, news: readonly Headline[]): HandResult {
+    const refuse = (reason: string): HandResult => {
+      const exchange = intent.exchange === BEST ? (market.exchanges[0]?.id ?? intent.exchange) : intent.exchange;
+      const price = intent.type === 'limit' ? (intent.price ?? 0) : 0;
+      const localId = this.recordRejected(
+        { kind: 'order', symbol: intent.symbol, exchange, side: intent.side, price, size: intent.size, ioc: false },
+        HAND_BLOCK,
+        now,
+        reason,
+      );
+      return { ok: false, reason, localId };
+    };
+    const whole = (n: number | undefined) => n !== undefined && Number.isInteger(n) && n > 0;
+    if (!whole(intent.size) || (intent.type === 'limit' && !whole(intent.price))) return refuse(REJECT_BAD_ORDER);
+    if (!isMarketOpen(now)) return refuse(REJECT_MARKET_CLOSED);
+    // A halted firm is not a trading firm: a click is refused with the halt's own reason, as a block's order is.
+    if (this.halt && now < this.halt.until) return refuse(this.halt.reason);
+    if (this.pendingHand.length >= MAX_PENDING_HAND) return refuse(REJECT_HAND_BACKLOG);
+    const plan = this.routeHand(intent, this.view(now, market, news));
+    if (!plan) return refuse(REJECT_NO_QUOTE);
+    const dueAt = now + this.reactionMs;
+    this.pendingHand.push({ clickedAt: now, dueAt, seenAt: plan.seenAt, children: plan.children });
+    return { ok: true, dueAt };
+  }
+
+  /** The orders a hand intent becomes, from the view at the click; null where there is no price to go on. */
+  private routeHand(intent: HandIntent, view: MarketView): { children: OrderIntent[]; seenAt: number | null } | null {
+    const { symbol, side, size } = intent;
+    const buy = side === 'buy';
+    const through = (price: number) => Math.max(1, price + (buy ? HAND_REACH : -HAND_REACH));
+    const child = (exchange: string, price: number, n: number, ioc: boolean): OrderIntent => ({
+      kind: 'order',
+      symbol,
+      exchange,
+      side,
+      price,
+      size: n,
+      ioc,
+      ...(intent.postOnly && !ioc ? { postOnly: true } : {}),
+    });
+    // What the far side shows on each exchange, best price first: the prices this order would take.
+    const far = view.exchanges
+      .flatMap((exchange) => {
+        const q = view.quotes[exchange]?.[symbol];
+        const price = q ? (buy ? q.ask : q.bid) : null;
+        return q && price !== null ? [{ exchange, price, size: buy ? q.askSize : q.bidSize, at: q.at }] : [];
+      })
+      .sort((a, b) => (buy ? a.price - b.price : b.price - a.price));
+    const market = intent.type === 'market';
+    if (intent.exchange !== BEST) {
+      if (!view.exchanges.includes(intent.exchange)) return null;
+      const here = far.find((f) => f.exchange === intent.exchange);
+      if (market)
+        return here ? { children: [child(here.exchange, through(here.price), size, true)], seenAt: here.at } : null;
+      return {
+        children: [child(intent.exchange, intent.price!, size, false)],
+        seenAt: view.quotes[intent.exchange]?.[symbol]?.at ?? null,
+      };
+    }
+    const limit = market ? (far[0] ? through(far[0].price) : null) : intent.price!;
+    if (limit === null) return null;
+    const reachable = far.filter((f) => (buy ? f.price <= limit : f.price >= limit));
+    if (reachable.length === 0) {
+      // Nothing to take at this price: it rests, on the exchange with the best bid for a buy or ask for a sell.
+      const own = view.exchanges
+        .flatMap((exchange) => {
+          const q = view.quotes[exchange]?.[symbol];
+          const price = q ? (buy ? q.bid : q.ask) : null;
+          return q && price !== null ? [{ exchange, price, at: q.at }] : [];
+        })
+        .sort((a, b) => (buy ? b.price - a.price : a.price - b.price));
+      const where = own[0]?.exchange ?? far[0]?.exchange ?? view.exchanges[0];
+      if (where === undefined || market) return null;
+      return { children: [child(where, limit, size, false)], seenAt: own[0]?.at ?? null };
+    }
+    const children: OrderIntent[] = [];
+    let left = size;
+    for (const f of reachable) {
+      const take = Math.min(left, f.size);
+      children.push(child(f.exchange, limit, take, market));
+      left -= take;
+      if (left === 0) break;
+    }
+    // What the visible quotes cannot cover rides with the best exchange's order, to walk its deeper levels or rest.
+    if (left > 0) children[0]!.size += left;
+    return { children, seenAt: reachable[0]!.at };
+  }
+
+  /** Hand orders whose reaction time is up leave now, all stamped as seen at the click; at the close they are refused. */
+  private releaseHand(now: number, open: boolean): void {
+    while (this.pendingHand[0] && this.pendingHand[0].dueAt <= now) {
+      const p = this.pendingHand.shift()!;
+      for (const c of p.children) {
+        if (open) this.send(c, HAND_BLOCK, now, null, false, p.seenAt);
+        else this.tickResolved.push(this.orders.get(this.recordRejected(c, HAND_BLOCK, now, REJECT_MARKET_CLOSED))!);
+      }
     }
   }
 
@@ -831,6 +1025,7 @@ export class Firm {
       orders: [...this.orders.values()],
       fills: this.fills,
       mids: Object.fromEntries(this.mids),
+      pendingHand: this.pendingHand,
       nextLocalId: this.nextLocalId,
       nextFillSeq: this.nextFillSeq,
       lastDecision: Number.isFinite(this.lastDecision) ? this.lastDecision : null,
@@ -863,6 +1058,7 @@ export class Firm {
     for (const o of s.orders) f.orders.set(o.localId, { ...o });
     f.fills = s.fills.map((x) => ({ ...x }));
     for (const [k, v] of Object.entries(s.mids)) f.mids.set(k, [...v]);
+    f.pendingHand = (s.pendingHand ?? []).map((p) => ({ ...p, children: p.children.map((c) => ({ ...c })) }));
     f.nextLocalId = s.nextLocalId;
     f.nextFillSeq = s.nextFillSeq;
     f.lastDecision = s.lastDecision === null ? -Infinity : s.lastDecision;
@@ -881,4 +1077,30 @@ export class Firm {
     f.inbound = new DelayQueue(s.inbound.map((d) => ({ ...d })));
     return f;
   }
+}
+
+/** The depth a quote alone shows, for a log entry from before depth was kept. */
+/** A log entry never changes, so its depth is worked out once however many decisions look at it. */
+const depthCache = new WeakMap<object, SeenDepth>();
+
+function depthOf(q: Quote & { depth?: SeenDepth }): SeenDepth {
+  const known = depthCache.get(q);
+  if (known) return known;
+  const made = depthFrom(q);
+  depthCache.set(q, made);
+  return made;
+}
+
+function depthFrom(q: Quote & { depth?: SeenDepth }): SeenDepth {
+  if (q.depth) {
+    // A log entry from before the biggest order was kept has only the sum: the best guess is one order.
+    const fix = (ls: readonly { price: number; size: number; largest?: number }[]) =>
+      ls.map((l) => ({ price: l.price, size: l.size, largest: l.largest ?? l.size }));
+    return { bids: fix(q.depth.bids), asks: fix(q.depth.asks) };
+  }
+  const side = (p1: number | null, s1: number, p2: number | null, s2: number) => [
+    ...(p1 !== null ? [{ price: p1, size: s1, largest: s1 }] : []),
+    ...(p2 !== null ? [{ price: p2, size: s2, largest: s2 }] : []),
+  ];
+  return { bids: side(q.bid, q.bidSize, q.bid2, q.bid2Size), asks: side(q.ask, q.askSize, q.ask2, q.ask2Size) };
 }

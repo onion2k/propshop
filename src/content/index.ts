@@ -1,5 +1,6 @@
 // Everything the sim is handed, in one object.
 import type { Content } from '../sim';
+import { DESK } from './desk';
 import { EXCHANGES } from './exchanges';
 import { NEWS } from './news';
 import { REGIMES } from './regimes';
@@ -19,6 +20,7 @@ export const CONTENT: Content = {
   startingCash: STARTING_CASH,
   start: START,
   firmName: 'Your firm',
+  desk: DESK,
 };
 
 export { GLOSSARY, glossary } from './glossary';

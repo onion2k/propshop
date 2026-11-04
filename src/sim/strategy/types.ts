@@ -82,6 +82,38 @@ export interface Fill {
   realised: number;
 }
 
+/**
+ * A print as a fast reader sees the tape: one aggressor order's fills in one tick, summed. Nothing says whose
+ * order it was.
+ */
+export interface SeenPrint {
+  price: number;
+  size: number;
+  /** The side that crossed the spread. */
+  aggressor: Side;
+  /** When it printed at the exchange; the firm saw it later than this. */
+  at: number;
+  /** The aggressor took the whole of the best level as it stood: the signature of a routed sweep's child. */
+  cleared: boolean;
+}
+
+/** One price level as the firm sees it: what rests there, whoever it belongs to. */
+export interface SeenLevel {
+  price: number;
+  size: number;
+  /** The biggest single order resting there (direct feeds show orders one by one); the sum is `size`. */
+  largest: number;
+}
+
+/** The top levels of a book, best first, as they stood when the firm's latest view of the exchange was made. */
+export interface SeenDepth {
+  bids: readonly SeenLevel[];
+  asks: readonly SeenLevel[];
+}
+
+/** How many recent trades a view carries per exchange and symbol. */
+export const TAPE_VIEW = 20;
+
 /** What a block gets to see: the market as it has reached the firm, and the firm's own book. */
 export interface MarketView {
   now: number;
@@ -93,6 +125,13 @@ export interface MarketView {
   exchanges: readonly string[];
   /** quotes[exchange][symbol], as of what has arrived; missing until the first quote lands. */
   quotes: Readonly<Record<string, Readonly<Record<string, SeenQuote>>>>;
+  /**
+   * tape[exchange][symbol]: the last TAPE_VIEW trades that had reached the firm, oldest first, through the same
+   * data latency as the quotes. Built on first read: most blocks never look.
+   */
+  tape: Readonly<Record<string, Readonly<Record<string, readonly SeenPrint[]>>>>;
+  /** depth[exchange][symbol]: the top three levels a side, as seen through the same latency. Built on first read. */
+  depth: Readonly<Record<string, Readonly<Record<string, SeenDepth>>>>;
   /** Taker fee per share per exchange, cents. */
   fees: Readonly<Record<string, number>>;
   /** The firm's own order latency to each exchange, ms, so a block can leave the far ones alone. */
@@ -124,6 +163,27 @@ export type Intent =
       display?: number;
     }
   | { kind: 'cancel'; localId: number };
+
+/**
+ * An order a person sends from the desk. It is priced and routed from what the screen showed at the click and
+ * leaves after the firm's reaction time, which is the whole lesson.
+ */
+export interface HandIntent {
+  symbol: string;
+  side: Side;
+  size: number;
+  /** An exchange id, or 'best' for the best visible price, on to the next exchanges for what it cannot fill. */
+  exchange: string;
+  /** A market order is a limit at the far side's visible price, through it by HAND_REACH, immediate-or-cancel. */
+  type: 'market' | 'limit';
+  /** Integer cents; a limit order's price, which rests where it is not met. Ignored for a market order. */
+  price?: number;
+  /** Refused rather than filled as a taker if it would cross; a limit order only. */
+  postOnly?: boolean;
+}
+
+/** The exchange name that routes an order to the best visible price. */
+export const BEST = 'best';
 
 export interface StrategyBlock {
   spec: BlockSpec;

@@ -143,6 +143,20 @@ export const COMPUTERS: ComputerSpec[] = [
     maxSymbols: 20,
     explain: 'Every block, every symbol, a decision every tick, and orders as fast as the line can carry them.',
   },
+  {
+    id: 'fpga',
+    name: 'FPGA',
+    price: 400 * K,
+    maxBlocks: 4,
+    ordersPerSecond: 1000,
+    decisionEveryMs: 2,
+    maxSymbols: 20,
+    explain:
+      'The strategy is burned into a chip, with no operating system and no software in the path: a decision ' +
+      'every tick, a thousand orders a second, and the same four blocks and twenty symbols as the rack. This ' +
+      'is what the fastest firms run. The rack thinks in microseconds of software; this thinks in the time a ' +
+      'signal takes to cross the chip.',
+  },
 ];
 
 export const COMPETITORS: CompetitorSpec[] = [
@@ -178,6 +192,17 @@ export const COMPETITORS: CompetitorSpec[] = [
     network: 'microwave',
     computer: 'rack',
     minEdge: 0.1,
+  },
+  {
+    // Racks at all three exchanges on the fastest line and the rack: the player who sends a large order
+    // meets this firm in the book. It does not arbitrage, so minEdge is unused.
+    id: 'shadow',
+    name: 'Shadow Trading',
+    location: 'colo-all',
+    network: 'laser',
+    computer: 'rack',
+    minEdge: 0,
+    blocks: [{ id: 'anticipate' }],
   },
 ];
 
