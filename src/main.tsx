@@ -3,7 +3,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CONTENT } from './content';
-import { App } from './ui/App';
+import { Root } from './ui/Root';
 import { createStore } from './ui/store';
 import './ui/styles.css';
 
@@ -13,7 +13,7 @@ if (!root) throw new Error('No #root in the page.');
 const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0);
 createRoot(root).render(
   <StrictMode>
-    <App store={store} />
+    <Root store={store} />
   </StrictMode>,
 );
 

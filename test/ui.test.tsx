@@ -5,6 +5,8 @@ import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
 import { App } from '../src/ui/App';
+import { Cover } from '../src/ui/Cover';
+import { Root } from '../src/ui/Root';
 import { createStore, PROGRESS_KEY, SAVE_KEY, type Storage } from '../src/ui/store';
 
 /** The page switcher under the top bar. */
@@ -632,5 +634,94 @@ describe('FirmPanel: races by exchange, net, legend and span', () => {
     render(<FirmPanel s={s} />);
     const spans = [...document.querySelectorAll('.race-span')].map((e) => e.textContent);
     expect(spans).toEqual(['160ms', '300ms so far']);
+  });
+});
+
+describe('Store: hold', () => {
+  it('advances nothing while held, however much wall time passes, and resumes on release', () => {
+    const store = createStore(CONTENT, null, 21);
+    const t0 = store.game.now;
+    store.hold(true);
+    for (let t = 0; t <= 60_000; t += 500) store.pump(t);
+    expect(store.game.now).toBe(t0);
+    store.hold(false);
+    store.pump(60_100);
+    expect(store.game.now).toBeGreaterThan(t0);
+  });
+
+  it('does not catch up the held gap in one go on release', () => {
+    const store = createStore(CONTENT, null, 22);
+    const t0 = store.game.now;
+    store.hold(true);
+    for (let t = 0; t <= 600_000; t += 1000) store.pump(t);
+    store.hold(false);
+    store.pump(600_100);
+    const first = store.game.now - t0;
+    expect(first).toBeLessThanOrEqual(1000 * store.game.speed);
+  });
+
+  it('leaves a saved game unchanged until released', () => {
+    const storage = memory();
+    const first = createStore(CONTENT, storage, 23);
+    first.skipToOpen();
+    for (let i = 0; i < 200; i++) first.game.step(TICK_MS);
+    first.save();
+    const again = createStore(CONTENT, storage, 99);
+    again.hold(true);
+    const now = again.game.now;
+    const print = again.game.fingerprint();
+    for (let t = 0; t <= 30_000; t += 250) again.pump(t);
+    expect(again.game.now).toBe(now);
+    expect(again.game.fingerprint()).toBe(print);
+    again.hold(false);
+    again.pump(30_100);
+    expect(again.game.now).toBeGreaterThan(now);
+  });
+});
+
+describe('Cover', () => {
+  it('is a dialog named Propshop with the title, tagline, a decorative picture and Start focused', () => {
+    render(<Cover onStart={() => {}} />);
+    const dialog = screen.getByRole('dialog', { name: 'Propshop' });
+    expect(screen.getByRole('heading', { name: 'Propshop' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Trading by machine, in large numbers, on tiny edges, as fast as physics allows.'),
+    ).toBeInTheDocument();
+    const img = dialog.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('alt', '');
+    expect(screen.getByRole('button', { name: 'Start' })).toHaveFocus();
+  });
+
+  it('starts on a click anywhere, on the button, and on Enter or Space, once each', () => {
+    const onStart = vi.fn();
+    render(<Cover onStart={onStart} />);
+    const dialog = screen.getByRole('dialog', { name: 'Propshop' });
+    fireEvent.click(dialog);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(onStart).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(dialog, { key: 'Enter' });
+    expect(onStart).toHaveBeenCalledTimes(3);
+    fireEvent.keyDown(dialog, { key: ' ' });
+    expect(onStart).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('Root', () => {
+  it('shows the cover with the store held, then the app and a running sim after Start', () => {
+    const store = createStore(CONTENT, null, 24);
+    render(<Root store={store} />);
+    expect(screen.getByRole('dialog', { name: 'Propshop' })).toBeInTheDocument();
+    expect(screen.queryByText('06:00:00')).toBeNull();
+    const t0 = store.game.now;
+    store.pump(0);
+    store.pump(500);
+    expect(store.game.now).toBe(t0);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(screen.queryByRole('dialog', { name: 'Propshop' })).toBeNull();
+    expect(screen.getByText('06:00:00')).toBeInTheDocument();
+    act(() => store.pump(600));
+    expect(store.game.now).toBeGreaterThan(t0);
   });
 });

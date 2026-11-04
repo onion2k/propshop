@@ -25,7 +25,10 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
   handed in at construction. `src/sim/index.ts` is the one surface the UI
   uses, and is what a remote API would later stand behind.
 - `src/ui/` is React components with no game logic. `src/main.tsx` wires
-  the two together and runs the sim loop.
+  the two together and runs the sim loop; `src/ui/Root.tsx` shows the cover
+  first, with the sim held, and `App` once the player starts.
+- `art/` is source pictures; what the page serves is the WebP beside
+  `src/main.tsx`.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary.
 - `test/` is Vitest, one file per sim module, and `ui.test.tsx` for the UI.
 

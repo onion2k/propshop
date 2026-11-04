@@ -27,6 +27,8 @@ export interface Store {
   subscribe: (listener: () => void) => () => void;
   /** Hand the store some wall time; it runs the sim and publishes if it is due. */
   pump: (wallNow: number) => void;
+  /** Hold the sim still (the cover is up): pump advances nothing, but keeps its clock so release does not catch up. */
+  hold: (on: boolean) => void;
   publish: () => void;
   save: () => void;
   reset: (seed: number) => void;
@@ -59,6 +61,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
   let lastPump: number | null = null;
+  let held = false;
   const listeners = new Set<() => void>();
 
   const publish = () => {
@@ -106,7 +109,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
       return () => listeners.delete(l);
     },
     pump(wallNow) {
-      if (lastPump !== null) {
+      if (lastPump !== null && !held) {
         const dt = Math.min(1000, wallNow - lastPump);
         game.advance(dt);
       }
@@ -119,6 +122,9 @@ export function createStore(content: Content, storage: Storage | null, seed: num
         lastSave = wallNow;
         store.save();
       }
+    },
+    hold(on) {
+      held = on;
     },
     publish,
     save() {
