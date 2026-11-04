@@ -608,6 +608,23 @@ describe('FirmPanel: races by exchange, net, legend and span', () => {
       expect(legends[0]!.textContent).toContain(w);
   });
 
+  it('shows the newest five orders, and holds them still while the pointer is over the list', () => {
+    const { s, a } = firm();
+    s.orders = Array.from({ length: 7 }, () => order(a));
+    const first = s.orders.map((o) => o.localId);
+    const { rerender } = render(<FirmPanel s={s} />);
+    const ids = () => [...document.querySelectorAll('.orders li')].map((li) => Number(li.getAttribute('data-id')));
+    expect(ids()).toEqual(first.slice(0, 5));
+    fireEvent.mouseEnter(document.querySelector('.orders')!);
+    const later = { ...s, orders: [order(a), order(a), ...s.orders] };
+    rerender(<FirmPanel s={later} />);
+    expect(ids()).toEqual(first.slice(0, 5));
+    expect(document.querySelector('.firm')!.textContent).toContain('held while you look');
+    fireEvent.mouseLeave(document.querySelector('.orders')!);
+    expect(ids()).toEqual(later.orders.slice(0, 5).map((o) => o.localId));
+    expect(document.querySelector('.firm')!.textContent).not.toContain('held while you look');
+  });
+
   it('writes the span at the end of each bar, and so far while unheard', () => {
     const { s, a } = firm();
     s.now = 1200;

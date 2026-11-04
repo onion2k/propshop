@@ -1,5 +1,6 @@
 // The firm: positions, and each recent order with the story of its race.
 
+import { useState } from 'react';
 import { formatTime, type OrderStory, type Snapshot } from '../sim';
 import { exchangeColour } from './Chart';
 import { money, ms, price, shares } from './format';
@@ -13,6 +14,9 @@ const LEGEND = [
   ['arrived', 'arrived'],
   ['heard', 'heard back'],
 ] as const;
+
+/** How many orders the list shows. A fast block sends several a second; the scorecard holds the rest. */
+const SHOWN = 5;
 
 /** The finished immediate-or-cancel races: the ones with a winner, a loser or a miss. */
 function counted(orders: OrderStory[]): OrderStory[] {
@@ -70,6 +74,9 @@ function Scorecard({ s }: { s: Snapshot }) {
 }
 
 export function FirmPanel({ s }: { s: Snapshot }) {
+  // The list is held still while the pointer is over it, so a race can be read before the next replaces it.
+  const [held, setHeld] = useState<{ orders: OrderStory[]; now: number } | null>(null);
+  const shown = held ?? { orders: s.orders.slice(0, SHOWN), now: s.now };
   const net = Math.round(s.realised + Math.round(s.unrealised) - s.feesPaid - s.finesPaid);
   return (
     <section className="panel firm" data-tut="firm">
@@ -104,7 +111,8 @@ export function FirmPanel({ s }: { s: Snapshot }) {
       <h3>
         Orders{' '}
         <span className="muted">
-          · each one's race, newest first · <Term id="latency">latency</Term>
+          · your newest {SHOWN}, each one's race · <Term id="latency">latency</Term>
+          {held && ' · held while you look'}
         </span>
       </h3>
       {s.orders.length === 0 ? (
@@ -120,9 +128,9 @@ export function FirmPanel({ s }: { s: Snapshot }) {
               </span>
             ))}
           </p>
-          <ul className="orders">
-            {s.orders.slice(0, 12).map((o) => (
-              <li key={o.localId}>
+          <ul className="orders" onMouseEnter={() => setHeld(shown)} onMouseLeave={() => setHeld(null)}>
+            {shown.orders.map((o) => (
+              <li key={o.localId} data-id={o.localId}>
                 <div className="order-line">
                   <span className="muted num">{formatTime(o.sentAt)}</span>{' '}
                   <span className={o.side === 'buy' ? 'bid' : 'ask'}>{o.side}</span>{' '}
@@ -134,7 +142,7 @@ export function FirmPanel({ s }: { s: Snapshot }) {
                     {o.ioc ? '' : ' · limit'}
                   </span>
                 </div>
-                <Race o={o} names={s.names} now={s.now} />
+                <Race o={o} names={s.names} now={shown.now} />
               </li>
             ))}
           </ul>
