@@ -560,7 +560,11 @@ export class Game {
   }
 
   buyUpgrade(kind: UpgradeKind, id: string): void {
-    buyUpgrade(this.content, this.firm, this.owned, kind, id);
+    const paid = buyUpgrade(this.content, this.firm, this.owned, kind, id);
+    // A purchase is not a trading loss: the day and the week start again that much lower, so the day's P&L,
+    // the loss limit and the dark web's profitable week all read the trading alone.
+    this.dayStartEquity -= paid;
+    this.weekStartEquity -= paid;
     this.emit({ kind: 'upgrade', at: this.now, kind2: kind, id });
     this.version++;
   }

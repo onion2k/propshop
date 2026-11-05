@@ -139,6 +139,19 @@ describe('Game', () => {
     expect(g.firm.cash).toBe(cash);
   });
 
+  it('does not count a purchase against the day or the loss limit', () => {
+    const g = new Game(CONTENT, 5);
+    g.setRisk({ dailyLossLimit: 500 });
+    g.skipToOpen();
+    run(g, 2 * MS_PER_SECOND);
+    const before = g.snapshot().dayPnl;
+    g.buyUpgrade('location', 'colo-harbor');
+    expect(g.snapshot().dayPnl).toBe(before);
+    run(g, 2 * MS_PER_SECOND);
+    expect(g.snapshot().halt).toBeNull();
+    expect(g.snapshot().dayPnl).toBeGreaterThan(-500 * 100);
+  });
+
   it('closes the day with a record, and unlocks the dark web after a profitable week', () => {
     const g = new Game(CONTENT, 6);
     g.skipToOpen();

@@ -66,15 +66,19 @@ export function catalogue(content: Content, firm: Firm, owned: ReadonlySet<strin
 }
 
 /** Buy or switch to an upgrade. Throws where the firm cannot afford it. */
-export function buyUpgrade(content: Content, firm: Firm, owned: Set<string>, kind: UpgradeKind, id: string): void {
+/** Buys (or switches to) an upgrade and returns the cents paid: nothing for one already owned. */
+export function buyUpgrade(content: Content, firm: Firm, owned: Set<string>, kind: UpgradeKind, id: string): number {
   const specs: Infrastructure[UpgradeKind][] =
     kind === 'location' ? content.locations : kind === 'network' ? content.networks : content.computers;
   const spec = specs.find((s) => s.id === id);
   if (!spec) throw new Error(`No ${kind} ${id}`);
+  let paid = 0;
   if (!owned.has(id)) {
     if (firm.cash < spec.price) throw new Error(`Not enough cash for ${spec.name}`);
     firm.cash -= spec.price;
     owned.add(id);
+    paid = spec.price;
   }
   firm.infra = withUpgrade(firm.infra, kind, spec);
+  return paid;
 }
