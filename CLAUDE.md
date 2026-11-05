@@ -89,6 +89,11 @@ For anything new, check what it does:
   that has moved; every firm loses under it, the fastest most. A real batch auction would hold the crowd too.
 - The crowd acts on each book once in five ticks, staggered. Every book is swept on its turn: a sweep keyed
   to the exchange's clock once left four books in five never swept, and everything fed on them.
+- The sim gets at most 8 ms of each frame (`BUDGET_MS` in the store); what does not fit is dropped, not owed,
+  and the top bar says the speed reached when it falls short. Measured headless with the CPU throttled four
+  times, about a mid-range phone: 1× and 10× hold 60 frames a second; 60× and 300× hold about 49, with the sim
+  reaching 20×. Before the budget they ran at one frame a second with 800 ms stalls. A worker would lift the
+  ceiling; the sim's one surface is the seam for it.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.
 - No fuzzer and no invariants file yet.

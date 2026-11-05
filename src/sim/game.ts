@@ -51,7 +51,7 @@ export const TICK_MS = 2;
 export const SPEEDS = [0, 1, 10, 60, 300] as const;
 export type Speed = (typeof SPEEDS)[number];
 /** The most ticks one call to advance will run, so a tab that was hidden for an hour does not hang catching up. */
-const MAX_TICKS_PER_ADVANCE = 15000;
+export const MAX_TICKS_PER_ADVANCE = 15000;
 /** When jumping over closed hours, how big a step the sim takes. */
 const JUMP_STEP = MS_PER_MINUTE;
 

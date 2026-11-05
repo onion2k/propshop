@@ -60,6 +60,40 @@ describe('App', () => {
     expect(store.game.speed).toBe(0);
   });
 
+  it('runs within its budget on a slow device, drops the rest, and says the speed it reaches', () => {
+    // A clock that passes two wall ms each time it is read: four reads use the budget, a hundred ticks in.
+    let wall = 0;
+    const store = createStore(CONTENT, null, 5, () => (wall += 2));
+    render(<App store={store} />);
+    act(() => {
+      store.skipToOpen();
+      store.setSpeed(60);
+      store.pump(0);
+    });
+    const before = store.game.now;
+    act(() => {
+      for (let t = 16; t <= 16 * 40; t += 16) store.pump(t);
+    });
+    // Asked for 480 ticks a frame, about 100 ran: well under the 960 sim ms a frame at 60x.
+    expect(store.game.now - before).toBeLessThan(40 * 960);
+    expect(store.getRunning()).toBeGreaterThan(5);
+    expect(store.getRunning()).toBeLessThan(30);
+    act(() => store.publish());
+    expect(screen.getByText(/running \d+×/)).toBeInTheDocument();
+  });
+
+  it('runs every tick asked when it has no clock, and the bar says nothing', () => {
+    const store = createStore(CONTENT, null, 6);
+    render(<App store={store} />);
+    act(() => {
+      store.skipToOpen();
+      store.setSpeed(60);
+      for (let t = 0; t <= 16 * 40; t += 16) store.pump(t);
+    });
+    expect(store.getRunning()).toBeCloseTo(60, 0);
+    expect(screen.queryByText(/running \d+×/)).toBeNull();
+  });
+
   it('opens the glossary at a term when one is clicked', () => {
     const store = createStore(CONTENT, null, 4);
     render(<App store={store} />);

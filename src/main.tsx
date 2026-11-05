@@ -10,7 +10,7 @@ import './ui/styles.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root in the page.');
 
-const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0);
+const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0, () => performance.now());
 createRoot(root).render(
   <StrictMode>
     <Root store={store} />

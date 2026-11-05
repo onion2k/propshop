@@ -144,6 +144,11 @@ button.link {
 .speed .skip {
   margin-left: 8px;
 }
+.speed .running {
+  align-self: center;
+  font-size: 12px;
+  white-space: nowrap;
+}
 .money {
   display: flex;
   gap: 20px;

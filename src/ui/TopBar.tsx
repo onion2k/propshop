@@ -1,9 +1,10 @@
 // The top bar: the simulated clock, the market's state, speed, and the firm's money at a glance.
 
+import { useSyncExternalStore } from 'react';
 import { SPEEDS, formatSpan, formatTime, type Snapshot } from '../sim';
 import { money, moneyShort } from './format';
 import { Term } from './Glossary';
-import type { Store } from './store';
+import { RUNNING_SHORT, type Store } from './store';
 
 export function TopBar({
   s,
@@ -17,6 +18,9 @@ export function TopBar({
   onMicro: () => void;
 }) {
   const until = s.nextChange - s.now;
+  const running = useSyncExternalStore(store.subscribe, store.getRunning, store.getRunning);
+  // A device that cannot step the asked speed in a frame's budget runs slower; the bar says what it reaches.
+  const short = s.speed > 0 && running < s.speed * RUNNING_SHORT;
   return (
     <header className="topbar">
       <div className="brand">
@@ -48,6 +52,11 @@ export function TopBar({
             {sp === 0 ? '⏸' : `${sp}×`}
           </button>
         ))}
+        {short && (
+          <span className="running muted" title="This device cannot step the asked speed in time">
+            running {Math.max(1, Math.round(running))}×
+          </span>
+        )}
         {!s.open && (
           <button type="button" className="skip" onClick={() => store.skipToOpen()}>
             skip to open

@@ -1,7 +1,15 @@
 // The surface the UI uses, and the one a remote API would stand behind. Nothing outside src/sim imports
 // anything but this file.
 
-export { Game, SPEEDS, TICK_MS, STUFFING_ORDERS, STUFFING_CANCEL_SHARE, FLOOD_DROPPED } from './game';
+export {
+  Game,
+  SPEEDS,
+  TICK_MS,
+  MAX_TICKS_PER_ADVANCE,
+  STUFFING_ORDERS,
+  STUFFING_CANCEL_SHARE,
+  FLOOD_DROPPED,
+} from './game';
 export type { GameEvent, SavedGame, Snapshot, Speed, DayRecord, DayReport, Tally, OrderStory } from './game';
 export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById } from './strategy';
 export type {

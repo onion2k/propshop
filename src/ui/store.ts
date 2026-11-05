@@ -3,12 +3,21 @@
 // here and nowhere further in: the sim only ever sees how many ms it is being asked for.
 
 import { LESSONS } from '../content';
-import { Game, type SavedGame, type Snapshot, type Speed } from '../sim';
+import { Game, MAX_TICKS_PER_ADVANCE, TICK_MS, type SavedGame, type Snapshot, type Speed } from '../sim';
 import type { Content } from '../sim';
 
 /** How often a new snapshot is handed to React, in wall ms, and how often the game is saved. */
 const PUBLISH_EVERY = 100;
 const SAVE_EVERY = 10_000;
+/**
+ * The most wall time one pump gives the sim, so a frame always has room to draw: a device that cannot step
+ * the asked speed in that time runs slower, and says so, rather than stalling the page. Checked every CHUNK
+ * ticks, since reading the clock costs more than a tick.
+ */
+export const BUDGET_MS = 8;
+const CHUNK = 25;
+/** How far behind the asked speed the running one may fall before the bar says so. */
+export const RUNNING_SHORT = 0.85;
 export const SAVE_KEY = 'propshop.save.v1';
 export const PROGRESS_KEY = 'propshop.progress.v1';
 export const TUTORIAL_KEY = 'propshop.tutorial.v1';
@@ -25,8 +34,10 @@ export interface Store {
   getTutorial: () => Tutorial;
   setTutorial: (t: Tutorial) => void;
   subscribe: (listener: () => void) => () => void;
-  /** Hand the store some wall time; it runs the sim and publishes if it is due. */
+  /** Hand the store some wall time; it runs the sim, within the budget if it has a clock, and publishes if due. */
   pump: (wallNow: number) => void;
+  /** The speed the sim is reaching, averaged over the last half second: at most what was asked. */
+  getRunning: () => number;
   /** Hold the sim still (the cover is up): pump advances nothing, but keeps its clock so release does not catch up. */
   hold: (on: boolean) => void;
   publish: () => void;
@@ -54,8 +65,15 @@ export interface Storage {
   removeItem(key: string): void;
 }
 
-export function createStore(content: Content, storage: Storage | null, seed: number): Store {
+export function createStore(
+  content: Content,
+  storage: Storage | null,
+  seed: number,
+  /** The wall clock the budget is held against; without one the sim runs every tick asked, as the tests want. */
+  clock?: () => number,
+): Store {
   let game = loadOrNew(content, storage, seed);
+  let running = 0;
   let snapshot = game.snapshot();
   let progress: Progress = loadProgress(storage);
   let tutorial: Tutorial = loadTutorial(storage);
@@ -95,6 +113,7 @@ export function createStore(content: Content, storage: Storage | null, seed: num
       return game;
     },
     getSnapshot: () => snapshot,
+    getRunning: () => running,
     getProgress: () => progress,
     getTutorial: () => tutorial,
     setTutorial(t) {
@@ -113,7 +132,23 @@ export function createStore(content: Content, storage: Storage | null, seed: num
     pump(wallNow) {
       if (lastPump !== null && !held) {
         const dt = Math.min(1000, wallNow - lastPump);
-        game.advance(dt);
+        const wanted = Math.min(MAX_TICKS_PER_ADVANCE, Math.floor((dt * game.speed) / TICK_MS));
+        let done = 0;
+        if (clock) {
+          const deadline = clock() + BUDGET_MS;
+          while (done < wanted) {
+            const n = Math.min(CHUNK, wanted - done);
+            game.stepTicks(n);
+            done += n;
+            if (clock() >= deadline) break;
+          }
+        } else {
+          game.stepTicks(wanted);
+          done = wanted;
+        }
+        // What was asked and not run is dropped, not owed: a slow device runs slower, it does not catch up later.
+        const reached = dt > 0 ? (done * TICK_MS) / dt : running;
+        running = game.speed === 0 ? 0 : running + (reached - running) * Math.min(1, dt / 500);
       }
       lastPump = wallNow;
       if (wallNow - lastPublish >= PUBLISH_EVERY) {
@@ -147,7 +182,11 @@ export function createStore(content: Content, storage: Storage | null, seed: num
       publishedVersion = -1;
       publish();
     },
-    setSpeed: act((s) => game.setSpeed(s)),
+    // A new speed is taken at its word until measured, so the bar does not call it short while the average catches up.
+    setSpeed: act((s) => {
+      game.setSpeed(s);
+      running = s;
+    }),
     skipToOpen: act(() => game.skipToOpen()),
     setBlock: act((id, change) => game.setBlock(id, change)),
     buyUpgrade: act((kind, id) => game.buyUpgrade(kind, id)),
