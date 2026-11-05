@@ -54,8 +54,13 @@ http://localhost:5181.
 - **A risk officer and a regulator.** A daily loss limit halts you for the
   day; a leverage cap refuses an order that would carry more than you can;
   quote stuffing and order floods are noticed at the close.
-- **A guided first week.** Eight things to see, ticked off by the game as
-  each happens, with what it meant revealed after.
+- **A game that opens a stage at a time.** It starts with one block,
+  momentum, on a laptop. Each lesson done opens the next idea (arbitrage and
+  the race, then the day's character, then the desk, then the whole firm),
+  with a short card on what is new. A switch in the First week tab opens
+  everything at once.
+- **A guided first week.** Ten things to see, grouped by stage, ticked off
+  by the game as each happens, with what it meant revealed after.
 - **A report every close,** by block, by stock and by race, with a chart of
   the days.
 - **A glossary** behind every underlined term: order books, the spread,

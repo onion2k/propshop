@@ -90,6 +90,7 @@ describe('the universe', () => {
   it('shows the blocks only what is watched', () => {
     const g = new Game(CONTENT, 4);
     g.setBlock('arbitrage', { enabled: false });
+    g.setBlock('momentum', { enabled: false });
     g.setBlock('script', { enabled: true, source: 'log(symbols.join(","))' });
     g.firm.setWatch(['MNO', 'XYZ']);
     g.skipToOpen();

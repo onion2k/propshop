@@ -209,4 +209,10 @@ export const COMPETITORS: CompetitorSpec[] = [
 ];
 
 export const STARTING_CASH = 200 * K;
-export const START = { location: 'home', network: 'consumer', computer: 'laptop' };
+export const START = {
+  location: 'home',
+  network: 'consumer',
+  computer: 'laptop',
+  /** The blocks that are on in a new game: momentum, the one that earns from a spare room. */
+  blocks: ['momentum'],
+};

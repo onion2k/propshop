@@ -318,7 +318,7 @@ export class Game {
       content.firmName,
       content.startingCash,
       infrastructureFrom(content, content.start),
-      Firm.defaultBlocks(['arbitrage']),
+      Firm.defaultBlocks(content.start.blocks),
     );
     this.firm.reactionMs = content.desk.reactionMs;
     this.competitors = content.competitors.map((c) => Game.rival(content, c));

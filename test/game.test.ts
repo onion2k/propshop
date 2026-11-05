@@ -26,14 +26,15 @@ function throughTheDay(g: Game) {
 }
 
 describe('Game', () => {
-  it('starts before the open on Monday with the arbitrage block on and nothing traded', () => {
+  it('starts before the open on Monday with momentum, from the content, on and nothing traded', () => {
     const g = new Game(CONTENT, 1);
     const s = g.snapshot();
     expect(s.calendar.weekday).toBe('Mon');
     expect(s.open).toBe(false);
     expect(s.nextChange).toBe(MARKET_OPEN);
     expect(s.cash).toBe(CONTENT.startingCash);
-    expect(s.blocks.find((b) => b.id === 'arbitrage')?.enabled).toBe(true);
+    expect(s.blocks.filter((b) => b.enabled).map((b) => b.id)).toEqual(CONTENT.start.blocks);
+    expect(CONTENT.start.blocks).toEqual(['momentum']);
     expect(s.fills).toEqual([]);
     expect(s.latency.HARBOR).toBe(44);
     expect(s.shop.length).toBe(15);
@@ -109,6 +110,7 @@ describe('Game', () => {
   it('runs the script block and keeps its source through a save', () => {
     const g = new Game(CONTENT, 14);
     g.setBlock('arbitrage', { enabled: false });
+    g.setBlock('momentum', { enabled: false });
     g.setBlock('script', { enabled: true, source: 'log("tick", now)' });
     g.skipToOpen();
     run(g, 2 * MS_PER_MINUTE);
@@ -174,6 +176,9 @@ describe('Game', () => {
 
   it('writes a report of the day at the close', { timeout: 120_000 }, () => {
     const g = new Game(CONTENT, 15);
+    // This report reads arbitrage's races, so it sets the block it needs.
+    g.setBlock('momentum', { enabled: false });
+    g.setBlock('arbitrage', { enabled: true });
     g.skipToOpen();
     run(g, 10 * MS_PER_MINUTE);
     const iocs = [...g.firm.orders.values()].filter((o) => o.ioc && o.status !== 'inflight').length;
@@ -202,6 +207,7 @@ describe('Game', () => {
     expect(g.snapshot().risk.dailyLossLimit).toBe(500);
     // Pay the spread every decision: a strategy that can only lose.
     g.setBlock('arbitrage', { enabled: false });
+    g.setBlock('momentum', { enabled: false });
     g.setBlock('script', {
       enabled: true,
       source:
@@ -231,6 +237,7 @@ describe('Game', () => {
   it('notes quote stuffing and an order flood at the close, and heats the firm', { timeout: 60_000 }, () => {
     const stuffing = new Game(CONTENT, 18);
     stuffing.setBlock('arbitrage', { enabled: false });
+    stuffing.setBlock('momentum', { enabled: false });
     // Post a bid far from the market and cancel it again, every decision: quoting with no wish to trade.
     stuffing.setBlock('script', {
       enabled: true,
@@ -248,6 +255,7 @@ describe('Game', () => {
     // A flood: a script that sends far more than the laptop can.
     const flood = new Game(CONTENT, 18);
     flood.setBlock('arbitrage', { enabled: false });
+    flood.setBlock('momentum', { enabled: false });
     flood.setBlock('script', {
       enabled: true,
       source: 'for (let i = 0; i < 50; i++) buy("ABC", "HARBOR", 3000, 100);',
@@ -323,7 +331,7 @@ describe('Game', () => {
     saved.firm.blocks = saved.firm.blocks.filter((b) => b.id === 'arbitrage' || b.id === 'momentum');
     const b = Game.load(CONTENT, JSON.parse(JSON.stringify(saved)) as SavedGame);
     expect(b.firm.blocks.map((x) => x.id)).toEqual(Firm.defaultBlocks().map((x) => x.id));
-    expect(b.firm.blocks.find((x) => x.id === 'arbitrage')?.enabled).toBe(true);
+    expect(b.firm.blocks.find((x) => x.id === 'momentum')?.enabled).toBe(true);
     expect(b.firm.blocks.find((x) => x.id === 'sniper')?.enabled).toBe(false);
     expect(b.competitors[0]!.blocks.map((x) => x.id)).toEqual(['arbitrage']);
   });

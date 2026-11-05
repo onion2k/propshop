@@ -1,6 +1,7 @@
 // The strategy: the blocks, each with a switch and sliders and a paragraph on what it is for, and a meter
 // showing how much of the computer is in use.
 
+import { shows, type StageId } from '../content';
 import { BLOCKS, SCRIPT_ID, type Snapshot } from '../sim';
 import { Term } from './Glossary';
 import { ScriptEditor } from './ScriptEditor';
@@ -17,7 +18,8 @@ const TERM_FOR: Record<string, string> = {
   newsReaction: 'news',
 };
 
-export function StrategyPanel({ s, store }: { s: Snapshot; store: Store }) {
+/** `stage` is the stage in force; a block that is on is shown whatever the stage, so nothing running is hidden. */
+export function StrategyPanel({ s, store, stage = 5 }: { s: Snapshot; store: Store; stage?: StageId }) {
   const cap = s.capacity;
   const full = cap.blocksUsed >= cap.maxBlocks;
   return (
@@ -34,6 +36,7 @@ export function StrategyPanel({ s, store }: { s: Snapshot; store: Store }) {
       {BLOCKS.map((b) => {
         const setting = s.blocks.find((x) => x.id === b.spec.id);
         if (!setting) return null;
+        if (!setting.enabled && !shows(`block:${b.spec.id}`, stage)) return null;
         const running = setting.enabled && s.blocks.filter((x) => x.enabled).indexOf(setting) < cap.maxBlocks;
         return (
           <details key={b.spec.id} className={`block ${running ? 'running' : ''}`} open={setting.enabled}>
