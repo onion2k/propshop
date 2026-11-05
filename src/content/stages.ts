@@ -1,4 +1,4 @@
-// The stages: the game opens small and each lesson done opens the next idea. A stage is a pure function of
+// The stages: the game opens small and each stage done opens the next idea. A stage is a pure function of
 // which lessons are done (and the show-everything switch, which the store folds in). Nothing here touches the
 // sim: a locked feature is hidden by the UI and the sim keeps every block.
 
@@ -7,8 +7,6 @@ export type StageId = 1 | 2 | 3 | 4 | 5;
 export interface Stage {
   id: StageId;
   name: string;
-  /** The lesson, in the stage before, whose being done opens this stage; null for the first. */
-  opensWith: string | null;
   /** The lessons that belong to this stage, in order. */
   lessons: string[];
   /** Ids of the intro cards shown when it opens (see `introSteps` in tutorial.ts). Stage 1 has the tutorial. */
@@ -16,23 +14,21 @@ export interface Stage {
 }
 
 export const STAGES: readonly Stage[] = [
-  { id: 1, name: 'Spare room', opensWith: null, lessons: ['home', 'seat'], intro: [] },
+  { id: 1, name: 'Spare room', lessons: ['home', 'seat'], intro: [] },
   {
     id: 2,
     name: 'A better seat',
-    opensWith: 'seat',
     lessons: ['gap', 'race', 'cost'],
     intro: ['stage2-gap', 'stage2-race', 'stage2-read'],
   },
   {
     id: 3,
     name: 'The day’s character',
-    opensWith: 'race',
-    lessons: ['maker', 'noise', 'week'],
+    lessons: ['maker', 'noise'],
     intro: ['stage3-character'],
   },
-  { id: 4, name: 'By hand', opensWith: 'maker', lessons: ['hand', 'used'], intro: ['stage4-desk'] },
-  { id: 5, name: 'The whole firm', opensWith: 'used', lessons: [], intro: ['stage5-whole'] },
+  { id: 4, name: 'By hand', lessons: ['hand', 'used', 'week'], intro: ['stage4-desk'] },
+  { id: 5, name: 'The whole firm', lessons: [], intro: ['stage5-whole'] },
 ];
 
 export const LAST_STAGE: StageId = 5;
@@ -80,13 +76,13 @@ export function shows(feature: Feature, stage: StageId): boolean {
   return stage >= featureStage(feature);
 }
 
-/** The stage the lessons done so far have reached: each opens only if the one before it has. */
+/** The stage the lessons done so far have reached: stage n opens when n-1 is open and all its lessons are done. */
 export function stageOf(progress: Readonly<Record<string, number>>): StageId {
   let stage: StageId = 1;
   for (const st of STAGES) {
-    if (st.opensWith === null) continue;
-    if (progress[st.opensWith] === undefined) break;
-    stage = st.id;
+    if (st.id !== stage) break;
+    if (!st.lessons.every((id) => progress[id] !== undefined) || st.id === LAST_STAGE) break;
+    stage = (st.id + 1) as StageId;
   }
   return stage;
 }

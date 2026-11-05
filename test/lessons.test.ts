@@ -18,9 +18,9 @@ describe('lessons', () => {
       'cost',
       'maker',
       'noise',
-      'week',
       'hand',
       'used',
+      'week',
     ]);
     for (const l of LESSONS) {
       expect(l.task.length).toBeGreaterThan(20);
@@ -64,6 +64,34 @@ describe('lessons', () => {
       expect(done).toBe(true);
     },
   );
+
+  it('race and cost: a beaten momentum order ticks neither, a beaten arbitrage order ticks race', () => {
+    const order = (over: Record<string, unknown>) =>
+      ({
+        block: 'momentum',
+        ioc: true,
+        ackAt: 1,
+        filled: 0,
+        size: 100,
+        beatenBy: [{}],
+        ...over,
+      }) as unknown as Snapshot['orders'][number];
+    const withOrders = (orders: Snapshot['orders']) => ({ ...fresh(), orders });
+    const momentum = withOrders(Array.from({ length: 30 }, () => order({})));
+    expect(L('race').done(momentum)).toBe(false);
+    expect(L('cost').done(momentum)).toBe(false);
+    const arb = withOrders([order({ block: 'arbitrage' })]);
+    expect(L('race').done(arb)).toBe(true);
+    expect(L('cost').done(arb)).toBe(false);
+    const many = withOrders(Array.from({ length: 20 }, () => order({ block: 'arbitrage' })));
+    expect(L('cost').done(many)).toBe(true);
+    // Mixed: twenty momentum losses do not make up arbitrage's twenty.
+    const mixed = withOrders([
+      ...Array.from({ length: 19 }, () => order({ block: 'arbitrage' })),
+      ...Array.from({ length: 5 }, () => order({})),
+    ]);
+    expect(L('cost').done(mixed)).toBe(false);
+  });
 
   it('home: done once momentum has earned', { timeout: 120_000 }, () => {
     const g = new Game(CONTENT, 4);

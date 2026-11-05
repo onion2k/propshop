@@ -4,21 +4,38 @@ import { createStore, PROGRESS_KEY, REVEAL_KEY, SAVE_KEY, STAGES_KEY, type Stora
 
 const done = (...ids: string[]) => Object.fromEntries(ids.map((id) => [id, 1000]));
 
+const S1 = ['home', 'seat'];
+const S2 = ['gap', 'race', 'cost'];
+const S3 = ['maker', 'noise'];
+const S4 = ['hand', 'used', 'week'];
+
 describe('stageOf', () => {
-  it('is 1 with nothing done, and each stage opens on the one lesson before it', () => {
+  it('opens stage n only when stage n-1 is open and all its lessons are done', () => {
     expect(stageOf({})).toBe(1);
     expect(stageOf(done('home'))).toBe(1);
-    expect(stageOf(done('seat'))).toBe(2);
-    expect(stageOf(done('seat', 'gap', 'cost'))).toBe(2);
-    expect(stageOf(done('seat', 'race'))).toBe(3);
-    expect(stageOf(done('seat', 'race', 'maker'))).toBe(4);
-    expect(stageOf(done('seat', 'race', 'maker', 'used'))).toBe(5);
+    expect(stageOf(done('seat'))).toBe(1);
+    expect(stageOf(done(...S1))).toBe(2);
+    expect(stageOf(done(...S1, 'gap', 'race'))).toBe(2);
+    expect(stageOf(done(...S1, ...S2))).toBe(3);
+    expect(stageOf(done(...S1, ...S2, 'maker'))).toBe(3);
+    expect(stageOf(done(...S1, ...S2, ...S3))).toBe(4);
+    expect(stageOf(done(...S1, ...S2, ...S3, 'hand', 'used'))).toBe(4);
+    expect(stageOf(done(...S1, ...S2, ...S3, ...S4))).toBe(5);
   });
 
-  it('does not skip: a later opener without the one before it stays where it is', () => {
+  it('does not skip: a later stage’s lessons without the earlier ones stay where they are', () => {
     expect(stageOf(done('race'))).toBe(1);
-    expect(stageOf(done('seat', 'maker'))).toBe(2);
-    expect(stageOf(done('week', 'used'))).toBe(1);
+    expect(stageOf(done('seat', 'maker'))).toBe(1);
+    expect(stageOf(done(...S1, ...S3))).toBe(2);
+    expect(stageOf(done(...S1, ...S3, ...S4))).toBe(2);
+    expect(stageOf(done(...S1, ...S2, ...S4))).toBe(3);
+  });
+
+  it('puts week in stage 4, and stage 5 needs it', () => {
+    expect(lessonStage('week')).toBe(4);
+    expect(STAGES.find((s) => s.id === 4)!.lessons).toEqual(S4);
+    expect(stageOf(done(...S1, ...S2, ...S3, 'hand', 'used'))).toBe(4);
+    expect(stageOf(done(...S1, ...S2, ...S3, 'week'))).toBe(4);
   });
 
   it('has every lesson in exactly one stage, and the lessons in stage order', () => {
@@ -27,9 +44,6 @@ describe('stageOf', () => {
     expect([...listed].sort()).toEqual(LESSONS.map((l) => l.id).sort());
     expect(LESSONS.map((l) => l.id)).toEqual(listed);
     for (const l of LESSONS) expect(lessonStage(l.id)).toBeDefined();
-    for (const st of STAGES) {
-      if (st.opensWith) expect(lessonStage(st.opensWith)).toBe(st.id - 1);
-    }
   });
 });
 
@@ -88,8 +102,9 @@ describe('the store and the stages', () => {
     expect(storage.data.get(STAGES_KEY)).toBe('{"seen":1}');
   });
 
-  it('opens stage 2 when seat is done, due an intro until it is dismissed, and keeps that across a reload', () => {
+  it('opens stage 2 when home and seat are done, due an intro until it is dismissed, and keeps that across a reload', () => {
     const storage = memory();
+    storage.data.set(PROGRESS_KEY, JSON.stringify(done('home')));
     const store = createStore(CONTENT, storage, 1);
     store.game.firm.cash = 100_000_000_00;
     store.buyUpgrade('network', 'fibre');
@@ -101,6 +116,15 @@ describe('the store and the stages', () => {
     const again = createStore(CONTENT, storage, 2);
     expect(again.getStage()).toBe(2);
     expect(again.getIntro()).toBeNull();
+  });
+
+  it('never falls below the last stage whose card was shown', () => {
+    const storage = memory();
+    storage.data.set(STAGES_KEY, '{"seen":5}');
+    storage.data.set(PROGRESS_KEY, JSON.stringify(done('home', 'seat')));
+    const store = createStore(CONTENT, storage, 2);
+    expect(store.getStage()).toBe(5);
+    expect(store.getIntro()).toBeNull();
   });
 
   it('opens everything for a save from before the stages (a save and no stages key)', () => {

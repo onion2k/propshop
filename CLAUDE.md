@@ -15,6 +15,8 @@ teaches; this file says how it is made. The house rules in
     npm run format       prettier, writing
     PACE=1 npx vitest run test/pace.test.ts
                          what each setup earns a day, headless, one seed: the economy's tuning harness
+    STAGE_PACE=1 STAGE_SEEDS=1 STAGE_DAYS=1 npx vitest run test/stagepace.test.ts
+                         when each lesson ticks and each stage opens, for scripted players (test/player.ts)
 
 Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
 
@@ -100,6 +102,14 @@ For anything new, check what it does:
   ceiling; the sim's one surface is the seam for it.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.
+- When the stages open is measured by the stage harness and held by nothing. A stage opens when every lesson of
+  the one before is done. Measured on 2026-11-05 over three seeds, seven trading days, in trading time after the
+  first open: a player who does each task at once opens stage 2 at 1.7 to 4.0 minutes, stage 3 at 5.6 to 7.7
+  (after twenty arbitrage races), stage 4 when a noise headline and a real one have settled (5.8, 167 and 252
+  minutes, the widest spread), and stage 5 at Monday of week 2, about three and a quarter real hours at 10×
+  or half an hour at 60×. A player who keeps momentum and buys fibre stays at stage 2. Under the first rule,
+  one lesson a stage, all five opened within eight minutes. A run of three seeds in parallel takes about
+  27 minutes.
 - Layout shift is held by hand, not by a gate. What changes as the market runs keeps its room: the P&L in fixed
   columns, positions, the scorecard and legend from the start, orders and gap rows of a fixed height, quote
   columns and the top bar's slots. Measured headless on 2026-11-05 with the browser's layout-shift score over

@@ -866,7 +866,10 @@ describe('stages', () => {
   }, 30_000);
 
   it('criterion 3: buying a seat opens stage 2 with an intro card at the gap view, and the arbitrage block, gap counter, races and Rivals', () => {
-    const store = createStore(CONTENT, null, 32);
+    // Stage 2 needs home as well as the seat.
+    const storage = memory();
+    storage.setItem(PROGRESS_KEY, JSON.stringify({ home: 1 }));
+    const store = createStore(CONTENT, storage, 32);
     store.setTutorial({ state: 'done' });
     render(<App store={store} />);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -890,15 +893,18 @@ describe('stages', () => {
   });
 
   it('criterion 3, later stages: stage 3 adds the day-character blocks and News, stage 4 the Desk and microscope', () => {
-    const at = (lessons: string[]) => {
+    // `seen` is the stage under test: a higher one would hold the stage up, a lower one would show its card.
+    const at = (lessons: string[], seen: number) => {
       const storage = memory();
-      storage.setItem(STAGES_KEY, '{"seen":5}');
+      storage.setItem(STAGES_KEY, JSON.stringify({ seen }));
       storage.setItem(PROGRESS_KEY, JSON.stringify(Object.fromEntries(lessons.map((l) => [l, 1]))));
       const store = createStore(CONTENT, storage, 33);
       store.setTutorial({ state: 'done' });
       return store;
     };
-    const three = at(['seat', 'race']);
+    const stage1 = ['home', 'seat'];
+    const stage2 = [...stage1, 'gap', 'race', 'cost'];
+    const three = at(stage2, 3);
     expect(three.getStage()).toBe(3);
     render(<App store={three} />);
     expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
@@ -918,7 +924,7 @@ describe('stages', () => {
     expect(screen.queryByRole('tab', { name: 'Dark web' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Lab' })).toBeNull();
     cleanup();
-    const four = at(['seat', 'race', 'maker']);
+    const four = at([...stage2, 'maker', 'noise'], 4);
     expect(four.getStage()).toBe(4);
     render(<App store={four} />);
     expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();

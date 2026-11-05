@@ -1,6 +1,6 @@
 // The guided first week: a lesson is something to do, something to watch for, a check the game runs on its
 // own snapshot, and what it meant once it has happened. The order is the path a new player walks, and is the
-// order of the stages (see stages.ts): home, seat | gap, race, cost | maker, noise, week | hand, used.
+// order of the stages (see stages.ts): home, seat | gap, race, cost | maker, noise | hand, used, week.
 
 import type { Snapshot } from '../sim';
 
@@ -73,7 +73,7 @@ export const LESSONS: Lesson[] = [
     task: 'Switch momentum off and arbitrage on; the laptop runs one block. Let a few minutes of trading pass, then read the Orders list in your firm panel.',
     watch: 'An order marked Missed, with a rival’s name and how many milliseconds before you they arrived.',
     terms: ['latency', 'arbitrage'],
-    done: (s) => s.orders.some((o) => o.beatenBy.length > 0),
+    done: (s) => s.orders.some((o) => o.block === 'arbitrage' && o.beatenBy.length > 0),
     lesson:
       'You saw the gap, sent the order, and the quote was gone before it arrived, taken by a firm sitting closer ' +
       'to the exchange. From a home office your view of the market is tens of milliseconds old and your order ' +
@@ -86,7 +86,7 @@ export const LESSONS: Lesson[] = [
     watch: 'Which exchange the beaten ones were on. PACIFIC is down the road; the other two are across the country.',
     terms: ['fill', 'maker-taker'],
     done: (s) => {
-      const resolved = s.orders.filter((o) => o.ioc && o.ackAt !== null);
+      const resolved = s.orders.filter((o) => o.block === 'arbitrage' && o.ioc && o.ackAt !== null);
       const won = resolved.filter((o) => o.filled >= o.size).length;
       const beaten = resolved.filter((o) => o.beatenBy.length > 0).length;
       return resolved.length >= 20 && beaten > won;
@@ -123,18 +123,6 @@ export const LESSONS: Lesson[] = [
       'A headline that reads like news is not always news. An executive seen at an airport moves nothing; an ' +
       'earnings miss moves a lot, over about twenty seconds while the market prices it in. The news reaction ' +
       'block cannot tell them apart. You can, with practice: that is an edge a machine does not have yet.',
-  },
-  {
-    id: 'week',
-    title: 'Reach the second week',
-    task: 'Play through to Friday’s close and over the weekend. Use skip to open for the evenings.',
-    watch: 'The day P&L at each close, and whether a message arrives on the Dark web tab.',
-    terms: ['insider', 'pnl'],
-    done: (s) => s.calendar.week >= 2,
-    lesson:
-      'A week of trading days, each with its open, its lunch lull and its close. If you were up on the week, ' +
-      'someone on the dark web has noticed. Read the glossary’s entry on insider trading before you take ' +
-      'them up on it: the tips are sometimes real, the fines always are.',
   },
   {
     id: 'hand',
@@ -176,6 +164,18 @@ export const LESSONS: Lesson[] = [
       'faster firm quotes a cent in front of it. If the price rises, it keeps the shares; if it falls, it sells ' +
       'them to you for a cent loss and you have bought on a falling price. Your order fills when the price ' +
       'is coming through it, and rarely when it is not. A resting order gives away what you mean to do.',
+  },
+  {
+    id: 'week',
+    title: 'Reach the second week',
+    task: 'Play through to Friday’s close and over the weekend. Use skip to open for the evenings.',
+    watch: 'The day P&L at each close, and whether a message arrives on the Dark web tab.',
+    terms: ['insider', 'pnl'],
+    done: (s) => s.calendar.week >= 2,
+    lesson:
+      'A week of trading days, each with its open, its lunch lull and its close. If you were up on the week, ' +
+      'someone on the dark web has noticed. Read the glossary’s entry on insider trading before you take ' +
+      'them up on it: the tips are sometimes real, the fines always are.',
   },
 ];
 

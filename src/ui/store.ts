@@ -98,7 +98,7 @@ export function createStore(
   let seen = loadSeen(stagesRaw);
   if (storage && stagesRaw === null && !legacy) writeSeen(storage, seen);
   let reveal = storage?.getItem(REVEAL_KEY) === '1';
-  const stageNow = (): StageId => (reveal || legacy ? LAST_STAGE : stageOf(progress));
+  const stageNow = (): StageId => (reveal || legacy ? LAST_STAGE : (Math.max(stageOf(progress), seen) as StageId));
   let publishedVersion = game.version;
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
