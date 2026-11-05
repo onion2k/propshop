@@ -80,35 +80,40 @@ export function GapList({ s, stock, onPick }: { s: Snapshot; stock: Stock; onPic
         A gap is one exchange&apos;s ask under another&apos;s bid, in your view. By the time an order reaches them, most
         are gone.
       </p>
-      {gaps.length === 0 && <p className="muted">No gaps seen yet.</p>}
-      {gaps.map((g) => {
-        const mine = s.orders.filter(
-          (o) =>
-            o.symbol === g.symbol && o.sentAt >= g.firstSeen && o.sentAt <= g.lastSeen + s.capacity.decisionEveryMs,
-        );
-        const summary = orderSummary(mine, s.names);
-        return (
-          <div
-            className={`gap-row ${g.symbol === stock.symbol ? 'picked' : ''}`}
-            key={`${g.symbol}:${g.firstSeen}`}
-            onClick={() => onPick(g.symbol)}
-          >
-            <span className="num muted">
-              {formatTime(g.firstSeen)}.{String(g.firstSeen % 1000).padStart(3, '0')}
-            </span>
-            <strong>{g.symbol}</strong>
-            <span>
-              buy {g.buyOn} {price(g.ask)} / sell {g.sellOn} {price(g.bid)}
-            </span>
-            <span className={`num ${g.edge > 0 ? 'up' : 'down'}`}>
-              {g.edge > 0 ? '+' : ''}
-              {cents(g.edge)}
-            </span>
-            <span className="muted">{g.lastSeen === g.firstSeen ? 'one look' : ms(g.lastSeen - g.firstSeen)}</span>
-            <span className="muted">{summary || 'you sent nothing'}</span>
-          </div>
-        );
-      })}
+      {/* Six rows of a fixed height are kept, so the list does not push the page about as gaps come and go. */}
+      <div className="gap-rows">
+        {gaps.length === 0 && <p className="muted">No gaps seen yet.</p>}
+        {gaps.map((g) => {
+          const mine = s.orders.filter(
+            (o) =>
+              o.symbol === g.symbol && o.sentAt >= g.firstSeen && o.sentAt <= g.lastSeen + s.capacity.decisionEveryMs,
+          );
+          const summary = orderSummary(mine, s.names);
+          return (
+            <div
+              className={`gap-row ${g.symbol === stock.symbol ? 'picked' : ''}`}
+              key={`${g.symbol}:${g.firstSeen}`}
+              onClick={() => onPick(g.symbol)}
+            >
+              <span className="num muted">
+                {formatTime(g.firstSeen)}.{String(g.firstSeen % 1000).padStart(3, '0')}
+              </span>
+              <strong>{g.symbol}</strong>
+              <span title={`buy ${g.buyOn} ${price(g.ask)} / sell ${g.sellOn} ${price(g.bid)}`}>
+                buy {g.buyOn} {price(g.ask)} / sell {g.sellOn} {price(g.bid)}
+              </span>
+              <span className={`num ${g.edge > 0 ? 'up' : 'down'}`}>
+                {g.edge > 0 ? '+' : ''}
+                {cents(g.edge)}
+              </span>
+              <span className="muted">{g.lastSeen === g.firstSeen ? 'one look' : ms(g.lastSeen - g.firstSeen)}</span>
+              <span className="muted" title={summary || undefined}>
+                {summary || 'you sent nothing'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

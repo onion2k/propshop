@@ -298,7 +298,8 @@ describe('App', () => {
   it('names the kind of day from the open', () => {
     const store = createStore(CONTENT, null, 14);
     render(<App store={store} />);
-    expect(document.querySelector('.regime')).toBeNull();
+    // Before the first open the slot is held, empty, so the bar does not reflow when the day is named.
+    expect(document.querySelector('.regime')!.textContent.trim()).toBe('');
     act(() => {
       store.skipToOpen();
       for (let i = 0; i < (2 * 60 * 1000) / TICK_MS; i++) store.game.step();
@@ -677,23 +678,27 @@ describe('FirmPanel: races by exchange, net, legend and span', () => {
     expect(rows.some((r) => r.textContent.includes('—'))).toBe(s.exchanges.length > 2);
   });
 
-  it('hides the scorecard when no race is counted', () => {
+  it('shows the scorecard with dashes before any race is counted, so the panel does not jump at the first', () => {
     const { s, a } = firm();
     s.orders = [order(a, { status: 'inflight', ackAt: null })];
     render(<FirmPanel s={s} />);
-    expect(document.querySelector('.scorecard')).toBeNull();
+    const card = document.querySelector('.scorecard')!;
+    expect(card.textContent).toContain('none yet');
+    const rates = [...card.querySelectorAll('tbody tr')].map((r) => r.lastElementChild!.textContent);
+    expect(rates).toEqual(s.exchanges.map(() => '—'));
   });
 
   it('shows net after fees and fines in the heading', () => {
     const { s } = firm({ realised: 1000, unrealised: 250.4, feesPaid: 300, finesPaid: 100 });
     render(<FirmPanel s={s} />);
-    expect(document.querySelector('.firm h2')!.textContent).toContain('net +$8.50');
+    expect(document.querySelector('.firm-pnl')!.textContent).toContain('Net+$8.50');
+    expect(document.querySelector('.firm-pnl')!.textContent).toContain('Fines-$1.00');
   });
 
-  it('draws the legend once when there are orders, and not with none', () => {
+  it('draws the legend once, with orders or without, so the first order does not move the panel', () => {
     const { s, a } = firm();
     const { unmount } = render(<FirmPanel s={s} />);
-    expect(document.querySelector('.race-legend')).toBeNull();
+    expect(document.querySelectorAll('.race-legend')).toHaveLength(1);
     unmount();
     s.orders = [order(a), order(a)];
     render(<FirmPanel s={s} />);

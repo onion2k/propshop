@@ -26,12 +26,13 @@ function counted(orders: OrderStory[]): OrderStory[] {
 }
 
 function Scorecard({ s }: { s: Snapshot }) {
+  // Shown from the start, with dashes, so the panel does not jump when the first race lands.
   const races = counted(s.orders);
-  if (races.length === 0) return null;
   return (
     <div className="scorecard">
       <h3>
-        Races by exchange <span className="muted">· your last {races.length}</span>
+        Races by exchange{' '}
+        <span className="muted">· {races.length === 0 ? 'none yet' : `your last ${races.length}`}</span>
       </h3>
       <table>
         <thead>
@@ -84,30 +85,39 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
       <h2>
         Your firm{' '}
         <span className="muted">
-          · <Term id="pnl">P&L</Term> realised {money(s.realised, true)}, unrealised{' '}
-          {money(Math.round(s.unrealised), true)}, fees {money(-s.feesPaid)}
-          {s.finesPaid > 0 && <span className="down">, fines {money(-s.finesPaid)}</span>}
-          {' · '}
-          <span className={net >= 0 ? 'up' : 'down'}>net {money(net, true)}</span>
+          · <Term id="pnl">P&L</Term>
         </span>
       </h2>
+      {/* Five figures in fixed columns, so a figure growing a digit moves nothing beside it or under it. */}
+      <div className="firm-pnl">
+        <PnlStat label="Realised" value={money(s.realised, true)} />
+        <PnlStat label="Unrealised" value={money(Math.round(s.unrealised), true)} />
+        <PnlStat label="Fees" value={money(-s.feesPaid)} />
+        <PnlStat label="Fines" value={money(-s.finesPaid)} tone={s.finesPaid > 0 ? -1 : 0} />
+        <PnlStat label="Net" value={money(net, true)} tone={net} />
+      </div>
       <h3>Positions</h3>
-      {s.positions.length === 0 ? (
-        <p className="muted">Flat.</p>
-      ) : (
-        <table className="positions">
-          <tbody>
-            {s.positions.map((p) => (
-              <tr key={p.symbol}>
-                <td>{p.symbol}</td>
-                <td className={`num ${p.qty > 0 ? 'up' : 'down'}`}>{shares(p.qty)}</td>
-                <td className="num muted">@ {price(Math.round(p.avgCost))}</td>
-                <td className={`num ${p.unrealised >= 0 ? 'up' : 'down'}`}>{money(Math.round(p.unrealised), true)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      {/* Room for a laptop's four positions is kept, flat or not, so nothing under it moves as they open. */}
+      <div className="positions-box">
+        {s.positions.length === 0 ? (
+          <p className="muted">Flat.</p>
+        ) : (
+          <table className="positions">
+            <tbody>
+              {s.positions.map((p) => (
+                <tr key={p.symbol}>
+                  <td>{p.symbol}</td>
+                  <td className={`num ${p.qty > 0 ? 'up' : 'down'}`}>{shares(p.qty)}</td>
+                  <td className="num muted">@ {price(Math.round(p.avgCost))}</td>
+                  <td className={`num ${p.unrealised >= 0 ? 'up' : 'down'}`}>
+                    {money(Math.round(p.unrealised), true)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
       {races && <Scorecard s={s} />}
       <h3>
         Orders{' '}
@@ -116,21 +126,21 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
           {held && ' · held while you look'}
         </span>
       </h3>
+      {races && (
+        <p className="race-legend small muted">
+          {LEGEND.map(([cls, label]) => (
+            <span key={cls}>
+              <i className={`swatch ${cls}`} /> {label}
+            </span>
+          ))}
+        </p>
+      )}
       {s.orders.length === 0 ? (
         <p className="muted">
           Nothing yet. When the market is open and a block fires, each order lands here with what happened to it.
         </p>
       ) : (
         <>
-          {races && (
-            <p className="race-legend small muted">
-              {LEGEND.map(([cls, label]) => (
-                <span key={cls}>
-                  <i className={`swatch ${cls}`} /> {label}
-                </span>
-              ))}
-            </p>
-          )}
           <ul className="orders" onMouseEnter={() => setHeld(shown)} onMouseLeave={() => setHeld(null)}>
             {shown.orders.map((o) => (
               <li key={o.localId} data-id={o.localId}>
@@ -152,5 +162,14 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
         </>
       )}
     </section>
+  );
+}
+
+function PnlStat({ label, value, tone = 0 }: { label: string; value: string; tone?: number }) {
+  return (
+    <div className="stat">
+      <span className="label">{label}</span>
+      <span className={`value num ${tone > 0 ? 'up' : tone < 0 ? 'down' : ''}`}>{value}</span>
+    </div>
   );
 }

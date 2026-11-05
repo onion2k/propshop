@@ -617,6 +617,10 @@ code {
   .clock .time {
     font-size: 17px;
   }
+  /* Its own line, named or not: a long name beside the clock wraps, and the bar would reflow at the open. */
+  .clock .regime {
+    width: 100%;
+  }
   .money {
     margin-left: 0;
     width: 100%;
@@ -696,6 +700,33 @@ code {
   min-width: 4ch;
   text-align: right;
 }
+/* What changes as the market runs keeps its room, so nothing beside or under it moves. */
+.firm-pnl {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.firm-pnl .stat .value {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .firm-pnl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.positions-box {
+  min-height: 6.8em;
+}
+.clock .state {
+  display: inline-block;
+  min-width: 25ch;
+}
+.speed .placeholder {
+  visibility: hidden;
+}
 .stat {
   min-width: 6.5em;
 }
@@ -709,7 +740,8 @@ code {
 }
 .watchlist td.num,
 .quotes td.num {
-  min-width: 6ch;
+  min-width: 7ch;
+  white-space: nowrap;
 }
 .positions td.num {
   min-width: 7ch;
@@ -717,16 +749,22 @@ code {
 @media (max-width: 600px) {
   html,
   body {
-    font-size: 13px;
+    font-size: 12px;
   }
   h1 {
-    font-size: 16px;
+    font-size: 15px;
   }
   h2 {
-    font-size: 12px;
+    font-size: 11px;
   }
-  h3 {
-    font-size: 12px;
+  h3,
+  .gaps h3 {
+    font-size: 11px;
+  }
+  .scorecard table,
+  .fills,
+  .pages .hint {
+    font-size: 11px;
   }
   .small,
   th,
@@ -741,7 +779,7 @@ code {
   .headline,
   .tip,
   .offer {
-    font-size: 12px;
+    font-size: 11px;
   }
   .stat {
     min-width: 0;
@@ -750,20 +788,20 @@ code {
     font-size: 10px;
   }
   .stat .value {
-    font-size: 13px;
+    font-size: 12px;
   }
   .money {
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
   }
   .clock {
-    font-size: 12px;
+    font-size: 11px;
   }
   .clock .time {
-    font-size: 16px;
+    font-size: 15px;
   }
   .pages > button {
-    font-size: 13px;
+    font-size: 12px;
   }
   .chart {
     font-size: 9px;
@@ -874,6 +912,12 @@ code {
 .quotes td.col-now {
   opacity: 0.7;
 }
+.quotes td.col-now,
+.quotes td.col-size {
+  width: 15ch;
+  min-width: 15ch;
+  white-space: nowrap;
+}
 .gap-line {
   margin: 8px 0 4px;
 }
@@ -884,13 +928,46 @@ code {
 .gaps p {
   margin: 2px 0;
 }
+.gap-rows {
+  min-height: calc(6 * (2.8em + 9px));
+}
+/* A gap is two lines: when, what and the two legs, then how long it lasted and what you sent. Each part stays on
+   its line, cut short with its whole in the title, so every row is the same height. */
 .gap-row {
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1.6fr) max-content max-content minmax(0, 1.4fr);
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  grid-template-areas:
+    'time symbol legs edge'
+    'span summary summary summary';
   gap: 2px 10px;
   padding: 3px 4px;
   border-top: 1px solid var(--line);
+  line-height: 1.4;
   cursor: pointer;
+}
+.gap-row > * {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.gap-row > :nth-child(1) {
+  grid-area: time;
+}
+.gap-row > :nth-child(2) {
+  grid-area: symbol;
+}
+.gap-row > :nth-child(3) {
+  grid-area: legs;
+}
+.gap-row > :nth-child(4) {
+  grid-area: edge;
+}
+.gap-row > :nth-child(5) {
+  grid-area: span;
+}
+.gap-row > :nth-child(6) {
+  grid-area: summary;
 }
 .gap-row:hover,
 .gap-row.picked {
@@ -898,30 +975,15 @@ code {
 }
 /* On a phone a gap is three lines: when and what, the two legs, then how long it lasted and what you sent. */
 @media (max-width: 600px) {
+  .gap-rows {
+    min-height: calc(6 * (4.2em + 11px));
+  }
   .gap-row {
     grid-template-columns: max-content minmax(0, 1fr) max-content;
     grid-template-areas:
       'time symbol edge'
       'legs legs legs'
       'span summary summary';
-  }
-  .gap-row > :nth-child(1) {
-    grid-area: time;
-  }
-  .gap-row > :nth-child(2) {
-    grid-area: symbol;
-  }
-  .gap-row > :nth-child(3) {
-    grid-area: legs;
-  }
-  .gap-row > :nth-child(4) {
-    grid-area: edge;
-  }
-  .gap-row > :nth-child(5) {
-    grid-area: span;
-  }
-  .gap-row > :nth-child(6) {
-    grid-area: summary;
   }
 }
 .race-bar {
@@ -933,8 +995,29 @@ code {
   flex: 1;
 }
 .race-span {
+  min-width: 11ch;
   white-space: nowrap;
   text-align: right;
+}
+/* Every order is the same height, so a new one at the top moves the others down by a whole order and no more.
+   Each part keeps to its line on a desk and to two on a phone, cut short past that. */
+.order-line,
+.race-words > * {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .order-line,
+  .race-words > * {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    min-height: 2.8em;
+  }
 }
 .race-legend {
   display: flex;

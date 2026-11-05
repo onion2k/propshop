@@ -100,6 +100,13 @@ For anything new, check what it does:
   ceiling; the sim's one surface is the seam for it.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.
+- Layout shift is held by hand, not by a gate. What changes as the market runs keeps its room: the P&L in fixed
+  columns, positions, the scorecard and legend from the start, orders and gap rows of a fixed height, quote
+  columns and the top bar's slots. Measured headless on 2026-11-05 with the browser's layout-shift score over
+  fifteen seconds at 10×, on a fresh game with everything shown: the phone 0.33 to 0.03; the desktop's market
+  page about 0.6, nearly all of it the orders and gaps lists moving down a row as the newest arrives, which is
+  their design. The other pages 0. Playwright is borrowed from `~/projects/artshape-game-template`; there is
+  none here.
 - No fuzzer and no invariants file yet.
 
 ## Plans

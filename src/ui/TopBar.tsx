@@ -43,11 +43,10 @@ export function TopBar({
             · {s.open ? 'closes' : 'opens'} in {formatSpan(until)}
           </span>
         </span>
-        {s.regime && (
-          <span className="regime" title={s.regime.explain}>
-            <Term id="regimes">{s.regime.name}</Term>
-          </span>
-        )}
+        {/* The day's kind holds its place while there is none, so the bar does not reflow when one is named. */}
+        <span className="regime" title={s.regime?.explain}>
+          {s.regime ? <Term id="regimes">{s.regime.name}</Term> : '\u00a0'}
+        </span>
       </div>
       <div className="speed" role="group" aria-label="Speed" data-tut="speed">
         {SPEEDS.map((sp) => (
@@ -60,11 +59,6 @@ export function TopBar({
             running {Math.max(1, Math.round(running))}×
           </span>
         )}
-        {!s.open && (
-          <button type="button" className="skip" onClick={() => store.skipToOpen()}>
-            skip to open
-          </button>
-        )}
         {microscope && (
           <button
             type="button"
@@ -75,6 +69,17 @@ export function TopBar({
             microscope
           </button>
         )}
+        {/* Kept in place, unseen and last in the row, while the market is open, so the bar does not reflow at the
+            open and the close. visibility: hidden takes it out of the tab order and the accessibility tree too. */}
+        <button
+          type="button"
+          className={`skip ${s.open ? 'placeholder' : ''}`}
+          onClick={() => store.skipToOpen()}
+          disabled={s.open}
+          aria-hidden={s.open || undefined}
+        >
+          skip to open
+        </button>
       </div>
       {s.halt && (
         <div className="halt" role="status">
