@@ -15,11 +15,14 @@ export function MarketPanel({
   store,
   picked,
   onPick,
+  gaps = true,
 }: {
   s: Snapshot;
   store: Store;
   picked: string | null;
   onPick: (symbol: string) => void;
+  /** Whether the gap counter, line and list are shown (from stage 2). */
+  gaps?: boolean;
 }) {
   const [ladder, setLadder] = useState<string | null>(null);
   const selected = s.stocks.find((st) => st.symbol === picked) ?? s.stocks.find((st) => st.watched) ?? s.stocks[0];
@@ -37,7 +40,13 @@ export function MarketPanel({
           {Object.entries(s.dataLatency)
             .map(([e, l]) => `${e} ${l}ms`)
             .join(', ')}{' '}
-          late · <span className="num slot-short">{s.gapsSeen}</span> gaps seen
+          late
+          {gaps && (
+            <>
+              {' · '}
+              <span className="num slot-short">{s.gapsSeen}</span> gaps seen
+            </>
+          )}
         </span>
       </h2>
       <table className="watchlist" data-tut="watchlist">
@@ -141,8 +150,12 @@ export function MarketPanel({
               })}
             </tbody>
           </table>
-          <GapLine s={s} stock={selected} />
-          <GapList s={s} stock={selected} onPick={onPick} />
+          {gaps && (
+            <div data-tut="gaps">
+              <GapLine s={s} stock={selected} />
+              <GapList s={s} stock={selected} onPick={onPick} />
+            </div>
+          )}
           {selected.exchanges.map(
             (ex) =>
               ladder === `${selected.symbol}:${ex.id}` && (

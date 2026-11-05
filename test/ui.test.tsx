@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { CONTENT } from '../src/content';
 import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
@@ -7,7 +7,7 @@ import { FirmPanel } from '../src/ui/FirmPanel';
 import { App } from '../src/ui/App';
 import { Cover } from '../src/ui/Cover';
 import { Root } from '../src/ui/Root';
-import { createStore, PROGRESS_KEY, SAVE_KEY, type Storage } from '../src/ui/store';
+import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
 
 /** The page switcher under the top bar. */
 function goTo(page: 'Market' | 'Desk' | 'Strategy' | 'Reports') {
@@ -39,6 +39,9 @@ describe('App', () => {
 
   it('changes a block parameter in the game from its slider, and toggles a block', () => {
     const store = createStore(CONTENT, null, 2);
+    store.setReveal(true);
+    store.setBlock('momentum', { enabled: false });
+    store.setBlock('arbitrage', { enabled: true });
     render(<App store={store} />);
     goTo('Strategy');
     const slider = screen.getByLabelText('Cross-exchange arbitrage Size');
@@ -120,6 +123,9 @@ describe('App', () => {
 
   it('tells each order its race once the market has traded', () => {
     const store = createStore(CONTENT, null, 7);
+    store.setReveal(true);
+    store.setBlock('momentum', { enabled: false });
+    store.setBlock('arbitrage', { enabled: true });
     store.skipToOpen();
     for (let i = 0; i < (6 * 60 * 1000) / TICK_MS; i++) store.game.step();
     store.publish();
@@ -133,6 +139,7 @@ describe('App', () => {
 
   it('disables the desk ticket while the market is closed, and says why', () => {
     const store = createStore(CONTENT, null, 9);
+    store.setReveal(true);
     render(<App store={store} />);
     goTo('Desk');
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
@@ -141,6 +148,7 @@ describe('App', () => {
 
   it('sends a hand order from the desk, counts down its wait, and reads its slippage and the day total', () => {
     const store = createStore(CONTENT, null, 9);
+    store.setReveal(true);
     store.skipToOpen();
     while (!store.game.snapshot().open) store.game.step(TICK_MS);
     for (let i = 0; i < (10 * 1000) / TICK_MS; i++) store.game.step(TICK_MS);
@@ -175,12 +183,13 @@ describe('App', () => {
   it('opens on the first week, ticks a lesson when it happens, and keeps the progress', () => {
     const storage = memory();
     const store = createStore(CONTENT, storage, 8);
+    store.setReveal(true);
     render(<App store={store} />);
-    expect(screen.getByRole('button', { name: /^First week: See two exchanges disagree/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^First week: Find what earns from home/ })).toBeInTheDocument();
     goTo('Reports');
     expect(screen.getByRole('tab', { name: /First week/ })).toHaveAttribute('aria-selected', 'true');
     expect(document.querySelectorAll('.lesson.done')).toHaveLength(0);
-    expect(document.querySelector('.lesson.current strong')?.textContent).toBe('See two exchanges disagree');
+    expect(document.querySelector('.lesson.current strong')?.textContent).toBe('Find what earns from home');
     act(() => {
       store.skipToOpen();
       for (let i = 0; i < (6 * 60 * 1000) / TICK_MS; i++) {
@@ -190,7 +199,7 @@ describe('App', () => {
       store.publish();
     });
     const done = document.querySelectorAll('.lesson.done');
-    expect(done.length).toBeGreaterThanOrEqual(2);
+    expect(done.length).toBeGreaterThanOrEqual(1);
     expect(document.querySelector('.lesson.done .lesson-text')).not.toBeNull();
     expect(storage.data.has(PROGRESS_KEY)).toBe(true);
     const again = createStore(CONTENT, storage, 9);
@@ -202,6 +211,8 @@ describe('App', () => {
 
   it('applies a script and shows what it prints, or its error', () => {
     const store = createStore(CONTENT, null, 10);
+    store.setReveal(true);
+    store.setBlock('momentum', { enabled: false });
     store.setBlock('arbitrage', { enabled: false });
     store.setBlock('script', { enabled: true });
     render(<App store={store} />);
@@ -229,6 +240,7 @@ describe('App', () => {
 
   it('shows the day report after a close, and marks the tab new', () => {
     const store = createStore(CONTENT, null, 11);
+    store.setReveal(true);
     render(<App store={store} />);
     goTo('Reports');
     fireEvent.click(screen.getByRole('tab', { name: 'Days' }));
@@ -370,6 +382,7 @@ describe('App', () => {
 
   it('sets an exchange rule from the lab and restarts the scoreboard', () => {
     const store = createStore(CONTENT, null, 18);
+    store.setReveal(true);
     store.setTutorial({ state: 'done' });
     render(<App store={store} />);
     goTo('Reports');
@@ -386,6 +399,7 @@ describe('App', () => {
 
   it('opens the microscope, pauses, and steps by the tick', () => {
     const store = createStore(CONTENT, null, 19);
+    store.setReveal(true);
     store.setTutorial({ state: 'done' });
     store.skipToOpen();
     store.setSpeed(10);
@@ -802,5 +816,176 @@ describe('Root', () => {
     expect(screen.getByText('06:00:00')).toBeInTheDocument();
     act(() => store.pump(600));
     expect(store.game.now).toBeGreaterThan(t0);
+  });
+});
+
+/** The names of the blocks listed on the Strategy page. */
+function listedBlocks(): string[] {
+  return screen.queryAllByLabelText(/^Enable /).map((e) => e.getAttribute('aria-label')!.replace('Enable ', ''));
+}
+
+/** Money and a purchase, so stage 2 opens through the lesson the way a player's would. */
+function buySeat(store: ReturnType<typeof createStore>) {
+  store.game.firm.cash = 1_000_000_00;
+  store.buyUpgrade('network', 'fibre');
+}
+
+describe('stages', () => {
+  it('criterion 1: a fresh game shows Market, Strategy and Reports, momentum only and on, and none of the later things', () => {
+    const store = createStore(CONTENT, null, 31);
+    store.setTutorial({ state: 'done' });
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (3 * 60 * 1000) / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    render(<App store={store} />);
+    const pages = [...document.querySelectorAll('nav.pages > button:not(.link)')].map((b) => b.textContent);
+    expect(pages.map((p) => p.replace(/\d+$/, ''))).toEqual(['Market', 'Strategy', 'Reports']);
+    // Things a later stage shows: the gap counter, the scorecard, the race under an order, the microscope.
+    expect(screen.queryByText(/gaps seen/)).toBeNull();
+    expect(document.querySelector('.gap-line, .gap-list')).toBeNull();
+    expect(document.querySelector('.scorecard')).toBeNull();
+    expect(document.querySelector('.race-words')).toBeNull();
+    expect(screen.queryByLabelText('Open the microscope')).toBeNull();
+    expect(document.querySelectorAll('.orders li').length).toBeGreaterThan(0);
+    goTo('Strategy');
+    expect(listedBlocks()).toEqual(['Momentum']);
+    expect(screen.getByLabelText('Enable Momentum')).toBeChecked();
+    goTo('Reports');
+    expect(screen.getAllByRole('tab').map((t) => t.textContent.replace(/\d+$/, '').replace(/new$/, ''))).toEqual([
+      'First week',
+      'Days',
+      'Learn',
+    ]);
+  }, 30_000);
+
+  it('criterion 3: buying a seat opens stage 2 with an intro card at the gap view, and the arbitrage block, gap counter, races and Rivals', () => {
+    const store = createStore(CONTENT, null, 32);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    act(() => buySeat(store));
+    const card = screen.getByRole('dialog', { name: /Stage step 1 of 3/ });
+    expect(card).toHaveTextContent('A better seat: the gap');
+    expect(screen.getAllByText(/gaps seen/).length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-tut="gaps"]')).not.toBeNull();
+    goTo('Strategy');
+    expect(listedBlocks().sort()).toEqual(['Cross-exchange arbitrage', 'Momentum', 'Stale-quote sniper']);
+    goTo('Reports');
+    expect(screen.getByRole('tab', { name: 'Rivals' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'News' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
+    // Through the cards: the stage is marked seen and the card goes.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(store.getIntro()).toBeNull();
+  });
+
+  it('criterion 3, later stages: stage 3 adds the day-character blocks and News, stage 4 the Desk and microscope', () => {
+    const at = (lessons: string[]) => {
+      const storage = memory();
+      storage.setItem(STAGES_KEY, '{"seen":5}');
+      storage.setItem(PROGRESS_KEY, JSON.stringify(Object.fromEntries(lessons.map((l) => [l, 1]))));
+      const store = createStore(CONTENT, storage, 33);
+      store.setTutorial({ state: 'done' });
+      return store;
+    };
+    const three = at(['seat', 'race']);
+    expect(three.getStage()).toBe(3);
+    render(<App store={three} />);
+    expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
+    expect(screen.queryByLabelText('Open the microscope')).toBeNull();
+    goTo('Strategy');
+    expect(listedBlocks().sort()).toEqual([
+      'Cross-exchange arbitrage',
+      'Market maker',
+      'Mean reversion',
+      'Momentum',
+      'News reaction',
+      'Stale-quote sniper',
+    ]);
+    goTo('Reports');
+    expect(screen.getByRole('tab', { name: 'News' })).toBeInTheDocument();
+    // The dark web is the sim's to unlock: at stage 3 its tab waits for the message.
+    expect(screen.queryByRole('tab', { name: 'Dark web' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Lab' })).toBeNull();
+    cleanup();
+    const four = at(['seat', 'race', 'maker']);
+    expect(four.getStage()).toBe(4);
+    render(<App store={four} />);
+    expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('Open the microscope')).toBeInTheDocument();
+    goTo('Strategy');
+    expect(listedBlocks()).not.toContain('Pairs');
+  });
+
+  it('criterion 4: a block that is on is shown although its stage is not open', () => {
+    const store = createStore(CONTENT, null, 34);
+    store.setTutorial({ state: 'done' });
+    store.setBlock('marketMaker', { enabled: true });
+    render(<App store={store} />);
+    goTo('Strategy');
+    expect(listedBlocks().sort()).toEqual(['Market maker', 'Momentum']);
+    expect(screen.getByLabelText('Enable Market maker')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('Enable Market maker'));
+    expect(listedBlocks()).toEqual(['Momentum']);
+  });
+
+  it('criterion 5: show everything opens every stage, persists across a reload and across Start again', () => {
+    const storage = memory();
+    const store = createStore(CONTENT, storage, 35);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
+    goTo('Reports');
+    fireEvent.click(screen.getByLabelText(/Show everything/));
+    expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    goTo('Strategy');
+    expect(listedBlocks()).toHaveLength(10);
+    // A reload.
+    cleanup();
+    const again = createStore(CONTENT, storage, 36);
+    again.setTutorial({ state: 'done' });
+    render(<App store={again} />);
+    expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
+    // Start again.
+    act(() => again.reset(37));
+    expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
+    goTo('Reports');
+    expect(screen.getByLabelText(/Show everything/)).toBeChecked();
+    fireEvent.click(screen.getByLabelText(/Show everything/));
+    expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
+  });
+
+  it('criterion 6: a save from before the stages opens every stage, with no intro cards', () => {
+    const storage = memory();
+    const old = createStore(CONTENT, storage, 38);
+    old.save();
+    storage.data.delete(STAGES_KEY);
+    const store = createStore(CONTENT, storage, 39);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    goTo('Strategy');
+    expect(listedBlocks()).toHaveLength(10);
+  });
+
+  it('criterion 8: the first week lists lessons by stage, and names the stages not open yet', () => {
+    const store = createStore(CONTENT, null, 40);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Reports');
+    const headings = [...document.querySelectorAll('.first-week h3')].map((h) => h.textContent);
+    expect(headings[0]).toMatch(/^Stage 1: Spare room/);
+    expect(headings).toHaveLength(5);
+    expect(headings[1]).toMatch(/Stage 2: A better seat · opens as you go/);
+    const titles = [...document.querySelectorAll('.lesson-head strong')].map((e) => e.textContent);
+    expect(titles).toEqual(['Find what earns from home', 'Buy a better seat']);
   });
 });

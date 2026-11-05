@@ -73,7 +73,8 @@ function Scorecard({ s }: { s: Snapshot }) {
   );
 }
 
-export function FirmPanel({ s }: { s: Snapshot }) {
+/** `races` is whether the race under each order and the scorecard are shown (from stage 2). */
+export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean }) {
   // The list is held still while the pointer is over it, so a race can be read before the next replaces it.
   const [held, setHeld] = useState<{ orders: OrderStory[]; now: number } | null>(null);
   const shown = held ?? { orders: s.orders.slice(0, SHOWN), now: s.now };
@@ -107,7 +108,7 @@ export function FirmPanel({ s }: { s: Snapshot }) {
           </tbody>
         </table>
       )}
-      <Scorecard s={s} />
+      {races && <Scorecard s={s} />}
       <h3>
         Orders{' '}
         <span className="muted">
@@ -121,13 +122,15 @@ export function FirmPanel({ s }: { s: Snapshot }) {
         </p>
       ) : (
         <>
-          <p className="race-legend small muted">
-            {LEGEND.map(([cls, label]) => (
-              <span key={cls}>
-                <i className={`swatch ${cls}`} /> {label}
-              </span>
-            ))}
-          </p>
+          {races && (
+            <p className="race-legend small muted">
+              {LEGEND.map(([cls, label]) => (
+                <span key={cls}>
+                  <i className={`swatch ${cls}`} /> {label}
+                </span>
+              ))}
+            </p>
+          )}
           <ul className="orders" onMouseEnter={() => setHeld(shown)} onMouseLeave={() => setHeld(null)}>
             {shown.orders.map((o) => (
               <li key={o.localId} data-id={o.localId}>
@@ -142,7 +145,7 @@ export function FirmPanel({ s }: { s: Snapshot }) {
                     {o.ioc ? '' : ' · limit'}
                   </span>
                 </div>
-                <Race o={o} names={s.names} now={shown.now} />
+                {races && <Race o={o} names={s.names} now={shown.now} />}
               </li>
             ))}
           </ul>

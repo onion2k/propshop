@@ -1,5 +1,6 @@
 // The guided first week: a lesson is something to do, something to watch for, a check the game runs on its
-// own snapshot, and what it meant once it has happened. The order is the path a new player walks.
+// own snapshot, and what it meant once it has happened. The order is the path a new player walks, and is the
+// order of the stages (see stages.ts): home, seat | gap, race, cost | maker, noise, week | hand, used.
 
 import type { Snapshot } from '../sim';
 
@@ -27,9 +28,36 @@ function netOf(fills: { realised: number; fee: number }[]) {
 
 export const LESSONS: Lesson[] = [
   {
+    id: 'home',
+    title: 'Find what earns from home',
+    task: 'Momentum is on. The laptop runs one block at a time. Skip to the open, set the speed to 10×, and give it a few minutes.',
+    watch: 'Momentum fills that close out with a realised gain, especially after a headline lands.',
+    terms: ['momentum', 'news'],
+    done: (s) => {
+      const fills = fillsFor(s, 'momentum');
+      return fills.length >= 10 && netOf(fills) > 0;
+    },
+    lesson:
+      'Momentum does not need to be first: it rides a move that takes seconds to play out, which a slow firm ' +
+      'can still catch. It pays the spread on every entry and exit, so it bleeds in a market that only wobbles, ' +
+      'but it is the honest way to earn from a spare room. That is what pays for a better seat.',
+  },
+  {
+    id: 'seat',
+    title: 'Buy a better seat',
+    task: 'Open the Shop. Compare the latency to each exchange before and after each office and network. Buy one.',
+    watch: 'The data delay in the market panel’s heading, before and after. Every exchange gets nearer.',
+    terms: ['colocation', 'microwave', 'capacity'],
+    done: (s) => s.infra.location !== 'home' || s.infra.network !== 'consumer' || s.infra.computer !== 'laptop',
+    lesson:
+      'Every millisecond you cut is a race you now win that you used to lose. The firms that built microwave ' +
+      'towers between Chicago and New Jersey did it for three milliseconds. The shop is the whole game in ' +
+      'miniature: earn slowly, buy speed, earn faster.',
+  },
+  {
     id: 'gap',
     title: 'See two exchanges disagree',
-    task: 'Skip to the open and set the speed to 10×. Watch the bid and ask on the HARBOR and LAKESIDE rows of any stock.',
+    task: 'With the market open and the speed at 10×, watch the bid and ask on the HARBOR and LAKESIDE rows of any stock. The gap line under the rows shows one when it comes.',
     watch: 'A moment when one exchange’s ask is below the other’s bid. It lasts a fraction of a second.',
     terms: ['bid-ask', 'fair-value'],
     done: (s) => s.gapsSeen > 0,
@@ -42,7 +70,7 @@ export const LESSONS: Lesson[] = [
   {
     id: 'race',
     title: 'Lose a race',
-    task: 'Leave the arbitrage block on and let a few minutes of trading pass. Read the Orders list in your firm panel.',
+    task: 'Switch momentum off and arbitrage on; the laptop runs one block. Let a few minutes of trading pass, then read the Orders list in your firm panel.',
     watch: 'An order marked Missed, with a rival’s name and how many milliseconds before you they arrived.',
     terms: ['latency', 'arbitrage'],
     done: (s) => s.orders.some((o) => o.beatenBy.length > 0),
@@ -69,24 +97,9 @@ export const LESSONS: Lesson[] = [
       'plus a fee on every fill. Being slow has a price per race, and it is paid to whoever was faster.',
   },
   {
-    id: 'home',
-    title: 'Find what earns from home',
-    task: 'Turn arbitrage off and momentum on. The laptop runs one block at a time. Give it a few minutes.',
-    watch: 'Momentum fills that close out with a realised gain, especially after a headline lands.',
-    terms: ['momentum', 'news'],
-    done: (s) => {
-      const fills = fillsFor(s, 'momentum');
-      return fills.length >= 10 && netOf(fills) > 0;
-    },
-    lesson:
-      'Momentum does not need to be first: it rides a move that takes seconds to play out, which a slow firm ' +
-      'can still catch. It pays the spread on every entry and exit, so it bleeds in a market that only wobbles, ' +
-      'but it is the honest way to earn from a spare room. That is what pays for a better seat.',
-  },
-  {
     id: 'maker',
     title: 'Get picked off as a market maker',
-    task: 'Turn momentum off and the market maker on, with its half spread at two cents. Let it fill ten times.',
+    task: 'Switch whatever is running off and the market maker on, with its half spread at two cents. Let it fill ten times.',
     watch: 'Fills that arrive just as the price moves through your quote, and the name on the race under them.',
     terms: ['market-maker', 'adverse-selection', 'inventory'],
     done: (s) => fillsFor(s, 'marketMaker').length >= 10,
@@ -99,7 +112,7 @@ export const LESSONS: Lesson[] = [
   {
     id: 'noise',
     title: 'Tell news from noise',
-    task: 'Open the News tab and wait for a few headlines to settle.',
+    task: 'Open the News tab and wait for a few headlines to settle. Any block can run meanwhile.',
     watch: 'Headlines marked with what they moved, and ones that moved nothing.',
     terms: ['news'],
     done: (s) => {
@@ -110,18 +123,6 @@ export const LESSONS: Lesson[] = [
       'A headline that reads like news is not always news. An executive seen at an airport moves nothing; an ' +
       'earnings miss moves a lot, over about twenty seconds while the market prices it in. The news reaction ' +
       'block cannot tell them apart. You can, with practice: that is an edge a machine does not have yet.',
-  },
-  {
-    id: 'seat',
-    title: 'Buy a better seat',
-    task: 'Open the Shop. Compare the latency to each exchange before and after each office and network. Buy one.',
-    watch: 'Your latency in the market panel’s heading, and how many of your races you now win.',
-    terms: ['colocation', 'microwave', 'capacity'],
-    done: (s) => s.infra.location !== 'home' || s.infra.network !== 'consumer' || s.infra.computer !== 'laptop',
-    lesson:
-      'Every millisecond you cut is a race you now win that you used to lose. The firms that built microwave ' +
-      'towers between Chicago and New Jersey did it for three milliseconds. The shop is the whole game in ' +
-      'miniature: earn slowly, buy speed, earn faster.',
   },
   {
     id: 'week',

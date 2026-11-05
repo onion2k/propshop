@@ -2,7 +2,7 @@
 // whatever the sim speed, and saves. React subscribes through useSyncExternalStore. The wall clock is read
 // here and nowhere further in: the sim only ever sees how many ms it is being asked for.
 
-import { LESSONS } from '../content';
+import { LAST_STAGE, LESSONS, stageOf, type StageId } from '../content';
 import { Game, MAX_TICKS_PER_ADVANCE, TICK_MS, type SavedGame, type Snapshot, type Speed } from '../sim';
 import type { Content } from '../sim';
 
@@ -21,6 +21,14 @@ export const RUNNING_SHORT = 0.85;
 export const SAVE_KEY = 'propshop.save.v1';
 export const PROGRESS_KEY = 'propshop.progress.v1';
 export const TUTORIAL_KEY = 'propshop.tutorial.v1';
+/**
+ * The stages: `{ seen }`, the last stage whose intro card was shown. A new game writes it at once, so a save
+ * with no such key is one from before the stages, and opens every stage. Cleared by Start again, and written
+ * afresh with it.
+ */
+export const STAGES_KEY = 'propshop.stages.v1';
+/** The show-everything switch. Not cleared by Start again: it is the player's, not the game's. */
+export const REVEAL_KEY = 'propshop.reveal.v1';
 
 /** Where the tutorial stands: not started, at a step, or done (skipped or finished). */
 export type Tutorial = { state: 'fresh' } | { state: 'at'; step: number } | { state: 'done' };
@@ -33,6 +41,13 @@ export interface Store {
   getProgress: () => Progress;
   getTutorial: () => Tutorial;
   setTutorial: (t: Tutorial) => void;
+  /** The stage in force: every stage if the switch is on or the save is from before the stages. */
+  getStage: () => StageId;
+  /** The stage whose intro card is due, if one is; the card is shown until dismissIntro. */
+  getIntro: () => StageId | null;
+  dismissIntro: () => void;
+  getReveal: () => boolean;
+  setReveal: (on: boolean) => void;
   subscribe: (listener: () => void) => () => void;
   /** Hand the store some wall time; it runs the sim, within the budget if it has a clock, and publishes if due. */
   pump: (wallNow: number) => void;
@@ -77,6 +92,13 @@ export function createStore(
   let snapshot = game.snapshot();
   let progress: Progress = loadProgress(storage);
   let tutorial: Tutorial = loadTutorial(storage);
+  // A save from before the stages has no stages key; a new game writes it now.
+  const stagesRaw = storage?.getItem(STAGES_KEY) ?? null;
+  let legacy = stagesRaw === null && !!storage?.getItem(SAVE_KEY);
+  let seen = loadSeen(stagesRaw);
+  if (storage && stagesRaw === null && !legacy) writeSeen(storage, seen);
+  let reveal = storage?.getItem(REVEAL_KEY) === '1';
+  const stageNow = (): StageId => (reveal || legacy ? LAST_STAGE : stageOf(progress));
   let publishedVersion = game.version;
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
@@ -116,6 +138,30 @@ export function createStore(
     getRunning: () => running,
     getProgress: () => progress,
     getTutorial: () => tutorial,
+    getStage: stageNow,
+    getIntro() {
+      if (reveal || legacy) return null;
+      const next = seen + 1;
+      return next <= stageNow() ? (next as StageId) : null;
+    },
+    dismissIntro() {
+      const due = store.getIntro();
+      if (due === null) return;
+      seen = due;
+      writeSeen(storage, seen);
+      for (const l of listeners) l();
+    },
+    getReveal: () => reveal,
+    setReveal(on) {
+      reveal = on;
+      try {
+        if (on) storage?.setItem(REVEAL_KEY, '1');
+        else storage?.removeItem(REVEAL_KEY);
+      } catch {
+        // Storage can be forbidden; the switch still holds on screen.
+      }
+      for (const l of listeners) l();
+    },
     setTutorial(t) {
       tutorial = t;
       try {
@@ -179,6 +225,9 @@ export function createStore(
       game = new Game(content, newSeed);
       progress = {};
       tutorial = { state: 'fresh' };
+      seen = 1;
+      legacy = false;
+      writeSeen(storage, seen);
       publishedVersion = -1;
       publish();
     },
@@ -246,5 +295,24 @@ function loadTutorial(storage: Storage | null): Tutorial {
     return { state: 'fresh' };
   } catch {
     return { state: 'fresh' };
+  }
+}
+
+function loadSeen(raw: string | null): StageId {
+  try {
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    const n = typeof parsed === 'object' && parsed !== null ? (parsed as { seen?: unknown }).seen : undefined;
+    if (typeof n === 'number' && n >= 1 && n <= LAST_STAGE) return Math.floor(n) as StageId;
+  } catch {
+    // A broken key reads as a new game's.
+  }
+  return 1;
+}
+
+function writeSeen(storage: Storage | null, seen: StageId): void {
+  try {
+    storage?.setItem(STAGES_KEY, JSON.stringify({ seen }));
+  } catch {
+    // Storage can be full or forbidden; the card may show again after a reload.
   }
 }

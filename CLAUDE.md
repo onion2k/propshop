@@ -29,8 +29,12 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
   first, with the sim held, and `App` once the player starts.
 - `art/` is source pictures; what the page serves is the WebP beside
   `src/main.tsx`.
-- `src/content/` is stocks, exchanges, news templates, upgrades, glossary.
-- `test/` is Vitest, one file per sim module, and `ui.test.tsx` for the UI.
+- `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
+  `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
+  the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
+  `propshop.stages.v1` (the last stage whose intro was seen; a save without it is from before the stages and
+  opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again).
+- `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, and `ui.test.tsx` for the UI.
 
 ## Rules for the code
 

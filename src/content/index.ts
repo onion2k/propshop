@@ -26,7 +26,8 @@ export const CONTENT: Content = {
 export { GLOSSARY, glossary } from './glossary';
 export { LESSONS, lesson } from './lessons';
 export { REGIMES } from './regimes';
-export { TUTORIAL, tutorialStep } from './tutorial';
+export { TUTORIAL, tutorialStep, introSteps } from './tutorial';
+export * from './stages';
 export type { TutorialStep, TutorialPage } from './tutorial';
 export type { Lesson } from './lessons';
 export type { GlossaryEntry } from './glossary';

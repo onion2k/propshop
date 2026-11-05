@@ -1,5 +1,5 @@
-import { CONTENT, TUTORIAL } from '../src/content';
-import { Game, MS_PER_MINUTE, TICK_MS, isMarketOpen } from '../src/sim';
+import { CONTENT, STAGES, TUTORIAL, introSteps, shows, type Feature } from '../src/content';
+import { Game, isMarketOpen } from '../src/sim';
 import { createStore, TUTORIAL_KEY, type Storage } from '../src/ui/store';
 
 function memory(): Storage & { data: Map<string, string> } {
@@ -13,47 +13,61 @@ function memory(): Storage & { data: Map<string, string> } {
 }
 
 describe('the tutorial', () => {
-  it('has a dozen or so steps, each with words and a page, pointing at things that exist', () => {
-    expect(TUTORIAL.length).toBeGreaterThan(10);
-    const targets = [
-      'pages',
+  it('has ten steps for stage 1, each with words and a page, pointing at things that exist and are shown', () => {
+    expect(TUTORIAL.map((t) => t.id)).toEqual([
+      'welcome',
       'watchlist',
-      'quotes',
-      'speed',
-      'firm',
-      'desk-ticket',
-      'strategy',
+      'exchanges',
+      'clock',
+      'blocks',
+      'params',
       'shop',
       'risk',
-      'tabs',
-    ];
+      'reports',
+      'go',
+    ]);
+    // Everything a stage 1 card points at is on the screen of a new game.
+    const targets = ['pages', 'watchlist', 'quotes', 'speed', 'firm', 'strategy', 'shop', 'risk', 'tabs'];
     for (const step of TUTORIAL) {
       expect(step.text.length).toBeGreaterThan(80);
-      expect(['market', 'desk', 'strategy', 'reports']).toContain(step.page);
+      expect(['market', 'strategy', 'reports']).toContain(step.page);
       if (step.target) expect(targets).toContain(step.target);
     }
     expect(TUTORIAL[0]!.enter?.speed).toBe(0);
   });
 
-  it(
-    'waits at the clock for the open at speed, at the gap for one, and at the race for an order',
-    { timeout: 60_000 },
-    () => {
-      const g = new Game(CONTENT, 61);
-      const clock = TUTORIAL.find((t) => t.id === 'clock')!.waitFor!;
-      const gap = TUTORIAL.find((t) => t.id === 'gap')!.waitFor!;
-      const race = TUTORIAL.find((t) => t.id === 'race')!.waitFor!;
-      expect(clock.check(g.snapshot())).toBe(false);
-      g.skipToOpen();
-      g.setSpeed(10);
-      while (!isMarketOpen(g.now)) g.step();
-      expect(clock.check(g.snapshot())).toBe(true);
-      expect(gap.check(g.snapshot())).toBe(false);
-      for (let i = 0; i < (20 * MS_PER_MINUTE) / TICK_MS && !race.check(g.snapshot()); i++) g.step();
-      expect(gap.check(g.snapshot())).toBe(true);
-      expect(race.check(g.snapshot())).toBe(true);
-    },
-  );
+  it('never switches a block on, and names nothing that stage 1 hides', () => {
+    for (const step of TUTORIAL) {
+      expect(step.enter?.enable ?? []).toEqual([]);
+      expect(step.text).not.toMatch(/arbitrage|\bgaps?\b|\brace|\bdesk\b|microscope|market maker|dark web|rivals?\b/i);
+    }
+  });
+
+  it('gives each later stage intro cards that exist, and points them at things their stage shows', () => {
+    const pageOf: Record<string, string> = { gaps: 'gaps', 'desk-ticket': 'page:desk' };
+    for (const st of STAGES) {
+      expect(introSteps(st.id).map((t) => t.id)).toEqual(st.intro);
+      if (st.id > 1) expect(st.intro.length).toBeGreaterThan(0);
+      for (const step of introSteps(st.id)) {
+        expect(step.text.length).toBeGreaterThan(80);
+        const feature = step.target ? pageOf[step.target] : undefined;
+        if (feature) expect(shows(feature as Feature, st.id)).toBe(true);
+        expect(step.enter?.enable ?? []).toEqual([]);
+      }
+    }
+    expect(introSteps(2)[0]!.target).toBe('gaps');
+    expect(introSteps(4)[0]!.target).toBe('desk-ticket');
+  });
+
+  it('waits at the clock for the open at speed', () => {
+    const g = new Game(CONTENT, 61);
+    const clock = TUTORIAL.find((t) => t.id === 'clock')!.waitFor!;
+    expect(clock.check(g.snapshot())).toBe(false);
+    g.skipToOpen();
+    g.setSpeed(10);
+    while (!isMarketOpen(g.now)) g.step();
+    expect(clock.check(g.snapshot())).toBe(true);
+  });
 
   it('keeps where it stands in the store, and starts fresh on a reset', () => {
     const storage = memory();

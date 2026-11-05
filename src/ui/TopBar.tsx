@@ -11,11 +11,14 @@ export function TopBar({
   store,
   micro,
   onMicro,
+  microscope = true,
 }: {
   s: Snapshot;
   store: Store;
   micro: boolean;
   onMicro: () => void;
+  /** Whether the microscope button is shown (a later stage). */
+  microscope?: boolean;
 }) {
   const until = s.nextChange - s.now;
   const running = useSyncExternalStore(store.subscribe, store.getRunning, store.getRunning);
@@ -62,14 +65,16 @@ export function TopBar({
             skip to open
           </button>
         )}
-        <button
-          type="button"
-          className={`skip ${micro ? 'on' : ''}`}
-          onClick={onMicro}
-          aria-label="Open the microscope"
-        >
-          microscope
-        </button>
+        {microscope && (
+          <button
+            type="button"
+            className={`skip ${micro ? 'on' : ''}`}
+            onClick={onMicro}
+            aria-label="Open the microscope"
+          >
+            microscope
+          </button>
+        )}
       </div>
       {s.halt && (
         <div className="halt" role="status">

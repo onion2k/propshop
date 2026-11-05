@@ -1,9 +1,10 @@
 // The tutorial card and the welcome. The card shows one step: its title, its text, Back, Next and Skip. It
 // drives the game on entering a step, switches the page, and lights the step's element. Next waits for the
-// step's check where there is one. State lives in the store, so a reload picks up at the same step.
+// step's check where there is one. State lives in the store, so a reload picks up at the same step. A stage's
+// intro cards go through the same card, with their place kept here and the stage marked seen when they end.
 
-import { useEffect } from 'react';
-import { TUTORIAL, type TutorialPage } from '../content';
+import { useEffect, useState } from 'react';
+import { introSteps, TUTORIAL, type StageId, type TutorialPage, type TutorialStep } from '../content';
 import type { Snapshot } from '../sim';
 import type { Store, Tutorial as TutorialState } from './store';
 
@@ -24,22 +25,30 @@ export function Welcome({ store }: { store: Store }) {
   );
 }
 
-export function TutorialCard({
+/** One card of a run of steps: the page, the game and the spotlight on entering, then Back, Next, Skip. */
+function StepCard({
   s,
   store,
-  tutorial,
+  steps,
+  index,
+  label,
   page,
   setPage,
+  go,
+  finish,
 }: {
   s: Snapshot;
   store: Store;
-  tutorial: Extract<TutorialState, { state: 'at' }>;
+  steps: TutorialStep[];
+  index: number;
+  label: string;
   page: TutorialPage;
   setPage: (p: TutorialPage) => void;
+  go: (i: number) => void;
+  finish: () => void;
 }) {
-  const index = Math.min(tutorial.step, TUTORIAL.length - 1);
-  const step = TUTORIAL[index]!;
-  const last = index === TUTORIAL.length - 1;
+  const step = steps[index]!;
+  const last = index === steps.length - 1;
 
   // On entering a step: the page, the game, and the spotlight.
   useEffect(() => {
@@ -64,12 +73,11 @@ export function TutorialCard({
   }, [step, page, s.now]);
 
   const ready = !step.waitFor || step.waitFor.check(s);
-  const go = (i: number) => store.setTutorial({ state: 'at', step: i });
   return (
-    <div className="tutorial" role="dialog" aria-label={`Tutorial step ${index + 1} of ${TUTORIAL.length}`}>
+    <div className="tutorial" role="dialog" aria-label={`${label} step ${index + 1} of ${steps.length}`}>
       <div className="tutorial-head">
         <span className="muted small">
-          {index + 1} of {TUTORIAL.length}
+          {index + 1} of {steps.length}
         </span>
         <strong>{step.title}</strong>
       </div>
@@ -80,7 +88,7 @@ export function TutorialCard({
           Back
         </button>
         {last ? (
-          <button type="button" className="on" onClick={() => store.setTutorial({ state: 'done' })}>
+          <button type="button" className="on" onClick={finish}>
             Done
           </button>
         ) : (
@@ -88,10 +96,75 @@ export function TutorialCard({
             Next
           </button>
         )}
-        <button type="button" className="link" onClick={() => store.setTutorial({ state: 'done' })}>
+        <button type="button" className="link" onClick={finish}>
           Skip
         </button>
       </div>
     </div>
+  );
+}
+
+export function TutorialCard({
+  s,
+  store,
+  tutorial,
+  page,
+  setPage,
+}: {
+  s: Snapshot;
+  store: Store;
+  tutorial: Extract<TutorialState, { state: 'at' }>;
+  page: TutorialPage;
+  setPage: (p: TutorialPage) => void;
+}) {
+  const index = Math.min(tutorial.step, TUTORIAL.length - 1);
+  return (
+    <StepCard
+      s={s}
+      store={store}
+      steps={TUTORIAL}
+      index={index}
+      label="Tutorial"
+      page={page}
+      setPage={setPage}
+      go={(i) => store.setTutorial({ state: 'at', step: i })}
+      finish={() => store.setTutorial({ state: 'done' })}
+    />
+  );
+}
+
+/** The cards shown when a stage opens: its place in them is kept here, and the stage is marked seen at the end. */
+export function StageIntro({
+  s,
+  store,
+  stage,
+  page,
+  setPage,
+}: {
+  s: Snapshot;
+  store: Store;
+  stage: StageId;
+  page: TutorialPage;
+  setPage: (p: TutorialPage) => void;
+}) {
+  const steps = introSteps(stage);
+  const [index, setIndex] = useState(0);
+  if (steps.length === 0) return null;
+  return (
+    <StepCard
+      key={stage}
+      s={s}
+      store={store}
+      steps={steps}
+      index={Math.min(index, steps.length - 1)}
+      label="Stage"
+      page={page}
+      setPage={setPage}
+      go={setIndex}
+      finish={() => {
+        setIndex(0);
+        store.dismissIntro();
+      }}
+    />
   );
 }

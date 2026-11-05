@@ -159,7 +159,7 @@ export interface Content {
   factors: FactorSpec;
   /** Cents. */
   startingCash: number;
-  start: { location: string; network: string; computer: string };
+  start: { location: string; network: string; computer: string; blocks: string[] };
   firmName: string;
   /** The desk, where the player trades by hand. */
   desk: { reactionMs: number };
