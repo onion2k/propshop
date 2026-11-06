@@ -11,8 +11,11 @@ import {
   isMarketOpen,
   nextOpen,
   type SavedGame,
+  type SavedGameV1,
 } from '../src/sim';
 import { MARKET_OPEN, MS_PER_DAY } from '../src/sim/clock';
+import { infrastructureFrom } from '../src/sim/upgrades';
+import { Random } from '../src/sim/random';
 import { HAND_BLOCK, REJECT_MARKET_CLOSED } from '../src/sim/firm';
 
 function run(g: Game, ms: number) {
@@ -389,7 +392,7 @@ describe('Game', () => {
 
   it('refuses a save from another version', () => {
     const g = new Game(CONTENT, 11);
-    const saved = { ...g.save(), version: 2 } as unknown as SavedGame;
+    const saved = { ...g.save(), version: 3 } as unknown as SavedGame;
     expect(() => Game.load(CONTENT, saved)).toThrow(/version/);
   });
 
@@ -484,5 +487,82 @@ describe('Game hand orders', () => {
     expect(hand[0]!.arrivalTouch).toEqual(expect.any(Number));
     const filled = hand.filter((o) => o.avgFill !== null);
     for (const o of filled) expect(o.slippage).toBeCloseTo(o.avgFill! - o.clickTouch!, 6);
+  });
+});
+
+describe('Game streams', () => {
+  /** Fair value of every symbol and every published headline over five minutes after the open, with the firm as given. */
+  function world(arbitrage: boolean) {
+    const g = new Game(CONTENT, 31);
+    if (arbitrage) {
+      g.firm.infra = infrastructureFrom(CONTENT, {
+        location: 'colo-harbor-lakeside',
+        network: 'fibre',
+        computer: 'rack',
+      });
+      for (const b of g.firm.blocks) b.enabled = b.id === 'arbitrage';
+    } else {
+      for (const b of g.firm.blocks) b.enabled = false;
+    }
+    g.skipToOpen();
+    while (!isMarketOpen(g.now)) g.step();
+    const fair: Record<string, number[]> = {};
+    for (let i = 0; i < (5 * MS_PER_MINUTE) / TICK_MS; i++) {
+      g.step();
+      for (const [symbol, v] of g.market.fair) (fair[symbol] ??= []).push(v);
+    }
+    const news = g.news.published.map((h) => [h.at, h.symbols, h.text, h.noise]);
+    return { fair, news, traded: g.firm.fills.length };
+  }
+
+  it('gives the same fair values and headlines whatever the firm does', () => {
+    const idle = world(false);
+    const busy = world(true);
+    expect(busy.traded).toBeGreaterThan(0);
+    expect(idle.traded).toBe(0);
+    expect(idle.news.length).toBeGreaterThan(0);
+    expect(busy.news).toEqual(idle.news);
+    // The first tick the two disagree, not the whole series: a diff of 150,000 numbers a symbol never finishes.
+    const firstApart = (symbol: string) => busy.fair[symbol]!.findIndex((v, i) => v !== idle.fair[symbol]![i]);
+    for (const symbol of Object.keys(idle.fair)) expect([symbol, firstApart(symbol)]).toEqual([symbol, -1]);
+  }, 30_000);
+
+  it('derives a stream from a seed and a name: the same pair alike, a different name apart', () => {
+    const a = Random.derive(5, 'world');
+    const b = Random.derive(5, 'world');
+    expect([a.next(), a.next()]).toEqual([b.next(), b.next()]);
+    expect(Random.derive(5, 'world').next()).not.toBe(Random.derive(5, 'dark').next());
+    expect(Random.derive(5, 'world').next()).not.toBe(Random.derive(6, 'world').next());
+  });
+
+  it('carries every stream through a save', () => {
+    const g = new Game(CONTENT, 32);
+    g.skipToOpen();
+    run(g, MS_PER_MINUTE);
+    const saved = g.save();
+    expect(saved.version).toBe(2);
+    expect(Object.keys(saved.streams.crowd)).toEqual(CONTENT.exchanges.map((e) => e.id));
+    const copy = Game.load(CONTENT, JSON.parse(JSON.stringify(saved)) as SavedGame);
+    expect(copy.fingerprint()).toBe(g.fingerprint());
+    run(g, MS_PER_MINUTE);
+    run(copy, MS_PER_MINUTE);
+    expect(copy.fingerprint()).toBe(g.fingerprint());
+  });
+
+  it('loads a version-1 save, its streams derived from its one random state, and steps it', () => {
+    const g = new Game(CONTENT, 33);
+    g.skipToOpen();
+    run(g, MS_PER_MINUTE);
+    const { streams: _streams, ...rest } = g.save();
+    void _streams;
+    const v1 = JSON.parse(JSON.stringify({ ...rest, version: 1, random: 123456789 })) as SavedGameV1;
+    const a = Game.load(CONTENT, v1);
+    const b = Game.load(CONTENT, v1);
+    expect(a.now).toBe(g.now);
+    run(a, MS_PER_MINUTE);
+    run(b, MS_PER_MINUTE);
+    expect(a.now).toBe(g.now + MS_PER_MINUTE);
+    expect(a.fingerprint()).toBe(b.fingerprint());
+    expect(a.save().version).toBe(2);
   });
 });

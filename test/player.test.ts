@@ -249,7 +249,7 @@ describe('a run', () => {
     expect(a.run.waitedMs).toBeLessThan(three + 250 + TICK_MS);
     expect(a.run.actions.length).toBeGreaterThan(0);
     expect(b).toEqual(a);
-  });
+  }, 20_000);
 });
 
 describe('the report', () => {

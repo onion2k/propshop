@@ -11,6 +11,13 @@ http://localhost:5181.
 
 ## What is in it
 
+- **Experiments, first.** A short window of one trading morning, run as
+  given. Then pick one change (a better seat, a wider quote, a different
+  block), guess whether it will do better, the same or worse, and run the
+  same morning again. The two runs sit side by side, the answer is measured
+  from them, and the moments that decided it replay a hundred times slower
+  on a map of every message on the wire. Three so far: the headline, a few
+  miles, and the free option. The open week below is **Free play**.
 - **A market, not a price feed.** Twelve fictional stocks in four sectors
   and an index over them trade on three fictional exchanges, each with its
   own price-time order book fed by a crowd of background traders. Stocks

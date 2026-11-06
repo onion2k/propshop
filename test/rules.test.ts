@@ -3,7 +3,7 @@ import { Exchange } from '../src/sim/exchange';
 import { Firm } from '../src/sim/firm';
 import { tick } from '../src/sim/flow';
 import { Market } from '../src/sim/market';
-import { Random } from '../src/sim/random';
+import { deriveStreams, Random } from '../src/sim/random';
 import { DEFAULT_RULES } from '../src/sim/types';
 import { EXCHANGES, FAST, SLOW, STOCKS, TICK } from './fixtures';
 
@@ -11,7 +11,10 @@ const MILLION = 100_000_000;
 
 function world(seed: number, firms: Firm[], from = MARKET_OPEN) {
   const market = new Market(STOCKS, EXCHANGES);
-  const random = new Random(seed);
+  const random = deriveStreams(
+    seed,
+    EXCHANGES.map((e) => e.id),
+  );
   let now = from;
   const run = (ms: number) => {
     for (let i = 0; i < ms / TICK; i++, now += TICK) tick(now, TICK, market, firms, random, []);

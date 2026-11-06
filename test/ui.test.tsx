@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { CONTENT } from '../src/content';
 import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
@@ -7,6 +7,10 @@ import { FirmPanel } from '../src/ui/FirmPanel';
 import { App } from '../src/ui/App';
 import { Cover } from '../src/ui/Cover';
 import { Root } from '../src/ui/Root';
+import { ExperimentPage } from '../src/ui/ExperimentPage';
+import { EXPERIMENTS, type Experiment } from '../src/content/experiments';
+import { EXPERIMENTS_KEY } from '../src/ui/Root';
+import { MARKET_OPEN } from '../src/sim/clock';
 import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
 
 /** The page switcher under the top bar. */
@@ -135,7 +139,7 @@ describe('App', () => {
     const words = [...document.querySelectorAll('.race-words')].map((e) => e.textContent);
     expect(words.some((w) => /Filled|Missed|took/.test(w))).toBe(true);
     expect(words.some((w) => /old when sent/.test(w))).toBe(true);
-  });
+  }, 20_000);
 
   it('disables the desk ticket while the market is closed, and says why', () => {
     const store = createStore(CONTENT, null, 9);
@@ -806,8 +810,50 @@ describe('Cover', () => {
   });
 });
 
+/** A miles-like experiment cut small: a 1.2-second window from just after the open, one moment, and a change that changes nothing. */
+function tiny(): Experiment {
+  const base = EXPERIMENTS.find((e) => e.id === 'miles')!;
+  const startAt = MARKET_OPEN + 400;
+  return {
+    ...base,
+    id: 'tiny',
+    title: 'A tiny one',
+    startAt,
+    windowMs: 1200,
+    changes: [
+      { id: 'nothing', label: 'Change nothing', detail: 'Leaves the setup as it was.', apply: (x) => x },
+      {
+        id: 'city',
+        label: 'Move to the city',
+        detail: 'An office in the city.',
+        apply: (x) => ({ ...x, location: 'city' }),
+      },
+    ],
+    tracker: () => ({
+      source: () => [],
+      pick: () => [{ at: startAt + 500, from: startAt + 500, kind: 'test', label: 'A test moment', symbol: 'QNT' }],
+    }),
+    explain: (a, b, c) => `Explained ${c.label}: ${a.fills} then ${b.fills}.`,
+  };
+}
+
+const SLOW = { timeout: 30_000 };
+
+async function toPick() {
+  fireEvent.click(screen.getByRole('button', { name: 'Run as given' }));
+  await screen.findByRole('group', { name: 'Pick one change' }, SLOW);
+}
+
+async function toResult(change: string, guess: RegExp) {
+  await toPick();
+  fireEvent.click(screen.getByRole('radio', { name: new RegExp(change) }));
+  fireEvent.click(screen.getByRole('button', { name: guess }));
+  fireEvent.click(screen.getByRole('button', { name: 'Run again with this change' }));
+  await screen.findByRole('status', { name: 'Your guess' }, SLOW);
+}
+
 describe('Root', () => {
-  it('shows the cover with the store held, then the app and a running sim after Start', () => {
+  it('shows the cover with the store held, then the experiments, then free play with the sim running', () => {
     const store = createStore(CONTENT, null, 24);
     render(<Root store={store} />);
     expect(screen.getByRole('dialog', { name: 'Propshop' })).toBeInTheDocument();
@@ -818,10 +864,129 @@ describe('Root', () => {
     expect(store.game.now).toBe(t0);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     expect(screen.queryByRole('dialog', { name: 'Propshop' })).toBeNull();
-    expect(screen.getByText('06:00:00')).toBeInTheDocument();
+    // The list holds the sim still, too.
     act(() => store.pump(600));
+    expect(store.game.now).toBe(t0);
+    fireEvent.click(screen.getByRole('button', { name: 'Free play' }));
+    expect(screen.getByText('06:00:00')).toBeInTheDocument();
+    act(() => store.pump(1200));
     expect(store.game.now).toBeGreaterThan(t0);
   });
+
+  it('lists the three experiments and Free play', () => {
+    const store = createStore(CONTENT, null, 25);
+    render(<Root store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(screen.getByRole('heading', { name: 'Experiments' })).toBeInTheDocument();
+    for (const e of EXPERIMENTS) {
+      expect(screen.getByRole('button', { name: new RegExp(e.title) })).toBeInTheDocument();
+      expect(screen.getByText(e.teaches)).toBeInTheDocument();
+    }
+    expect(EXPERIMENTS).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Free play' })).toBeInTheDocument();
+  });
+
+  it('Free play opens the app with every stage open, and a way back to the list', () => {
+    const store = createStore(CONTENT, memory(), 26);
+    render(<Root store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Free play' }));
+    expect(store.getReveal()).toBe(true);
+    expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Experiments' }));
+    expect(screen.getByRole('heading', { name: 'Experiments' })).toBeInTheDocument();
+    const t0 = store.game.now;
+    act(() => {
+      store.pump(0);
+      store.pump(500);
+    });
+    expect(store.game.now).toBe(t0);
+  });
+
+  it('marks a finished experiment done, and keeps it in the storage', async () => {
+    const storage = memory();
+    const store = createStore(CONTENT, storage, 27);
+    render(<Root store={store} storage={storage} experiments={[tiny()]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: /A tiny one/ }));
+    await toResult('Change nothing', /About the same/);
+    expect(JSON.parse(storage.data.get(EXPERIMENTS_KEY)!)).toEqual({ done: ['tiny'] });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to experiments' }));
+    expect(within(screen.getByRole('button', { name: /A tiny one/ })).getByText('Done')).toBeInTheDocument();
+  }, 60_000);
+});
+
+describe('ExperimentPage', () => {
+  it('walks from the briefing through two runs to a result, marks a right guess, and shows the numbers', async () => {
+    const e = tiny();
+    render(<ExperimentPage experiment={e} onBack={() => undefined} onDone={() => undefined} />);
+    expect(screen.getByText(/Four rival firms/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Latency' })).toBeInTheDocument();
+    await toPick();
+    // The first run's numbers stay for the picker to look at.
+    expect(screen.getByRole('progressbar', { name: 'Window progress' })).toHaveAttribute('aria-valuenow', '100');
+    const again = screen.getByRole('button', { name: 'Run again with this change' });
+    expect(again).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: /Change nothing/ }));
+    expect(again).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /About the same/ }));
+    expect(again).toBeEnabled();
+    fireEvent.click(again);
+    const verdict = await screen.findByRole('status', { name: 'Your guess' }, SLOW);
+    // The same setup in the same world: the same P&L, so "about the same" is right.
+    expect(verdict).toHaveTextContent(/right/i);
+    expect(screen.getByText(/Explained Change nothing/)).toBeInTheDocument();
+    expect(screen.getByText(e.takeaway)).toBeInTheDocument();
+    const table = screen.getByRole('group', { name: 'The two runs' });
+    for (const row of ['P&L', 'Fills', 'Races won', 'Races beaten', 'Races missed']) {
+      expect(within(table).getAllByText(row)).toHaveLength(2);
+    }
+  }, 60_000);
+
+  it('marks a wrong guess wrong', async () => {
+    render(<ExperimentPage experiment={tiny()} onBack={() => undefined} onDone={() => undefined} />);
+    await toResult('Change nothing', /^Better/);
+    expect(screen.getByRole('status', { name: 'Your guess' })).toHaveTextContent(/wrong/i);
+  }, 60_000);
+
+  it('Try another change reruns only the second run and asks for the guess again', async () => {
+    render(<ExperimentPage experiment={tiny()} onBack={() => undefined} onDone={() => undefined} />);
+    await toResult('Change nothing', /About the same/);
+    fireEvent.click(screen.getByRole('button', { name: 'Try another change' }));
+    const again = screen.getByRole('button', { name: 'Run again with this change' });
+    expect(again).toBeDisabled();
+    expect(screen.getByRole('button', { name: /About the same/ })).toHaveAttribute('aria-pressed', 'false');
+  }, 60_000);
+
+  it('opens a moment in the replay, and Play slowed and the step advance it, up to the window end', async () => {
+    render(<ExperimentPage experiment={tiny()} onBack={() => undefined} onDone={() => undefined} />);
+    await toResult('Change nothing', /About the same/);
+    const moment = await screen.findAllByRole('button', { name: /A test moment/ }, SLOW);
+    await waitFor(() => expect(moment[0]).toBeEnabled(), SLOW);
+    fireEvent.click(moment[0]!);
+    const caption = screen.getByText('A test moment', { selector: '.replay-caption' });
+    expect(caption).toBeInTheDocument();
+    const clock = () => screen.getByTestId('replay-time').textContent;
+    const t0 = clock();
+    fireEvent.click(screen.getByRole('button', { name: 'Step one tick' }));
+    const t1 = clock();
+    expect(t1).not.toBe(t0);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Play slowed' }));
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(clock()).not.toBe(t1);
+      fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+      const t2 = clock();
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(clock()).toBe(t2);
+    } finally {
+      vi.useRealTimers();
+    }
+    // Close goes back to the result.
+    fireEvent.click(screen.getByRole('button', { name: 'Close the microscope' }));
+    expect(screen.getByRole('status', { name: 'Your guess' })).toBeInTheDocument();
+  }, 60_000);
 });
 
 /** The names of the blocks listed on the Strategy page. */

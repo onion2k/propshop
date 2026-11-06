@@ -28,20 +28,31 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
   uses, and is what a remote API would later stand behind.
 - `src/ui/` is React components with no game logic. `src/main.tsx` wires
   the two together and runs the sim loop; `src/ui/Root.tsx` shows the cover
-  first, with the sim held, and `App` once the player starts.
+  first, then the experiments list, both with the sim held; Free play opens `App` with everything shown.
+  `ExperimentPage.tsx` runs an experiment's two runs itself, under the same frame budget as the store.
+- `src/sim/experiment.ts` runs an experiment: `startOf` builds the starting save, `Run` runs a window from it
+  under a setup and measures it, `Prepare` pins a save before each chosen moment, `replayAt` gives the game at
+  one. A save is about 7 MB (the exchanges' quote logs), so a run keeps its start and at most `MAX_PINNED`
+  more, and the two runs of an experiment share one start. `Game.save()` and `Game.load()` share live
+  objects: clone a save before keeping it.
 - `art/` is source pictures; what the page serves is the WebP beside
   `src/main.tsx`.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
   `propshop.stages.v1` (the last stage whose intro was seen; a save without it is from before the stages and
-  opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again).
-- `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, and `ui.test.tsx` for the UI.
+  opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again, and Free play sets
+  it). `experiments.ts` is the three experiments: seed, window, setup, changes, the moments worth replaying,
+  and the result sentence written from the two runs' numbers. The browser keeps `propshop.experiments.v1`,
+  the ones done.
+- `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, `experiments.test.ts` for the
+  experiments' seeds, and `ui.test.tsx` for the UI.
 
 ## Rules for the code
 
-- Chance comes from one seeded `Random`, handed in. No `Math.random`,
-  no `Date.now` in the sim: the same seed replays the same game.
+- Chance comes from one seed, in named streams handed in: `world` (fair value, news), one `crowd:<exchange>`
+  each, and `dark`. No `Math.random`, no `Date.now` in the sim: the same seed replays the same game. Nothing
+  the firm does may draw from `world`: that is what makes two runs of one morning the same morning.
 - Time is stepped: `game.step()` advances one fixed tick of simulated
   time. The wall clock never reaches the sim.
 - Prices are integer cents and sizes integer shares: no float drift in
@@ -59,13 +70,23 @@ For anything new, check what it does:
 - **one leg only:** an arbitrage whose far leg misses leaves a position; the block scratches its own.
 - **capacity:** orders past the computer's limit are dropped and counted, never queued.
 - **a tip:** real or made up, and the fine that may follow days later.
-- **saved:** a save from the previous tick loads to the same future; another version is refused.
+- **saved:** a save from the previous tick loads to the same future. A version 1 save, from before the
+  streams, loads with its streams drawn from its one random state: a good game, not the future it had. Any
+  other version is refused.
+- **the same morning:** an experiment's two runs see the same fair values and headlines; the crowd answers
+  each firm's orders, so the books differ, and the result page says so.
 - **a slow firm:** latency of twenty ticks sees the past and arrives late; a colocated one is one tick.
 
 ## What is not held
 
 - The economy's pacing is measured by the PACE harness over three seeds and tuned by hand; nothing holds
   it. A run of `PACE=1 PACE_MINUTES=20 npx vitest run test/pace.test.ts` takes about ten minutes.
+- The figures below are from before chance was split into streams (2026-11-06), which changed every draw. One
+  seed at twenty minutes since, dollars a day: home momentum -200 (was 2,200); colocated arbitrage 8,400;
+  Harbor Quant 14,900; the maker positive everywhere (home 1,600, colocated 7,000, city 4,800); city momentum
+  -300; city arbitrage -1,700, and 190 held near; mean reversion -5,000 to -10,600. Not re-run over three
+  seeds: if home momentum stays below nought, the first lesson of free play (momentum earns from home) is out
+  of reach.
 - What each setup earned on 2026-11-02 on the twelve-stock universe, dollars a day over three seeds: home
   momentum 2,200; home arbitrage about nought; colocated arbitrage 6,900; the fastest rival 11,000; the
   colocated maker 3,300 at two cents and 38,000 joining the touch on every book; pairs 600 colocated; mean
@@ -118,6 +139,15 @@ For anything new, check what it does:
   their design. The other pages 0. Playwright is borrowed from `~/projects/artshape-game-template`; there is
   none here.
 - No fuzzer and no invariants file yet.
+- The experiments' seeds were picked by searching (the day's headlines are scheduled when the game is built,
+  so a seed's news is read without running it). `test/experiments.test.ts` holds what each briefing promises:
+  the headline in the window, every change measurable, the three answers not all alike. It does not hold
+  which answer each change gets; on 2026-11-06 they were: the headline, size better, threshold same, news
+  better; a few miles, city worse, fibre better, rack better; the free option, wider better, aside better,
+  city same. A run of two minutes takes 2 to 3.5 seconds in the browser.
+- `steps fast enough for the top speed` in `game.test.ts` starts timing a minute before the open, so a closed
+  market flatters it: alone it reads about 77,000 ticks a second, but the open market alone is about 52,000,
+  and under the whole suite it falls under its floor of 75,000 now and then.
 
 ## Plans
 

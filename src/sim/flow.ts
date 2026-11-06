@@ -4,7 +4,7 @@
 import { isMarketOpen } from './clock';
 import type { Firm } from './firm';
 import type { Market } from './market';
-import type { Random } from './random';
+import type { Streams } from './random';
 import type { Headline } from './types';
 
 export function tick(
@@ -12,10 +12,10 @@ export function tick(
   dt: number,
   market: Market,
   firms: readonly Firm[],
-  random: Random,
+  streams: Streams,
   news: readonly Headline[],
 ) {
-  const { closed } = market.step(now, dt, random);
+  const { closed } = market.step(now, dt, streams.world, streams.crowd);
   const open = isMarketOpen(now);
   const bumps: Record<string, number> = {};
   const taxes: Record<string, number> = {};

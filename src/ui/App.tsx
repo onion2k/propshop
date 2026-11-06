@@ -123,7 +123,7 @@ export function App({ store }: { store: Store }) {
             {micro && shows('microscope', stage) && (
               <Microscope
                 s={s}
-                store={store}
+                onStep={store.stepTicks}
                 symbol={picked ?? s.stocks.find((st) => st.watched)?.symbol ?? s.stocks[0]?.symbol ?? ''}
                 onClose={() => setMicro(false)}
               />

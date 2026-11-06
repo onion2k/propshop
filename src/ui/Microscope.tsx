@@ -7,19 +7,19 @@ import { TICK_MS, formatTime, type Snapshot, type Wire } from '../sim';
 import { exchangeColour } from './Chart';
 import { price, shares } from './format';
 import { Term } from './Glossary';
-import type { Store } from './store';
 
 const W = 640;
 const H = 300;
 
 export function Microscope({
   s,
-  store,
+  onStep,
   symbol,
   onClose,
 }: {
   s: Snapshot;
-  store: Store;
+  /** Step the game this many ticks: the owner of the game decides which game, and how far it may go. */
+  onStep: (n: number) => void;
   symbol: string;
   onClose: () => void;
 }) {
@@ -63,12 +63,7 @@ export function Microscope({
       </h2>
       <div className="micro-bar">
         {[1, 5, 25, 250].map((n) => (
-          <button
-            key={n}
-            type="button"
-            onClick={() => store.stepTicks(n)}
-            aria-label={`Step ${n * TICK_MS} milliseconds`}
-          >
+          <button key={n} type="button" onClick={() => onStep(n)} aria-label={`Step ${n * TICK_MS} milliseconds`}>
             +{n * TICK_MS}ms
           </button>
         ))}

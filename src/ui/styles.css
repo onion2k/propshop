@@ -1172,3 +1172,179 @@ code {
     padding: 10px 20px;
   }
 }
+
+/* The experiments: a list, and one page in steps. What changes as a run goes (the bar, the figures, the chart)
+   keeps a fixed size, so nothing shifts under the player. */
+.back-bar {
+  padding: 8px 16px 0;
+}
+.experiments-list,
+.experiment {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.experiments-list ul {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.exp-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--panel);
+}
+.exp-done {
+  font-size: 12px;
+  color: var(--muted);
+}
+.exp-done.on {
+  color: var(--up);
+}
+.exp-done.on::before {
+  content: '✓ ';
+}
+.exp-step {
+  margin: 12px 0;
+}
+.exp-term {
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+.exp-progress {
+  height: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.exp-progress > div {
+  height: 100%;
+  background: var(--accent);
+}
+.exp-chart {
+  display: block;
+  width: 100%;
+  height: 140px;
+  margin-top: 8px;
+  background: #0c0f13;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.exp-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.exp-stats div,
+.exp-col dl > div {
+  min-width: 0;
+}
+.exp-stats dt,
+.exp-col dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.exp-stats dd,
+.exp-col dd {
+  margin: 0;
+}
+.exp-stats dd {
+  min-width: 7ch;
+}
+.exp-pick {
+  display: grid;
+  gap: 8px;
+  border: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.exp-pick legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+.exp-change {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.exp-change.on {
+  border-color: var(--accent);
+}
+.exp-change input {
+  grid-row: span 2;
+  align-self: center;
+}
+.exp-guess {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.exp-guess p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.exp-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.exp-col {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+.exp-col h3 {
+  margin: 0 0 6px;
+}
+.exp-col dl {
+  margin: 0;
+}
+.exp-col dl > div {
+  display: grid;
+  grid-template-columns: 1fr 10ch;
+  gap: 8px;
+}
+.exp-col dd {
+  text-align: right;
+}
+.exp-moments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.exp-moments button {
+  text-align: left;
+}
+.replay-caption {
+  font-weight: 700;
+}
+@media (max-width: 600px) {
+  .experiments-list,
+  .experiment {
+    padding: 12px;
+  }
+  .exp-cols {
+    grid-template-columns: 1fr;
+  }
+  .exp-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .exp-guess button,
+  .exp-moments button {
+    flex: 1 1 100%;
+  }
+}

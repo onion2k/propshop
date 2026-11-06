@@ -1,7 +1,7 @@
 import { CONTENT } from '../src/content';
 import { Game, MS_PER_MINUTE, TICK_MS, isMarketOpen, type SavedGame } from '../src/sim';
 import { Market } from '../src/sim/market';
-import { Random } from '../src/sim/random';
+import { deriveStreams } from '../src/sim/random';
 import { MARKET_OPEN } from '../src/sim/clock';
 import { infrastructureFrom } from '../src/sim/upgrades';
 
@@ -19,11 +19,14 @@ describe('the universe', () => {
 
   it('prices the index at the average of its constituents, every tick', () => {
     const m = new Market(CONTENT.stocks, CONTENT.exchanges, CONTENT.factors);
-    const random = new Random(1);
+    const random = deriveStreams(
+      1,
+      CONTENT.exchanges.map((e) => e.id),
+    );
     const index = CONTENT.stocks.find((s) => s.constituents)!;
     const average = () => index.constituents!.reduce((a, c) => a + m.fair.get(c)!, 0) / index.constituents!.length;
     expect(m.fair.get('IDX')).toBeCloseTo(average(), 6);
-    for (let i = 0; i < 2000; i++) m.step(MARKET_OPEN + i * TICK_MS, TICK_MS, random);
+    for (let i = 0; i < 2000; i++) m.step(MARKET_OPEN + i * TICK_MS, TICK_MS, random.world, random.crowd);
     expect(m.fair.get('IDX')).toBeCloseTo(average(), 6);
     expect(m.fair.get('IDX')).not.toBe(index.startPrice);
   });
@@ -31,13 +34,16 @@ describe('the universe', () => {
   it('moves stocks of one sector together more than stocks of different sectors', { timeout: 120_000 }, () => {
     // Returns over a minute, many minutes, with the crowd off: the factors alone.
     const m = new Market(CONTENT.stocks, CONTENT.exchanges, CONTENT.factors);
-    const random = new Random(2);
+    const random = deriveStreams(
+      2,
+      CONTENT.exchanges.map((e) => e.id),
+    );
     const symbols = CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol);
     const series: Record<string, number[]> = Object.fromEntries(symbols.map((s) => [s, []]));
     let now = 0;
     for (let k = 0; k < 400; k++) {
       const before = Object.fromEntries(symbols.map((s) => [s, m.fair.get(s)!]));
-      for (let i = 0; i < 30; i++, now += 1000) m.step(now, 1000, random);
+      for (let i = 0; i < 30; i++, now += 1000) m.step(now, 1000, random.world, random.crowd);
       for (const s of symbols) series[s]!.push(Math.log(m.fair.get(s)! / before[s]!));
     }
     const corr = (a: number[], b: number[]) => {

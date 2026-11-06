@@ -46,6 +46,24 @@ export class Random {
     return item;
   }
 
+  /**
+   * A stream of its own, derived from a seed and a name: the same pair gives the same stream, and a different
+   * name gives one that shares nothing with it. Mulberry32 seeded from an FNV-1a hash of the two.
+   */
+  static derive(seed: number, salt: string): Random {
+    let h = 2166136261 ^ (seed >>> 0);
+    h = Math.imul(h, 16777619);
+    for (let i = 0; i < salt.length; i++) {
+      h ^= salt.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    // One round of mixing so seeds that differ by one do not start close.
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x2c1b3c6d);
+    h ^= h >>> 12;
+    return new Random(h >>> 0);
+  }
+
   save(): number {
     return this.state;
   }
@@ -55,4 +73,39 @@ export class Random {
     r.state = state >>> 0;
     return r;
   }
+}
+
+/**
+ * The named streams a game draws from, so that what one part of the world does never shifts another's chances:
+ * `world` is fair value and news, which nothing the player does reaches; each exchange's crowd has its own,
+ * which still reacts to the books; `dark` is the dark web.
+ */
+export interface Streams {
+  world: Random;
+  crowd: Record<string, Random>;
+  dark: Random;
+}
+
+export interface SavedStreams {
+  world: number;
+  crowd: Record<string, number>;
+  dark: number;
+}
+
+export function deriveStreams(seed: number, exchangeIds: readonly string[]): Streams {
+  const crowd: Record<string, Random> = {};
+  for (const id of exchangeIds) crowd[id] = Random.derive(seed, `crowd:${id}`);
+  return { world: Random.derive(seed, 'world'), crowd, dark: Random.derive(seed, 'dark') };
+}
+
+export function saveStreams(s: Streams): SavedStreams {
+  const crowd: Record<string, number> = {};
+  for (const [id, r] of Object.entries(s.crowd)) crowd[id] = r.save();
+  return { world: s.world.save(), crowd, dark: s.dark.save() };
+}
+
+export function loadStreams(s: SavedStreams): Streams {
+  const crowd: Record<string, Random> = {};
+  for (const [id, n] of Object.entries(s.crowd)) crowd[id] = Random.load(n);
+  return { world: Random.load(s.world), crowd, dark: Random.load(s.dark) };
 }

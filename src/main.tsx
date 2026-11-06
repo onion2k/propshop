@@ -13,7 +13,7 @@ if (!root) throw new Error('No #root in the page.');
 const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0, () => performance.now());
 createRoot(root).render(
   <StrictMode>
-    <Root store={store} />
+    <Root store={store} storage={window.localStorage} />
   </StrictMode>,
 );
 

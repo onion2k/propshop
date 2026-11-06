@@ -139,12 +139,21 @@ export class Market {
    */
   private open = false;
 
-  step(now: number, dt: number, random: Random): { closed: { symbol: string; owner: string; id: number }[] | null } {
+  step(
+    now: number,
+    dt: number,
+    world: Random,
+    crowd: Readonly<Record<string, Random>>,
+  ): { closed: { symbol: string; owner: string; id: number }[] | null } {
     const open = isMarketOpen(now);
     this.open = open;
-    this.drift(dt, random);
+    this.drift(dt, world);
     const act = activity(now);
-    for (const e of this.exchanges) e.step(now, dt, this.fair, act, random);
+    for (const e of this.exchanges) {
+      const stream = crowd[e.id];
+      if (!stream) throw new Error(`No crowd stream for ${e.id}`);
+      e.step(now, dt, this.fair, act, stream);
+    }
     let closed: { symbol: string; owner: string; id: number }[] | null = null;
     if (this.wasOpen && !open) {
       closed = this.exchanges.flatMap((e) => e.close());

@@ -28,7 +28,7 @@ import { tick } from './flow';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
-import { Random } from './random';
+import { deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
 import {
   BLOCKS,
@@ -41,6 +41,7 @@ import {
   type OpenOrder,
   type Params,
 } from './strategy';
+import type { Setup } from './experiment';
 import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
 import { DEFAULT_RULES, type Content, type ExchangeRules, type RegimeSpec } from './types';
 
@@ -104,13 +105,19 @@ export interface DayRecord {
   pnl: number;
 }
 
-export interface SavedGame {
+/** The first shape of a save, with one random state; it loads, and its streams are derived from that state. */
+export interface SavedGameV1 extends Omit<SavedGame, 'version' | 'streams'> {
   version: 1;
+  random: number;
+}
+
+export interface SavedGame {
+  version: 2;
   /** The seed the game began from, which the day's regime is drawn from. */
   seed?: number;
   now: number;
   speed: Speed;
-  random: number;
+  streams: SavedStreams;
   market: SavedMarket;
   news: SavedNews;
   dark: SavedDarkWeb;
@@ -284,7 +291,7 @@ export class Game {
   seed: number;
   now: number;
   speed: Speed = 1;
-  random: Random;
+  streams: Streams;
   readonly market: Market;
   readonly news: News;
   readonly dark: DarkWeb;
@@ -308,8 +315,11 @@ export class Game {
     this.seed = seed >>> 0;
     // The game begins at six on Monday morning: the market opens in a few hours, so the player has time to look.
     this.now = 6 * 60 * MS_PER_MINUTE;
-    this.random = new Random(seed);
     this.market = new Market(content.stocks, content.exchanges, content.factors);
+    this.streams = deriveStreams(
+      this.seed,
+      this.market.exchanges.map((e) => e.id),
+    );
     this.news = new News(content.news, content.stocks);
     this.dark = new DarkWeb();
     this.owned = new Set([content.start.location, content.start.network, content.start.computer]);
@@ -326,7 +336,7 @@ export class Game {
     this.weekStartEquity = content.startingCash;
     this.wasOpen = false;
     this.news.regimeFor = (day) => this.regimeFor(day);
-    this.news.step(this.now, this.market, this.random);
+    this.news.step(this.now, this.market, this.streams.world);
   }
 
   /** A rival firm from its spec: the blocks it names, else arbitrage at its edge. */
@@ -372,9 +382,9 @@ export class Game {
   /** One tick. */
   step(dt = TICK_MS): void {
     this.now += dt;
-    this.news.step(this.now, this.market, this.random);
-    tick(this.now, dt, this.market, this.firms(), this.random, this.news.feed());
-    this.dark.step(this.now, this.firm, this.news, this.random);
+    this.news.step(this.now, this.market, this.streams.world);
+    tick(this.now, dt, this.market, this.firms(), this.streams, this.news.feed());
+    this.dark.step(this.now, this.firm, this.news, this.streams.dark);
     for (const f of this.firm.tickFills) {
       this.emit({ kind: 'fill', at: this.now, fill: f });
       tally(this.today.byBlock, f.block, f);
@@ -556,6 +566,35 @@ export class Game {
     const current = this.firm.watching(this.market.stocks.map((s) => s.symbol));
     const next = on ? [...current, symbol] : current.filter((w) => w !== symbol);
     this.firm.setWatch(next);
+    this.version++;
+  }
+
+  /**
+   * Set the firm up as an experiment says: its infrastructure with no purchase and no change of cash, which
+   * blocks run (the rest are off) and what they watch. For experiments only. It refuses, by name, what the
+   * computer cannot hold, so a setup that would be quietly cut down is found out here.
+   */
+  configure(setup: Setup): void {
+    const infra = infrastructureFrom(this.content, setup);
+    const watched = [...new Set(setup.watched)];
+    const known = this.market.stocks.map((s) => s.symbol);
+    for (const w of watched) if (!known.includes(w)) throw new Error(`Cannot watch ${w}: no such symbol`);
+    if (watched.length > infra.computer.maxSymbols)
+      throw new Error(`${infra.computer.name} can watch ${infra.computer.maxSymbols} symbols, not ${watched.length}`);
+    const on = setup.blocks.filter((b) => b.enabled);
+    if (on.length > infra.computer.maxBlocks)
+      throw new Error(`${infra.computer.name} runs ${infra.computer.maxBlocks} blocks, not ${on.length}`);
+    for (const b of setup.blocks) if (!this.firm.blocks.some((x) => x.id === b.id)) throw new Error(`No block ${b.id}`);
+    this.firm.infra = infra;
+    this.firm.setWatch(watched);
+    for (const b of this.firm.blocks) {
+      const set = setup.blocks.find((x) => x.id === b.id);
+      this.firm.setBlock(b.id, {
+        enabled: set?.enabled ?? false,
+        ...(set ? { params: set.params } : {}),
+        ...(set?.source !== undefined ? { source: set.source } : {}),
+      });
+    }
     this.version++;
   }
 
@@ -774,11 +813,11 @@ export class Game {
 
   save(): SavedGame {
     return {
-      version: 1,
+      version: 2,
       seed: this.seed,
       now: this.now,
       speed: this.speed,
-      random: this.random.save(),
+      streams: saveStreams(this.streams),
       market: this.market.save(),
       news: this.news.save(),
       dark: this.dark.save(),
@@ -801,13 +840,15 @@ export class Game {
     };
   }
 
-  static load(content: Content, s: SavedGame): Game {
-    const version: number = s.version;
-    if (version !== 1) throw new Error(`Cannot load a save of version ${String(version)}`);
+  static load(content: Content, input: SavedGame | SavedGameV1): Game {
+    const version: number = input.version;
+    if (version !== 1 && version !== 2) throw new Error(`Cannot load a save of version ${String(version)}`);
+    const s: Omit<SavedGame, 'version'> =
+      input.version === 2 ? input : { ...input, streams: Game.streamsFromV1(input) };
     const g = new Game(content, s.seed ?? 0);
     g.now = s.now;
     g.speed = s.speed;
-    g.random = Random.load(s.random);
+    g.streams = loadStreams(s.streams);
     g.market.load(s.market);
     g.news.load(s.news);
     g.dark.load(s.dark);
@@ -840,12 +881,18 @@ export class Game {
     return g;
   }
 
+  /** A version-1 save kept one random state: each stream is derived from it, so the game is valid and its future new. */
+  private static streamsFromV1(s: SavedGameV1): SavedStreams {
+    const ids = Object.keys(s.market.exchanges);
+    return saveStreams(deriveStreams(s.random, ids));
+  }
+
   /** A hash of the state that matters, for the determinism check. */
   fingerprint(): string {
     const s = this.save();
     const text = JSON.stringify({
       now: s.now,
-      random: s.random,
+      streams: s.streams,
       market: s.market,
       firm: s.firm,
       competitors: s.competitors,

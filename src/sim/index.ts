@@ -10,7 +10,30 @@ export {
   STUFFING_CANCEL_SHARE,
   FLOOD_DROPPED,
 } from './game';
-export type { GameEvent, SavedGame, Snapshot, Speed, DayRecord, DayReport, Tally, OrderStory } from './game';
+export type {
+  GameEvent,
+  SavedGame,
+  SavedGameV1,
+  Snapshot,
+  Speed,
+  DayRecord,
+  DayReport,
+  Tally,
+  OrderStory,
+} from './game';
+export {
+  MAX_BEATEN_LISTED,
+  MAX_PINNED,
+  MAX_WINDOW_MS,
+  Prepare,
+  replayTime,
+  MAX_MOMENTS,
+  REPLAY_LEAD_MS,
+  Run,
+  replayAt,
+  startOf,
+} from './experiment';
+export type { BeatenRace, Measures, Moment, MomentDraft, MomentSource, RaceTally, Setup } from './experiment';
 export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById } from './strategy';
 export type {
   BeatenBy,

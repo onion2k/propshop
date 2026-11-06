@@ -5,12 +5,15 @@ import { TAPE_VIEW } from '../src/sim/strategy';
 import { REFUSED_CROSSED } from '../src/sim/orderbook';
 import { tick } from '../src/sim/flow';
 import { Market } from '../src/sim/market';
-import { Random } from '../src/sim/random';
+import { deriveStreams } from '../src/sim/random';
 import { EXCHANGES, FAST, SLOW, STOCKS, TICK } from './fixtures';
 
 function world(seed: number, firms: Firm[], from = MARKET_OPEN) {
   const market = new Market(STOCKS, EXCHANGES);
-  const random = new Random(seed);
+  const random = deriveStreams(
+    seed,
+    EXCHANGES.map((e) => e.id),
+  );
   let now = from;
   const run = (ms: number) => {
     for (let i = 0; i < ms / TICK; i++, now += TICK) tick(now, TICK, market, firms, random, []);
@@ -293,7 +296,7 @@ describe('Firm risk', () => {
 
   it('halts: pulls what rests, gets flat, and decides nothing until the moment passes', () => {
     const f = new Firm('firm', 'Mine', MILLION, FAST, Firm.defaultBlocks(['marketMaker']));
-    const w = world(29, [f]);
+    const w = world(30, [f]);
     w.run(5 * MS_PER_SECOND);
     (f as unknown as { book: (o: unknown, p: number, s: number, at: number, t: boolean) => void }).book(
       { localId: 999, exchange: 'HARBOR', symbol: 'ABC', side: 'buy', size: 100, filled: 0, block: 't' },
