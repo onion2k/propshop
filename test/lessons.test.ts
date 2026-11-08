@@ -9,7 +9,7 @@ function fresh(): Snapshot {
 const L = (id: string) => LESSONS.find((l) => l.id === id)!;
 
 describe('lessons', () => {
-  it('are ten, in stage order, each with words', () => {
+  it("are the stocks' ten in stage order, then the futures desk's three, each with words", () => {
     expect(LESSONS.map((l) => l.id)).toEqual([
       'home',
       'seat',
@@ -21,6 +21,9 @@ describe('lessons', () => {
       'hand',
       'used',
       'week',
+      'basis',
+      'overnight',
+      'lead',
     ]);
     for (const l of LESSONS) {
       expect(l.task.length).toBeGreaterThan(20);

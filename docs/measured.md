@@ -50,6 +50,24 @@ Measured by the PACE harness (`test/pace.test.ts`) and tuned by hand. A run of
   about 20 ms; and with a cleared-level trigger and a one-tick FPGA the chaser was still second in 32 of 43
   races. The jump on a large single resting order (`largest` in the depth) is about break-even.
 
+## The futures desk
+
+- 2026-11-08, how far the near future, carried back to today, is past the index's touch, sampled every 100 ms over
+  twenty minutes of three seeds' opens with no firm trading it: median 0.16 to 0.34 cents; over half a cent about
+  18% of the time, over a cent about 1.5%, over two almost never (2.35 at most). So the blocks trade at half a cent
+  or not at all: lead-lag's default is 0.5.
+- The PACE harness, three seeds, twenty minutes, dollars a day, with Prairie Partners (a rack at the Prairie Board,
+  microwave, lead-lag at 0.5 cents and 3,000 shares): lead-lag from home 737 (463 to 1,335); from a rack at the
+  Prairie Board on fibre 919; from a rack at Lakeside on microwave 1,290; from a rack at the Prairie Board on
+  microwave 1,515 (1,351 to 1,807); the rival itself 924. The ladder is the lesson's, but the plan's check is not
+  met: a rack and microwave beat home by about 780 a day, and microwave alone is 120,000, about 150 days of it.
+  What would widen it is how slowly the index's books follow (one to two and a half seconds, `INDEX_LAG`), which is
+  the stocks' and was left alone. Before the rival raced at 0.5 cents (it never traded at 3), home earned as much
+  as a rack on fibre.
+- Basis arbitrage, one seed: -319 a day at 0.5 cents (534 fills an hour) and no fill at 1 or more: two legs on two
+  venues pay more in fees and spread than a basis the crowd keeps this tight. Roll from home, one seed: -439, the
+  index's drift that morning, three fills an hour.
+
 ## The market's mechanics
 
 - The futures desk's lead, 2026-11-08 (`test/futures.test.ts`, seed 6, ten minutes into the open): after every

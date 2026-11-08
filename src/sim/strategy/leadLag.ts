@@ -35,7 +35,9 @@ export const leadLag: StrategyBlock = {
         min: 0.5,
         max: 20,
         step: 0.5,
-        default: 2,
+        // The gap past the index's touch is over half a cent about a fifth of the time and over two almost never
+        // (docs/measured.md): half a cent is where it trades at all.
+        default: 0.5,
         unit: '¢/index share',
         explain: 'How far the future, carried back, must be from the index’s touch, after the fee.',
       },
@@ -53,7 +55,7 @@ export const leadLag: StrategyBlock = {
   },
 
   decide(view: MarketView, p: Params): Intent[] {
-    const threshold = p.threshold ?? 2;
+    const threshold = p.threshold ?? 0.5;
     const shares = p.shares ?? 1000;
     const id = this.spec.id;
     const [near] = contractsByExpiry(view);

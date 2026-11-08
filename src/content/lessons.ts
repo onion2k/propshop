@@ -179,6 +179,60 @@ export const LESSONS: Lesson[] = [
   },
 ];
 
+/** The futures desk's lessons: they open with the desk at stage 3 and open no stage (DESK_LESSONS in stages.ts). */
+LESSONS.push(
+  {
+    id: 'basis',
+    title: 'See the future lead the index',
+    task: 'The futures desk is open. On the Market page watch IDX and the near IXF contract, and pick the contract.',
+    watch:
+      'The contract a few cents over the index (the basis), and, when the market moves, the contract’s price ' +
+      'moving before the index’s does.',
+    terms: ['future', 'basis', 'carry', 'lead-lag'],
+    done: (s) =>
+      s.stocks.some(
+        (st) => st.contract && st.watched && s.stocks.find((u) => u.symbol === st.contract!.underlying)?.watched,
+      ),
+    lesson:
+      'A future on the index is the index carried to its expiry: a few cents over it a week out, more further out, ' +
+      'nothing on the day it ends. It trades at the Prairie Board, whose crowd catches a move in tens of ' +
+      'milliseconds; the index’s crowds take hundreds. So the future moves first and the index follows. That ' +
+      'gap in time is the desk’s whole lesson, and what a seat near the Prairie Board is for.',
+  },
+  {
+    id: 'overnight',
+    title: 'Trade a future through a close',
+    task: 'From the Desk page, buy one IXF contract, and play on through the day’s close.',
+    watch:
+      'Your cash at the fill (only the fee goes), the margin to keep on the Overview, and the day’s report by desk.',
+    terms: ['margin', 'variation-margin', 'margin-call'],
+    done: (s) => s.days.some((d) => d.byDesk?.futures !== undefined),
+    lesson:
+      'You did not pay for the contract: you posted margin, a few hundred dollars against five thousand of index. ' +
+      'At each close its gain or loss since its cost is paid in cash, and that price becomes its cost: a losing ' +
+      'future is cash gone tonight, not a paper loss. Hold too many for your cash and a bad move is a margin ' +
+      'call, flattened at whatever price there is.',
+  },
+  {
+    id: 'lead',
+    title: 'Ride the lead',
+    task:
+      'Turn lead-lag on and watch IDX and the near IXF contract. From home it sees the future too late; try it ' +
+      'from a seat nearer the Prairie Board.',
+    watch: 'Lead-lag’s fills in the index, and whether they close at a gain once the index catches up.',
+    terms: ['lead-lag', 'latency', 'microwave'],
+    done: (s) => {
+      const fills = fillsFor(s, 'leadLag');
+      return fills.length >= 10 && netOf(fills) > 0;
+    },
+    lesson:
+      'Lead-lag never touches the future: it trades the index on what the future already says. Its whole edge is ' +
+      'the few hundred milliseconds between the future’s crowd and the index’s, so it is worth exactly what ' +
+      'your line to the Prairie Board and to the stock exchange is worth. The firms that built towers across the ' +
+      'plains did it for this trade.',
+  },
+);
+
 export function lesson(id: string): Lesson | undefined {
   return LESSONS.find((l) => l.id === id);
 }

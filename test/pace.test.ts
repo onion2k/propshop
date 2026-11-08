@@ -12,6 +12,12 @@ const SEEDS = (process.env.PACE_SEEDS ?? '1,2,3').split(',').map(Number);
 const HOME = { location: 'home', network: 'consumer', computer: 'laptop' };
 const CITY = { location: 'city', network: 'fibre', computer: 'server' };
 const COLO = { location: 'colo-harbor', network: 'microwave', computer: 'rack' };
+// The futures desk's seats: a rack at the Prairie Board on fibre or microwave, and one at Lakeside, the nearest
+// stock exchange to it (plans/desk-futures.md).
+const PRAIRIE_FIBRE = { location: 'colo-prairie', network: 'fibre', computer: 'rack' };
+const PRAIRIE_MW = { location: 'colo-prairie', network: 'microwave', computer: 'rack' };
+const LAKESIDE_MW = { location: 'colo-lakeside', network: 'microwave', computer: 'rack' };
+const DESK_BLOCK_IDS = ['basisArb', 'leadLag', 'roll'];
 
 type Config = [
   string,
@@ -44,6 +50,20 @@ const CONFIGS: Config[] = [
   // A person: momentum's decisions sent by hand, one order of 5,000 at a time (a size that must be split over exchanges), after the reaction time.
   ['home hand', HOME, [HAND]],
   ['colo hand', COLO, [HAND]],
+  ['home leadLag', HOME, ['leadLag']],
+  ['prairie leadLag fibre', PRAIRIE_FIBRE, ['leadLag']],
+  ['prairie leadLag mw', PRAIRIE_MW, ['leadLag']],
+  ['lakeside leadLag mw', LAKESIDE_MW, ['leadLag']],
+  ['prairie basisArb mw', PRAIRIE_MW, ['basisArb']],
+  ['lakeside basisArb mw', LAKESIDE_MW, ['basisArb']],
+  ['home roll', HOME, ['roll']],
+  ['home leadLag t0.5', HOME, ['leadLag'], { leadLag: { threshold: 0.5 } }],
+  ['prairie leadLag fibre t0.5', PRAIRIE_FIBRE, ['leadLag'], { leadLag: { threshold: 0.5 } }],
+  ['prairie leadLag mw t0.5', PRAIRIE_MW, ['leadLag'], { leadLag: { threshold: 0.5 } }],
+  ['prairie leadLag mw t1', PRAIRIE_MW, ['leadLag'], { leadLag: { threshold: 1 } }],
+  ['lakeside leadLag mw t0.5', LAKESIDE_MW, ['leadLag'], { leadLag: { threshold: 0.5 } }],
+  ['prairie basisArb mw t0.5', PRAIRIE_MW, ['basisArb'], { basisArb: { threshold: 0.5 } }],
+  ['prairie basisArb mw t1', PRAIRIE_MW, ['basisArb'], { basisArb: { threshold: 1 } }],
 ];
 
 function pnl(f: Firm, g: Game): number {
@@ -62,11 +82,18 @@ measure('paces', { timeout: 3_600_000 }, () => {
     for (const [name, infra, blocks, params] of CONFIGS) {
       if (ONLY && !ONLY.split(',').some((o) => name.includes(o))) continue;
       const g = new Game(CONTENT, seed);
+      // A futures block opens the desk, and watches the index and its contracts first, so a laptop sees them too.
+      const desk = blocks.some((b) => DESK_BLOCK_IDS.includes(b));
+      if (desk) g.openDesk('futures');
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
       for (const [id, p] of Object.entries(params ?? {})) g.setBlock(id, { params: p });
       // Watch everything the computer allows, the index first so index arbitrage has its basket on a rack.
-      g.firm.setWatch(['IDX', ...CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol)]);
+      g.firm.setWatch([
+        'IDX',
+        ...(desk ? g.market.live('IXF') : []),
+        ...CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol),
+      ]);
       g.skipToOpen();
       const person = blocks.includes(HAND);
       const momentum = blockById('momentum');
@@ -102,6 +129,9 @@ measure('paces', { timeout: 3_600_000 }, () => {
         }
       }
       add(name, pnl(g.firm, g), g.firm.stats.fillsReceived);
+      if (name === 'prairie leadLag mw')
+        for (const c of g.competitors.filter((x) => x.name === 'Prairie Partners'))
+          add(`bot ${c.name} (desk open)`, pnl(c, g), c.stats.fillsReceived);
       if (name === 'home arb' || name === 'home hand')
         for (const c of g.competitors) add(`bot ${c.name}${person ? ' (hand)' : ''}`, pnl(c, g), c.stats.fillsReceived);
     }

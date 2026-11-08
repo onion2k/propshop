@@ -2,7 +2,7 @@
 // it has. The first open one is the current one. A stage that is not open yet is shown by its name alone, and
 // the switch opens every stage at once.
 
-import { LESSONS, STAGES, lessonStage, type StageId } from '../content';
+import { DESK_LESSONS, LESSONS, STAGES, lessonDesk, lessonStage, shows, type Lesson, type StageId } from '../content';
 import { formatTime } from '../sim';
 import { Term } from './Glossary';
 import type { Progress, Store } from './store';
@@ -47,7 +47,7 @@ export function FirstWeekPanel({
       <p className="muted">
         {left === 0 && stage === 5
           ? `All ${LESSONS.length} done. The rest of the game is yours; the Learn tab has the ideas in full.`
-          : `${LESSONS.length} things to see in your first week, a stage at a time. The game ticks each off when it has happened, and says what it meant.`}
+          : `${LESSONS.filter((l) => lessonDesk(l.id) === undefined).length} things to see in your first week, a stage at a time. The game ticks each off when it has happened, and says what it meant.`}
       </p>
       {STAGES.map((st) => {
         const open = st.id <= stage;
@@ -60,43 +60,82 @@ export function FirstWeekPanel({
             {open && st.lessons.length === 0 && <p className="muted small">No lessons: the whole game is open.</p>}
             {open && st.lessons.length > 0 && (
               <ol>
-                {st.lessons.map((id) => {
-                  const l = LESSONS.find((x) => x.id === id)!;
-                  const doneAt = progress[l.id];
-                  const state = doneAt !== undefined ? 'done' : l === current ? 'current' : 'later';
-                  return (
-                    <li key={l.id} className={`lesson ${state}`}>
-                      <div className="lesson-head">
-                        <span className="lesson-mark" aria-hidden="true">
-                          {state === 'done' ? '✓' : number.get(l.id)}
-                        </span>
-                        <strong>{l.title}</strong>
-                        {doneAt !== undefined && <span className="muted small"> · done {formatTime(doneAt)}</span>}
-                      </div>
-                      {state !== 'later' && (
-                        <div className="lesson-body">
-                          <p>{l.task}</p>
-                          <p className="muted small">Watch for: {l.watch}</p>
-                          {state === 'done' && <p className="lesson-text">{l.lesson}</p>}
-                          <p className="small muted">
-                            Read:{' '}
-                            {l.terms.map((t, j) => (
-                              <span key={t}>
-                                {j > 0 && ', '}
-                                <Term id={t} />
-                              </span>
-                            ))}
-                          </p>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
+                {st.lessons.map((id) => (
+                  <LessonItem
+                    key={id}
+                    l={LESSONS.find((x) => x.id === id)!}
+                    progress={progress}
+                    current={current}
+                    number={number}
+                  />
+                ))}
               </ol>
             )}
           </section>
         );
       })}
+      {Object.entries(DESK_LESSONS)
+        .filter(([desk]) => shows(`desk:${desk}`, stage))
+        .map(([desk, ids]) => (
+          <section key={desk} className="stage open" aria-label={`The ${desk} desk`}>
+            <h3>
+              The {desk} desk <span className="muted small">· open alongside, and opens no stage</span>
+            </h3>
+            <ol>
+              {ids.map((id) => (
+                <LessonItem
+                  key={id}
+                  l={LESSONS.find((x) => x.id === id)!}
+                  progress={progress}
+                  current={current}
+                  number={number}
+                />
+              ))}
+            </ol>
+          </section>
+        ))}
     </div>
+  );
+}
+
+function LessonItem({
+  l,
+  progress,
+  current,
+  number,
+}: {
+  l: Lesson;
+  progress: Progress;
+  current: Lesson | undefined;
+  number: Map<string, number>;
+}) {
+  const doneAt = progress[l.id];
+  const state = doneAt !== undefined ? 'done' : l === current ? 'current' : 'later';
+  return (
+    <li className={`lesson ${state}`}>
+      <div className="lesson-head">
+        <span className="lesson-mark" aria-hidden="true">
+          {state === 'done' ? '✓' : number.get(l.id)}
+        </span>
+        <strong>{l.title}</strong>
+        {doneAt !== undefined && <span className="muted small"> · done {formatTime(doneAt)}</span>}
+      </div>
+      {state !== 'later' && (
+        <div className="lesson-body">
+          <p>{l.task}</p>
+          <p className="muted small">Watch for: {l.watch}</p>
+          {state === 'done' && <p className="lesson-text">{l.lesson}</p>}
+          <p className="small muted">
+            Read:{' '}
+            {l.terms.map((t, j) => (
+              <span key={t}>
+                {j > 0 && ', '}
+                <Term id={t} />
+              </span>
+            ))}
+          </p>
+        </div>
+      )}
+    </li>
   );
 }

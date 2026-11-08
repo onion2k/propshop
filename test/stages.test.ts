@@ -1,4 +1,14 @@
-import { CONTENT, LESSONS, STAGES, introSteps, lessonStage, shows, stageOf, type Feature } from '../src/content';
+import {
+  DESK_LESSONS,
+  CONTENT,
+  LESSONS,
+  STAGES,
+  introSteps,
+  lessonStage,
+  shows,
+  stageOf,
+  type Feature,
+} from '../src/content';
 import { BLOCKS } from '../src/sim';
 import { createStore, PROGRESS_KEY, REVEAL_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
 
@@ -38,12 +48,16 @@ describe('stageOf', () => {
     expect(stageOf(done(...S1, ...S2, ...S3, 'week'))).toBe(4);
   });
 
-  it('has every lesson in exactly one stage, and the lessons in stage order', () => {
-    const listed = STAGES.flatMap((s) => s.lessons);
+  it("has every lesson in exactly one stage or one desk, the stages' in order and then the desks'", () => {
+    const listed = [...STAGES.flatMap((s) => s.lessons), ...Object.values(DESK_LESSONS).flat()];
     expect(new Set(listed).size).toBe(listed.length);
     expect([...listed].sort()).toEqual(LESSONS.map((l) => l.id).sort());
     expect(LESSONS.map((l) => l.id)).toEqual(listed);
     for (const l of LESSONS) expect(lessonStage(l.id)).toBeDefined();
+    // A desk's lessons sit at the desk's stage and open no stage: all the stocks' done is the last stage.
+    expect(lessonStage('lead')).toBe(3);
+    const stocks = Object.fromEntries(STAGES.flatMap((s) => s.lessons).map((id) => [id, 1]));
+    expect(stageOf(stocks)).toBe(5);
   });
 });
 

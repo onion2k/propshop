@@ -104,9 +104,19 @@ describe('lead-lag', () => {
     expect(orders(b.decide(view({ future: quote(5280, 5281) }), p))).toEqual([`sell ${p.shares} IDX@5300 HARBOR`]);
   });
 
-  it('gets out once the index has caught up', () => {
-    const held = view({ blockPositions: { leadLag: { IDX: 1000 } }, positions: { IDX: 1000 } });
-    expect(orders(b.decide(held, p))).toEqual(['sell 500 IDX@5300 HARBOR']);
+  it('holds while the index is still short of the future, and gets out once it has caught up', () => {
+    const short = view({
+      index: quote(5299, 5300),
+      blockPositions: { leadLag: { IDX: 1000 } },
+      positions: { IDX: 1000 },
+    });
+    expect(b.decide(short, p)).toEqual([]);
+    const caught = view({
+      index: quote(5301, 5302),
+      blockPositions: { leadLag: { IDX: 1000 } },
+      positions: { IDX: 1000 },
+    });
+    expect(orders(b.decide(caught, p))).toEqual(['sell 500 IDX@5301 HARBOR']);
   });
 });
 

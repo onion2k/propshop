@@ -94,7 +94,21 @@ export function stageOf(progress: Readonly<Record<string, number>>): StageId {
   return stage;
 }
 
-/** The stage a lesson belongs to. */
+/**
+ * Each desk's lessons beyond the stocks': they open with the desk, at its stage, and open no stage themselves, so
+ * the stocks' path is the same with a desk as without.
+ */
+export const DESK_LESSONS: Readonly<Record<string, readonly string[]>> = { futures: ['basis', 'overnight', 'lead'] };
+
+/** The desk a lesson belongs to, if it is a desk's. */
+export function lessonDesk(id: string): string | undefined {
+  return Object.entries(DESK_LESSONS).find(([, ids]) => ids.includes(id))?.[0];
+}
+
+/** The stage a lesson belongs to: its stage's, or its desk's. */
 export function lessonStage(id: string): StageId | undefined {
-  return STAGES.find((s) => s.lessons.includes(id))?.id;
+  const st = STAGES.find((s) => s.lessons.includes(id))?.id;
+  if (st !== undefined) return st;
+  const desk = lessonDesk(id);
+  return desk === undefined ? undefined : featureStage(`desk:${desk}`);
 }

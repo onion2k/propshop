@@ -216,7 +216,7 @@ export const COMPETITORS: CompetitorSpec[] = [
     computer: 'rack',
     minEdge: 0,
     desk: 'futures',
-    blocks: [{ id: 'leadLag', params: { threshold: 3, shares: 500 } }],
+    blocks: [{ id: 'leadLag', params: { threshold: 0.5, shares: 3000 } }],
   },
 ];
 
