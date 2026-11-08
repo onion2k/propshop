@@ -51,7 +51,12 @@ export interface ComparisonRow {
   same: number;
   /** `better` or `worse` when every compared window said so; `same` likewise; else `mixed`; `none` with no window. */
   tag: 'better' | 'worse' | 'same' | 'mixed' | 'none';
-  /** "better in 3 of 3 windows", or "mixed: better in 2 of 3 windows". */
+  /**
+   * Where every window is about the same but the variant sits on one side of the baseline in each of two or more:
+   * a consistent lean is worth a second night even when no window clears the noise. Null otherwise.
+   */
+  lean: 'higher' | 'lower' | null;
+  /** "better in 3 of 3 windows", or "mixed: better in 2 of 3 windows, about the same in 1". */
   summary: string;
   /** The extra P&L over the baseline across the compared windows. */
   gain: number;
@@ -89,6 +94,20 @@ function runOf(night: Night, variantId: string, pin: string) {
   return night.runs.find((r) => r.variantId === variantId && r.pin === pin);
 }
 
+/** "better in 1 of 3 windows, about the same in 2": only the verdicts that happened, the first with its "of N". */
+function mixedParts(better: number, worse: number, same: number, compared: number): string {
+  const parts = (
+    [
+      ['better', better],
+      ['worse', worse],
+      ['about the same', same],
+    ] as const
+  ).filter(([, n]) => n > 0);
+  return parts
+    .map(([word, n], i) => (i === 0 ? `${word} in ${n} of ${compared} windows` : `${word} in ${n}`))
+    .join(', ');
+}
+
 /** The night as a table of rows: the baseline first, then each variant, each against the baseline on the same window. */
 export function compare(night: Night): ComparisonRow[] {
   const pins = windowsOf(night);
@@ -123,19 +142,24 @@ export function compare(night: Night): ComparisonRow[] {
         : answerOf({ pnl: sum(base.map((m) => m.pnl)) } as Measures, { pnl: sum(mine.map((m) => m.pnl)) } as Measures);
     let tag: ComparisonRow['tag'] = 'none';
     let summary = 'no window ran';
+    let lean: ComparisonRow['lean'] = null;
     if (compared > 0) {
       if (better === compared) tag = 'better';
       else if (worse === compared) tag = 'worse';
       else if (same === compared) tag = 'same';
       else tag = 'mixed';
+      if (tag === 'same' && compared >= 2) {
+        if (both.every((x) => x.mine!.measures.pnl > x.base!.measures.pnl)) lean = 'higher';
+        else if (both.every((x) => x.mine!.measures.pnl < x.base!.measures.pnl)) lean = 'lower';
+      }
       summary =
         tag === 'better'
           ? `better in ${better} of ${compared} windows`
           : tag === 'worse'
             ? `worse in ${worse} of ${compared} windows`
             : tag === 'same'
-              ? `about the same in ${same} of ${compared} windows`
-              : `mixed: better in ${better} of ${compared} windows, worse in ${worse}`;
+              ? `about the same in ${same} of ${compared} windows${lean ? `, though ${lean} in every one` : ''}`
+              : `mixed: ${mixedParts(better, worse, same, compared)}`;
     }
     return {
       id: v.id,
@@ -156,6 +180,7 @@ export function compare(night: Night): ComparisonRow[] {
       worse,
       same,
       tag,
+      lean,
       summary,
       gain,
       minutes,

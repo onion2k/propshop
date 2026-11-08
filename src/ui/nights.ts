@@ -311,29 +311,68 @@ export class InlineRunner implements NightRunner {
   }
 }
 
-/** The job in a module Web Worker. `create` is called when the runner is made, so a refusal is found at once. */
+/**
+ * The job in a module Web Worker. A worker that cannot be made, or one that fails mid-job (a crash, not the job's
+ * own error, which would fail the same on the main thread), gives way to the main-thread runner for the rest of the
+ * session: the job it was running carries on there, its results already told kept and not told twice.
+ */
 export class WorkerRunner implements NightRunner {
-  private worker: Worker | null;
+  private worker: Worker | null = null;
+  private fallback: InlineRunner | null = null;
 
-  constructor(private readonly create: () => Worker) {
-    this.worker = create();
+  constructor(
+    private readonly create: () => Worker,
+    private readonly content: Content,
+  ) {
+    try {
+      this.worker = create();
+    } catch {
+      this.fallback = new InlineRunner(content);
+    }
   }
 
   start(job: NightJob, onEvent: (e: JobEvent) => void): void {
-    try {
-      this.worker ??= this.create();
-    } catch (e) {
-      onEvent({ kind: 'error', message: e instanceof Error ? e.message : 'The worker could not start.' });
+    if (!this.fallback) {
+      try {
+        this.worker ??= this.create();
+      } catch {
+        this.fallback = new InlineRunner(this.content);
+      }
+    }
+    if (this.fallback) {
+      this.fallback.start(job, onEvent);
       return;
     }
-    const w = this.worker;
-    w.onmessage = (m: MessageEvent<JobEvent>) => onEvent(m.data);
-    w.onerror = (e) => onEvent({ kind: 'error', message: e.message || 'The worker failed.' });
+    const w = this.worker!;
+    let told = 0;
+    w.onmessage = (m: MessageEvent<JobEvent>) => {
+      if (m.data.kind === 'result') told++;
+      onEvent(m.data);
+    };
+    w.onerror = () => {
+      w.terminate();
+      this.worker = null;
+      this.fallback = new InlineRunner(this.content);
+      // The main thread runs the job again from its start; the results the worker already told are passed over.
+      let skip = told;
+      this.fallback.start(job, (e) => {
+        if (e.kind === 'result' && skip > 0) {
+          skip--;
+          return;
+        }
+        onEvent(e);
+      });
+    };
     w.postMessage(job);
   }
 
   cancel(): void {
     this.worker?.terminate();
     this.worker = null;
+    this.fallback?.cancel();
+  }
+
+  pump(ctx: { open: boolean; clock?: () => number; deadline?: number }): void {
+    this.fallback?.pump(ctx);
   }
 }

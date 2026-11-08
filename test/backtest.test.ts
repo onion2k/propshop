@@ -280,7 +280,7 @@ describe('variants', () => {
 
   it('steps a first param up and down by its step, clamped, and skips a step that changes nothing', () => {
     const vs = variants({ ...HOME, blocks: [{ id: 'momentum', enabled: true, params: {} }] }, offers, []);
-    const params = vs.filter((v) => v.kind === 'param');
+    const params = vs.filter((v) => v.id.startsWith('param:momentum:lookback:'));
     expect(params).toHaveLength(2);
     const [up, down] = params;
     expect(up!.setup.blocks[0]!.params).not.toEqual(down!.setup.blocks[0]!.params);
@@ -288,8 +288,25 @@ describe('variants', () => {
     const key = Object.keys(up!.setup.blocks[0]!.params)[0]!;
     const lo = down!.setup.blocks[0]!.params[key]!;
     const min = variants({ ...HOME, blocks: [{ id: 'momentum', enabled: true, params: { [key]: -1e9 } }] }, offers, []);
-    expect(min.filter((v) => v.kind === 'param').length).toBeLessThan(2);
+    expect(min.filter((v) => v.id.startsWith('param:momentum:lookback:')).length).toBeLessThan(2);
     expect(lo).toBeLessThan(up!.setup.blocks[0]!.params[key]!);
+  });
+
+  it("tests a new player's momentum a size larger as well, since size is what moves a window beyond the noise", () => {
+    // From home the first parameter and the upgrades change a window by tens of dollars; size scales it.
+    const start: Setup = {
+      ...HOME,
+      location: 'home',
+      network: 'consumer',
+      computer: 'laptop',
+      blocks: [{ id: 'momentum', enabled: true, params: {} }],
+    };
+    const ids = variants(start, offers, ['momentum']).map((v) => v.id);
+    expect(ids).toContain('param:momentum:size:up');
+    expect(ids).toContain('param:momentum:lookback:up');
+    expect(ids.length - 1).toBeLessThanOrEqual(MAX_VARIANTS);
+    const size = variants(start, offers, ['momentum']).find((v) => v.id === 'param:momentum:size:up')!;
+    expect(size.setup.blocks[0]!.params.size).toBe(300);
   });
 
   it('switches a block off only where more than one is on', () => {

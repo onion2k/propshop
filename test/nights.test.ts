@@ -5,6 +5,7 @@ import { handleJob, jobEvents, type JobEvent, type NightJob } from '../src/night
 import {
   InlineRunner,
   MAX_NIGHTS,
+  WorkerRunner,
   TESTS_KEY,
   parseChange,
   setupKey,
@@ -457,6 +458,64 @@ describe('the main-thread runner', () => {
     store.pump(0);
     store.pump(100);
     expect(store.getTests().progress).toBeNull();
+  });
+});
+
+describe('the worker runner', () => {
+  const g = new Game(CONTENT, 4);
+  g.skipToOpen();
+  g.step(MS_PER_MINUTE + 1000);
+  const pin: Pin = { label: 'open', at: g.now, save: structuredClone(g.save()) };
+  const job: NightJob = {
+    pins: [pin],
+    variants: variants(setupOf(g), g.snapshot().shop, ['momentum']).slice(0, 3),
+    windowMs: 500,
+  };
+
+  /** A worker that answers with the job's first result, then fails as a worker that crashes does. */
+  class CrashingWorker {
+    onmessage: ((m: MessageEvent<JobEvent>) => void) | null = null;
+    onerror: ((e: ErrorEvent) => void) | null = null;
+    terminated = false;
+    postMessage(j: NightJob) {
+      const first = [...jobEvents(CONTENT, j)].find((e) => e.kind === 'result')!;
+      this.onmessage?.({ data: first } as MessageEvent<JobEvent>);
+      this.onerror?.({ message: 'out of memory' } as ErrorEvent);
+    }
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  it('finishes a job on the main thread when its worker fails, each run once', () => {
+    const made: CrashingWorker[] = [];
+    const runner = new WorkerRunner(() => {
+      const w = new CrashingWorker();
+      made.push(w);
+      return w as unknown as Worker;
+    }, CONTENT);
+    const seen: JobEvent[] = [];
+    runner.start(job, (e) => seen.push(e));
+    for (let i = 0; i < 200 && seen.at(-1)?.kind !== 'end'; i++) runner.pump({ open: false });
+    const direct = [...jobEvents(CONTENT, job)];
+    expect(seen).toEqual(direct);
+    expect(made[0]!.terminated).toBe(true);
+    // The next night goes to the main thread at once.
+    const next: JobEvent[] = [];
+    runner.start(job, (e) => next.push(e));
+    for (let i = 0; i < 200 && next.at(-1)?.kind !== 'end'; i++) runner.pump({ open: false });
+    expect(next).toEqual(direct);
+    expect(made).toHaveLength(1);
+  });
+
+  it('runs on the main thread when no worker can be made', () => {
+    const runner = new WorkerRunner(() => {
+      throw new Error('refused');
+    }, CONTENT);
+    const seen: JobEvent[] = [];
+    runner.start(job, (e) => seen.push(e));
+    for (let i = 0; i < 200 && seen.at(-1)?.kind !== 'end'; i++) runner.pump({ open: false });
+    expect(seen.at(-1)).toEqual({ kind: 'end' });
   });
 });
 

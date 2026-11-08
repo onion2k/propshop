@@ -80,10 +80,33 @@ describe('compare', () => {
   it('says mixed when the windows disagree, so a lucky window is not an edge', () => {
     const r = compare(night(1, { baseline: [0, 0, 0], 'toggle:a': [BIG, -BIG, 0] })).find((x) => x.id === 'toggle:a')!;
     expect(r.tag).toBe('mixed');
-    expect(r.summary).toBe('mixed: better in 1 of 3 windows, worse in 1');
+    expect(r.summary).toBe('mixed: better in 1 of 3 windows, worse in 1, about the same in 1');
     expect(r.better).toBe(1);
     expect(r.worse).toBe(1);
     expect(r.same).toBe(1);
+  });
+
+  it('names only what happened in a mixed night, never "worse in 0"', () => {
+    const r = compare(night(1, { baseline: [0, 0, 0], 'toggle:a': [BIG, 0, 0] })).find((x) => x.id === 'toggle:a')!;
+    expect(r.summary).toBe('mixed: better in 1 of 3 windows, about the same in 2');
+    const w = compare(night(1, { baseline: [0, 0, 0], 'toggle:a': [0, -BIG, -BIG] })).find((x) => x.id === 'toggle:a')!;
+    expect(w.summary).toBe('mixed: worse in 2 of 3 windows, about the same in 1');
+  });
+
+  it('notes the side when every window is about the same but on one side of the baseline', () => {
+    const lo = compare(night(1, { baseline: [500, 500, 500], 'toggle:a': [450, 470, 440] })).find(
+      (x) => x.id === 'toggle:a',
+    )!;
+    expect(lo.tag).toBe('same');
+    expect(lo.lean).toBe('lower');
+    expect(lo.summary).toBe('about the same in 3 of 3 windows, though lower in every one');
+    const even = compare(night(1, { baseline: [500, 500, 500], 'toggle:a': [450, 520, 500] })).find(
+      (x) => x.id === 'toggle:a',
+    )!;
+    expect(even.lean).toBeNull();
+    expect(even.summary).toBe('about the same in 3 of 3 windows');
+    const one = compare(night(1, { baseline: [500, 0, 0], 'toggle:a': [550, 0, 0] }));
+    expect(one[1]!.lean).toBeNull();
   });
 
   it('says worse and about the same in all windows', () => {

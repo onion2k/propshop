@@ -124,12 +124,23 @@ describe('signals', () => {
     expect(of(signals([d(at - 1)], s, { shown: ALL }), 'fees')).toBeUndefined();
   });
 
-  it('fees: prefers nothing where a higher first parameter does not mean fewer trades', () => {
+  it('fees: on momentum prefers a higher threshold, its second parameter, and the night makes it', () => {
     const s = snap();
     const d = day(1, { byBlock: { momentum: T(1000, 900), arbitrage: T(0, 0) } });
     const hit = of(signals([d], s, { shown: ALL }), 'fees')!;
-    expect(hit).toBeDefined();
+    expect(hit.prefer).toEqual(['param:momentum:threshold:up']);
+    expect(hit.test).toMatch(/Raise Momentum's threshold/);
+    expectMakes(s, hit);
+  });
+
+  it('fees: prefers nothing for a block no parameter makes trade less, and says no test runs', () => {
+    const g = fixture();
+    g.setBlock('newsReaction', { enabled: true });
+    const s = snap(g);
+    const d = day(1, { byBlock: { newsReaction: T(1000, 900) } });
+    const hit = of(signals([d], s, { shown: ALL }), 'fees')!;
     expect(hit.prefer).toEqual([]);
+    expect(hit.test).toMatch(/no change the game can test/i);
   });
 
   it('bleeds: fires on the third losing day running, not the second, preferring it off', () => {

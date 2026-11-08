@@ -52,11 +52,20 @@ export const RIVAL_MIN_PNL = 10_000;
 export const RIVAL_GAP_MS = 1;
 
 /**
- * Blocks whose first parameter, stepped up, trades less (a higher edge, a wider quote, a bigger sweep). For the
- * others (momentum's and mean reversion's and pairs' lookback, the news block's size) up does not mean fewer
- * trades, so the fees signal prefers nothing for them.
+ * For each block, the parameter that, stepped up, makes it trade less: a higher edge or threshold, a wider quote,
+ * a bigger print to wait for. The news block has none (its size and window change how much, not how often), so
+ * the fees signal tests nothing for it and says so.
  */
-export const FEWER_TRADES_WHEN_UP: readonly string[] = ['arbitrage', 'sniper', 'indexArb', 'marketMaker', 'anticipate'];
+export const FEWER_TRADES: Readonly<Record<string, string>> = {
+  arbitrage: 'minEdge',
+  sniper: 'threshold',
+  indexArb: 'threshold',
+  marketMaker: 'halfSpread',
+  anticipate: 'bigPrint',
+  momentum: 'threshold',
+  meanReversion: 'threshold',
+  pairs: 'threshold',
+};
 
 export interface SignalOptions {
   /** Whether the stage shows a feature. */
@@ -146,7 +155,8 @@ export function signals(days: readonly DayReport[], s: Snapshot, opts: SignalOpt
     const fees = blocks.reduce((n, [, t]) => n + t.fees, 0);
     if (gross > 0 && fees >= FEES_SHARE * gross) {
       const worst = [...blocks].sort((a, b) => b[1].fees - a[1].fees)[0]![0];
-      const up = FEWER_TRADES_WHEN_UP.includes(worst) && enabled.has(worst) ? firstParamUp(worst) : null;
+      const param = enabled.has(worst) ? paramOf(worst, FEWER_TRADES[worst]) : null;
+      const up = param ? `param:${worst}:${param.key}:up` : null;
       out.push({
         id: 'fees:day',
         kind: 'fees',
@@ -155,7 +165,9 @@ export function signals(days: readonly DayReport[], s: Snapshot, opts: SignalOpt
         why:
           'Every share costs a fee at the exchange, win or lose. A strategy that trades for a sliver pays the ' +
           'fee on every sliver, and the profit left after it is what counts. Fewer, better trades can earn more.',
-        test: `Raise the threshold on ${blockName(worst)} so it trades less, and compare the P&L after fees.`,
+        test: param
+          ? `Raise ${blockName(worst)}'s ${param.name.toLowerCase()} so it trades less, and compare the P&L after fees.`
+          : `There is no change the game can test that makes ${blockName(worst)} trade less: compare its fees with what it makes over the next days.`,
         prefer: up ? [up] : [],
         term: 'maker-taker',
         strength: fees / gross / FEES_SHARE,
@@ -316,8 +328,8 @@ export function signals(days: readonly DayReport[], s: Snapshot, opts: SignalOpt
   return out.sort((a, b) => b.strength - a.strength || a.id.localeCompare(b.id)).slice(0, MAX_SIGNALS);
 }
 
-/** `param:<block>:<first param>:up` for a block in the registry. */
-function firstParamUp(block: string): string | null {
-  const p = BLOCKS.find((b) => b.spec.id === block)?.spec.params[0];
-  return p ? `param:${block}:${p.key}:up` : null;
+/** A block's parameter by key, from the registry; null where either is unknown. */
+function paramOf(block: string, key: string | undefined): { key: string; name: string } | null {
+  if (!key) return null;
+  return BLOCKS.find((b) => b.spec.id === block)?.spec.params.find((p) => p.key === key) ?? null;
 }

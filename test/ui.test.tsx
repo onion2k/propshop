@@ -1272,7 +1272,9 @@ describe('Overview', () => {
     expect(within(rows[1]!).getByText('The firm as it closed')).toBeInTheDocument();
     expect(within(rows[2]!).getByText('better in 3 of 3 windows')).toBeInTheDocument();
     expect(within(rows[2]!).getAllByText('better').length).toBeGreaterThanOrEqual(3);
-    expect(within(rows[3]!).getByText(/^mixed: better in 1 of 3 windows, worse in 1$/)).toBeInTheDocument();
+    expect(
+      within(rows[3]!).getByText(/^mixed: better in 1 of 3 windows, worse in 1, about the same in 1$/),
+    ).toBeInTheDocument();
     expect(within(rows[3]!).getByText('worse')).toBeInTheDocument();
     // An upgrade with a price says how long it takes to pay, as an extrapolation.
     expect(screen.getByText(/pays back in/)).toBeInTheDocument();
@@ -1282,6 +1284,23 @@ describe('Overview', () => {
     expect(caveats.getByText(/crowd answers each setup/)).toBeInTheDocument();
     expect(caveats.getByText(/dark web are left out/)).toBeInTheDocument();
     expect(screen.getByText(/Tests of Mon, week 2: done/)).toBeInTheDocument();
+  });
+
+  it('says in a sentence when nothing tested moved beyond the noise, and not when something did', () => {
+    const quiet = seeded([
+      night(7, { baseline: [500, 500, 500], 'toggle:a': [450, 470, 440], 'toggle:b': [520, 480, 500] }),
+    ]);
+    const store = createStore(CONTENT, quiet, 43);
+    store.setTutorial({ state: 'done' });
+    const { unmount } = render(<App store={store} />);
+    expect(screen.getByText(/Nothing tested moved the result beyond the noise/)).toBeInTheDocument();
+    expect(screen.getByText('about the same in 3 of 3 windows, though lower in every one')).toBeInTheDocument();
+    unmount();
+    const loud = seeded([night(7, { baseline: [0, 0, 0], 'toggle:a': [BIG, BIG, BIG] })]);
+    const again = createStore(CONTENT, loud, 43);
+    again.setTutorial({ state: 'done' });
+    render(<App store={again} />);
+    expect(screen.queryByText(/Nothing tested moved the result beyond the noise/)).toBeNull();
   });
 
   it('says why a night ran nothing, or only in part, and keeps a record over nights', () => {

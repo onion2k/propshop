@@ -12,13 +12,12 @@ import './ui/styles.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root in the page.');
 
-// The night's tests run in a worker. A browser that refuses one leaves the store its main-thread fallback.
-let runner: NightRunner | undefined;
-try {
-  runner = new WorkerRunner(() => new Worker(new URL('./backtest.worker.ts', import.meta.url), { type: 'module' }));
-} catch {
-  runner = undefined;
-}
+// The night's tests run in a worker; a browser that refuses one, or a worker that fails, runs them on the main
+// thread in closed hours.
+const runner: NightRunner = new WorkerRunner(
+  () => new Worker(new URL('./backtest.worker.ts', import.meta.url), { type: 'module' }),
+  CONTENT,
+);
 
 // The save is kept packed (it outgrows localStorage as JSON), packed in a worker of its own, and unpacked before
 // the store is made.

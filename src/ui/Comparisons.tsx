@@ -135,6 +135,13 @@ export function Comparisons({
               </tbody>
             </table>
           </div>
+          {rows.length > 1 && rows.slice(1).every((r) => r.tag === 'same') && (
+            <p className="small ov-quiet">
+              Nothing tested moved the result beyond the noise. That is a finding too: on this evidence none of these
+              changes is worth paying for or switching to. A row that sits on one side in every window is worth watching
+              over more nights.
+            </p>
+          )}
           {rows.some((r) => r.payback !== null) && (
             <ul className="small">
               {rows
@@ -204,14 +211,15 @@ function Reasons({ night, showing }: { night: Night; showing: Night | null }) {
 
 function Row({ r, titleOf }: { r: ComparisonRow; titleOf: (id: string) => string }) {
   const base = r.id === 'baseline';
+  // Each cell carries its column's name: on a phone the row is a card, and the name is drawn above each figure.
   return (
     <tr className={base ? 'you' : ''}>
-      <td>
+      <td className="ov-c-name">
         <strong>{base ? 'The firm as it closed' : r.label}</strong>
         {r.signals.length > 0 && <div className="small muted">asked for by: {r.signals.map(titleOf).join(', ')}</div>}
       </td>
       {r.windows.map((w) => (
-        <td key={w.pin} className="num">
+        <td key={w.pin} className="num ov-c-win" data-label={windowLabel(w.pin)}>
           {w.pnl === null ? (
             <span className="muted">—</span>
           ) : (
@@ -224,15 +232,21 @@ function Row({ r, titleOf }: { r: ComparisonRow; titleOf: (id: string) => string
           )}
         </td>
       ))}
-      <td className="num">
+      <td className="num ov-c-total" data-label="Total">
         <span className={tone(r.total.pnl)}>{signed(r.total.pnl)}</span>
         <div className={`small ${verdictTone(r.total.verdict)}`}>
           {r.total.verdict ? VERDICT_WORD[r.total.verdict] : 'baseline'}
         </div>
       </td>
-      <td className="num">{r.total.races}</td>
-      <td className="num muted">{money(-r.total.fees)}</td>
-      <td className={verdictTone(r.tag)}>{base ? <span className="muted">compared against</span> : r.summary}</td>
+      <td className="num ov-c-races" data-label="Races">
+        {r.total.races}
+      </td>
+      <td className="num muted ov-c-fees" data-label="Fees">
+        {money(-r.total.fees)}
+      </td>
+      <td className={`ov-c-verdict ${verdictTone(r.tag)}`}>
+        {base ? <span className="muted">compared against</span> : r.summary}
+      </td>
     </tr>
   );
 }

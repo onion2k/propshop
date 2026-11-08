@@ -107,26 +107,54 @@ export function variants(
   });
   const cand: Variant[] = [];
 
+  // Each block's first parameter a step either way, and its size: from home the first parameter moves a window
+  // by tens of dollars, inside the noise, while size scales what the block makes or loses, so a night shows a
+  // difference and the risk of it. The order (first up, size up, first down, size down) decides what the cap keeps.
   for (const b of enabled) {
     if (b.id === SCRIPT_ID) continue;
     const spec = blockById(b.id).spec;
-    const p = spec.params[0];
-    if (!p) continue;
+    const first = spec.params[0];
+    if (!first) continue;
+    const size = spec.params.find((p) => p.key === 'size' && p !== first);
     const params = paramsFrom(spec, b.params);
-    const now = params[p.key]!;
-    for (const [dir, to] of [
-      ['up', clampParam(p, now + p.step)],
-      ['down', clampParam(p, now - p.step)],
-    ] as const) {
+    const steps = (['up', 'down'] as const).flatMap((dir) =>
+      [first, size].filter((p) => p !== undefined).map((p) => ({ p, dir })),
+    );
+    for (const { p, dir } of steps) {
+      const now = params[p.key]!;
+      const to = clampParam(p, dir === 'up' ? now + p.step : now - p.step);
       if (to === now) continue;
       cand.push({
         id: `param:${b.id}:${p.key}:${dir}`,
         kind: 'param',
-        label: `${spec.name}: ${p.name} ${dir === 'up' ? 'up' : 'down'} to ${to}${p.unit ? ` ${p.unit}` : ''}`,
+        label: `${spec.name}: ${p.name} ${dir} to ${to}${p.unit ? ` ${p.unit}` : ''}`,
         setup: withBlock(b, { params: { ...params, [p.key]: to } }),
         about: b.id,
       });
     }
+  }
+
+  // A step on a block's other parameter, made only when asked for (a signal names the one that tests it).
+  for (const id of opts.prefer ?? []) {
+    const m = /^param:([^:]+):([^:]+):(up|down)$/.exec(id);
+    if (!m || cand.some((v) => v.id === id)) continue;
+    const [, blockId, key, dir] = m;
+    const b = enabled.find((x) => x.id === blockId);
+    if (!b || b.id === SCRIPT_ID || !knownBlock(b.id)) continue;
+    const spec = blockById(b.id).spec;
+    const p = spec.params.find((x) => x.key === key);
+    if (!p) continue;
+    const params = paramsFrom(spec, b.params);
+    const now = params[p.key]!;
+    const to = clampParam(p, dir === 'up' ? now + p.step : now - p.step);
+    if (to === now) continue;
+    cand.push({
+      id,
+      kind: 'param',
+      label: `${spec.name}: ${p.name} ${dir} to ${to}${p.unit ? ` ${p.unit}` : ''}`,
+      setup: withBlock(b, { params: { ...params, [p.key]: to } }),
+      about: b.id,
+    });
   }
 
   if (enabled.length > 1) {
