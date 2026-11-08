@@ -44,6 +44,11 @@ export interface InstrumentSpec {
   expiry?: number;
   /** Held against margin, not paid for: absent for anything bought outright, as a stock is. */
   margin?: MarginSpec;
+  /**
+   * Carry a year, a share (interest less what the underlying pays): with an underlying and an expiry, the
+   * instrument's fair value is the underlying's carried to expiry, worked out each tick and drawing nothing.
+   */
+  carry?: number;
   /** At expiry, paid in cash, or delivered as its underlying. Absent, cash. */
   settlement?: 'cash' | 'delivery';
 }

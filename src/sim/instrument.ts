@@ -59,3 +59,8 @@ export function liveContracts(series: ContractSeriesSpec, now: number): Instrume
   }
   return out;
 }
+
+/** Whether an instrument's fair value is derived from its underlying and carry rather than drawn. */
+export function isDerived(spec: InstrumentSpec): boolean {
+  return spec.carry !== undefined && spec.underlying !== undefined && spec.expiry !== undefined;
+}

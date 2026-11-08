@@ -453,8 +453,10 @@ export class Exchange {
     const bidCenter = Math.floor(s.belief / tick) * tick;
     const askCenter = bidCenter + tick;
     // How many crowd orders rest near the touch on each side: a bounded walk, since this runs every tick.
-    const bids = s.book.countNear('buy', bidCenter - PLACEMENT_RANGE);
-    const asks = s.book.countNear('sell', askCenter + PLACEMENT_RANGE);
+    // The crowd's distances count in the instrument's own grid where it has one; a stock's are cents, as before.
+    const unit = s.tickSize ?? 1;
+    const bids = s.book.countNear('buy', bidCenter - PLACEMENT_RANGE * unit);
+    const asks = s.book.countNear('sell', askCenter + PLACEMENT_RANGE * unit);
     // Replenish toward the target depth, faster when the book is thin, slower when the day is quiet.
     const rate = (0.15 + 0.85 * activity) * scale;
     if (bids < TARGET_DEPTH && random.chance(rate * (1 - bids / TARGET_DEPTH) * 2)) {
@@ -483,7 +485,9 @@ export class Exchange {
       s.book.cancelWhere(BACKGROUND, (o) => {
         const wrongSide = o.side === 'buy' ? o.price > s.belief : o.price < s.belief;
         if (wrongSide && random.chance(PULL_SHARE)) return true;
-        return Math.abs(o.price - s.belief) > STALE_DISTANCE || (now - o.at > 3000 && random.chance(0.1 * scale));
+        return (
+          Math.abs(o.price - s.belief) > STALE_DISTANCE * unit || (now - o.at > 3000 && random.chance(0.1 * scale))
+        );
       });
     }
   }

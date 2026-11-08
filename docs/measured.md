@@ -52,6 +52,10 @@ Measured by the PACE harness (`test/pace.test.ts`) and tuned by hand. A run of
 
 ## The market's mechanics
 
+- The futures desk's lead, 2026-11-08 (`test/futures.test.ts`, seed 6, ten minutes into the open): after every
+  stock rose 1% within 10 ms, the Prairie Board's index future was half way repriced in 90 ms and HARBOR's index
+  book in 736 ms. The crowds' lags (50 ms against 250, four times that for an index book) make it; nothing else.
+
 - Latency below one tick (2ms) is one tick: a colocated firm and one a millisecond away are the same.
 - The lab's batch auction batches the firms' orders and not the crowd's, so a waiting order meets a market
   that has moved; every firm loses under it, the fastest most. A real batch auction would hold the crowd too.

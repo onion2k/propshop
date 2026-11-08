@@ -4,9 +4,9 @@
 // the others once opened. Each desk draws its chance from its own world stream, so opening one changes nothing of
 // the stocks'.
 
-import { MS_PER_HOUR, MS_PER_SECOND, activity, isMarketOpen } from './clock';
+import { MS_PER_HOUR, MS_PER_SECOND, MS_PER_YEAR, activity, isMarketOpen } from './clock';
 import { Exchange, type SavedExchange } from './exchange';
-import { STOCKS_DESK, deskOf, listedOn, liveContracts, scaleOf } from './instrument';
+import { STOCKS_DESK, deskOf, isDerived, listedOn, liveContracts, scaleOf } from './instrument';
 import type { Random } from './random';
 import type { ContractSeriesSpec, ExchangeSpec, FactorSpec, MarginSpec, RegimeSpec, StockSpec } from './types';
 
@@ -120,6 +120,7 @@ export class Market {
       this.anchor.set(s.symbol, s.startPrice);
       this.history.set(s.symbol, []);
       const desk = deskOf(s);
+      if (isDerived(s)) continue;
       if (desk === STOCKS_DESK) this.factors.sectors.set(s.sector, 0);
       else {
         const f = this.deskFactors.get(desk) ?? new Map<string, number>();
@@ -199,7 +200,9 @@ export class Market {
       for (const c of wanted[i] ?? []) {
         if (this.rootOf.has(c.symbol)) continue;
         const sibling = this.live(series.root)[0];
-        const fair = (sibling !== undefined ? this.fair.get(sibling) : undefined) ?? c.startPrice;
+        const fair = isDerived(c)
+          ? this.carried(c, now)
+          : ((sibling !== undefined ? this.fair.get(sibling) : undefined) ?? c.startPrice);
         this.instruments.push(c);
         this.rootOf.set(c.symbol, series.root);
         this.fair.set(c.symbol, fair);
@@ -208,9 +211,11 @@ export class Market {
         this.scales.set(c.symbol, scaleOf(c));
         if (c.margin) this.margins.set(c.symbol, c.margin);
         const desk = deskOf(c);
-        const f = this.deskFactors.get(desk) ?? new Map<string, number>();
-        if (!f.has(c.sector)) f.set(c.sector, 0);
-        if (desk !== STOCKS_DESK) this.deskFactors.set(desk, f);
+        if (!isDerived(c)) {
+          const f = this.deskFactors.get(desk) ?? new Map<string, number>();
+          if (!f.has(c.sector)) f.set(c.sector, 0);
+          if (desk !== STOCKS_DESK) this.deskFactors.set(desk, f);
+        }
         for (const e of this.venues) if (listedOn(c, e.spec)) e.list(c, fair);
       }
     });
@@ -308,6 +313,7 @@ export class Market {
       if (!stream) throw new Error(`No world stream for the ${desk} desk`);
       this.driftDesk(desk, factors, dt, stream);
     }
+    this.settleDerived(now);
     const act = activity(now);
     for (const e of this.exchanges) {
       const stream = crowd[e.id];
@@ -329,6 +335,23 @@ export class Market {
     return { closed, closedVenues };
   }
 
+  /** A derived instrument's fair value: its underlying's, carried to expiry. Draws nothing. */
+  private carried(s: StockSpec, now: number): number {
+    const under = this.fair.get(s.underlying ?? '') ?? s.startPrice;
+    const years = Math.max(0, (s.expiry ?? now) - now) / MS_PER_YEAR;
+    return under * (1 + (s.carry ?? 0) * years);
+  }
+
+  /** Every live derived instrument follows its underlying, each tick, and meets it at expiry. */
+  private settleDerived(now: number): void {
+    for (const s of this.stocks) {
+      if (!isDerived(s)) continue;
+      const fair = this.carried(s, now);
+      this.fair.set(s.symbol, fair);
+      this.anchor.set(s.symbol, fair);
+    }
+  }
+
   /**
    * Another desk's fair values: each sector's factor and each instrument's own wander back to its anchor, drawn
    * from the desk's own stream. No regime, no market factor and no jumps yet: each desk's plan adds its own.
@@ -342,7 +365,7 @@ export class Market {
       moves.set(sector, move);
     }
     for (const s of this.instruments) {
-      if (deskOf(s) !== desk || s.constituents) continue;
+      if (deskOf(s) !== desk || s.constituents || isDerived(s)) continue;
       const fair = this.fair.get(s.symbol) ?? s.startPrice;
       const anchor = this.anchor.get(s.symbol) ?? s.startPrice;
       const common = (fair * (moves.get(s.sector) ?? 0)) / 10_000;

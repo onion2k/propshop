@@ -103,6 +103,7 @@ export {
   MS_PER_MINUTE,
   MS_PER_SECOND,
   MS_PER_WEEK,
+  MS_PER_YEAR,
 } from './clock';
 export { regimeFor } from './regime';
 export { BACKTEST_WINDOW_MS, MAX_DAY_PINS, MAX_VARIANTS, pinTimes, testNight, variants } from './backtest';

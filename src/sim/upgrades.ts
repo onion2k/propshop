@@ -37,14 +37,20 @@ export function withUpgrade(
   return { ...infra, [kind]: spec };
 }
 
-export function catalogue(content: Content, firm: Firm, owned: ReadonlySet<string>): UpgradeOffer[] {
+/** The shop, each offer with its latency to each venue in `venues` (the open desks'), or every one it has a distance to. */
+export function catalogue(
+  content: Content,
+  firm: Firm,
+  owned: ReadonlySet<string>,
+  venues?: readonly string[],
+): UpgradeOffer[] {
   const out: UpgradeOffer[] = [];
   const add = (kind: UpgradeKind, specs: Infrastructure[UpgradeKind][]) => {
     for (const spec of specs) {
       const infra = withUpgrade(firm.infra, kind, spec);
       const latency: Record<string, number> = {};
       const dataLatency: Record<string, number> = {};
-      for (const e of Object.keys(firm.infra.location.distance)) {
+      for (const e of venues ?? Object.keys(firm.infra.location.distance)) {
         latency[e] = latencyTo(infra, e);
         dataLatency[e] = dataLatencyTo(infra, e);
       }

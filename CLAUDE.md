@@ -58,6 +58,8 @@ DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one per
   objects: clone a save before keeping it.
 - `art/` is source pictures; what the page serves is the WebP beside
   `src/main.tsx`.
+- `src/content/futures.ts` is the futures desk: the Prairie Board, its distances, and the index future series
+  (`IXF`, the index carried to expiry), all in the content and closed until the desk opens (`plans/desk-futures.md`).
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps

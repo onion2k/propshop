@@ -8,8 +8,8 @@ import { infrastructureFrom } from '../src/sim/upgrades';
 import { EXCHANGES, STOCKS } from './fixtures';
 
 /** A colocated firm with four blocks and a hand order, five minutes into the open: every value path at work. */
-function busyGame(): Game {
-  const g = new Game(CONTENT, 1);
+function busyGame(content = CONTENT): Game {
+  const g = new Game(content, 1);
   g.firm.infra = infrastructureFrom(CONTENT, { location: 'colo-harbor', network: 'microwave', computer: 'rack' });
   const on = ['momentum', 'arbitrage', 'marketMaker', 'indexArb'];
   for (const b of g.firm.blocks) b.enabled = on.includes(b.id);
@@ -28,7 +28,6 @@ describe('instruments, folded in from stocks', () => {
     const g = busyGame();
     const f = g.firm;
     expect(f.stats.fillsReceived).toBe(616);
-    expect(g.fingerprint()).toBe('c08c8813');
     expect(f.cash).toBe(-5744615);
     expect(f.realised).toBe(62915.67450731223);
     expect(f.feesPaid).toBe(16965);
@@ -36,6 +35,11 @@ describe('instruments, folded in from stocks', () => {
     expect(f.equity(g.market, g.now)).toBe(20056935);
     expect((f as unknown as { exposure(): number }).exposure()).toBe(75209065.67450732);
     expect(g.competitors.map((c) => c.cash)).toEqual([200000000, 199999972, 200001148, 200002880, 200000000]);
+    // The save now carries the futures desk, there and closed (its venue's books, streams and contracts), so the
+    // whole game's fingerprint moved on 2026-11-08 while every figure above stayed; without the desk it is the same.
+    expect(g.fingerprint()).toBe('50fb0670');
+    const stocksOnly = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
+    expect(busyGame(stocksOnly).fingerprint()).toBe('c08c8813');
   }, 120_000);
 
   /** A future on an index: fifty times the index, quoted in quarter points of a dollar. */

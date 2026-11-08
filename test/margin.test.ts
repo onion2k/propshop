@@ -13,6 +13,9 @@ import {
   type SavedGame,
 } from '../src/sim';
 
+/** The game's content without its futures desk, so a test's own desk is the only one. */
+const STOCKS_ONLY = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
+
 const H = MS_PER_HOUR;
 const at = (d: number, ms: number) => d * MS_PER_DAY + ms;
 
@@ -78,9 +81,9 @@ const DF: ContractSeriesSpec = {
 
 /** Two stocks beside the desk, not the twelve: the stocks only have to be there, and fewer books step faster. */
 const DESK: Content = {
-  ...CONTENT,
+  ...STOCKS_ONLY,
   stocks: [...CONTENT.stocks.filter((s) => !s.constituents).slice(0, 2), MT],
-  exchanges: [...CONTENT.exchanges, PRAIRIE],
+  exchanges: [...STOCKS_ONLY.exchanges, PRAIRIE],
   locations: CONTENT.locations.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: 12 } })),
   series: [TF, DF],
 };

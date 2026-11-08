@@ -16,7 +16,8 @@ export function tick(
   news: readonly Headline[],
 ) {
   const { closed, closedVenues } = market.step(now, dt, streams.world, streams.crowd, streams.desks);
-  const open = isMarketOpen(now);
+  // The firms decide in the stocks' hours, and while an open desk's venue with hours of its own is open.
+  const open = isMarketOpen(now) || market.exchanges.some((e) => e.session !== null && e.isOpen(now));
   const bumps: Record<string, number> = {};
   const taxes: Record<string, number> = {};
   for (const e of market.exchanges) {

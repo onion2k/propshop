@@ -2,6 +2,7 @@
 import type { Content } from '../sim';
 import { DESK } from './desk';
 import { EXCHANGES } from './exchanges';
+import { IXF, PRAIRIE, PRAIRIE_DISTANCE } from './futures';
 import { NEWS } from './news';
 import { REGIMES } from './regimes';
 import { FACTORS, STOCKS } from './stocks';
@@ -9,9 +10,11 @@ import { COMPETITORS, COMPUTERS, LOCATIONS, NETWORKS, START, STARTING_CASH } fro
 
 export const CONTENT: Content = {
   stocks: STOCKS,
-  exchanges: EXCHANGES,
+  // The futures desk's venue and contracts: there, and closed, until the desk opens.
+  exchanges: [...EXCHANGES, PRAIRIE],
+  series: [IXF],
   news: NEWS,
-  locations: LOCATIONS,
+  locations: LOCATIONS.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: PRAIRIE_DISTANCE[l.id] ?? 20 } })),
   networks: NETWORKS,
   computers: COMPUTERS,
   competitors: COMPETITORS,

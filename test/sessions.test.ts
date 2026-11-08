@@ -25,6 +25,9 @@ import {
   type SessionSpec,
 } from '../src/sim/session';
 
+/** The game's content without its futures desk, so a test's own desk is the only one. */
+const STOCKS_ONLY = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
+
 const H = MS_PER_HOUR;
 const MON = 0;
 const FRI = 4;
@@ -57,9 +60,9 @@ const TF: InstrumentSpec = {
 };
 /** The game's content with the test desk: every location given a distance to the Prairie Board. */
 const WITH_DESK = {
-  ...CONTENT,
+  ...STOCKS_ONLY,
   stocks: [...CONTENT.stocks, TF],
-  exchanges: [...CONTENT.exchanges, PRAIRIE],
+  exchanges: [...STOCKS_ONLY.exchanges, PRAIRIE],
   locations: CONTENT.locations.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: 12 } })),
 };
 /** The same with two stocks, for the tests that run long and only need the stocks there. */

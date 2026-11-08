@@ -901,7 +901,12 @@ export class Game {
           pnl: f.equity(this.market, now) - (this.equityAtRulesChange[f.id] ?? f.equity(this.market, now)),
         })),
       },
-      shop: catalogue(this.content, firm, this.owned),
+      shop: catalogue(
+        this.content,
+        firm,
+        this.owned,
+        this.market.exchanges.map((e) => e.id),
+      ),
       days: this.days,
       log: this.log,
     };
