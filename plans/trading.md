@@ -1,6 +1,7 @@
 # From a high-frequency sim to a trading sim
 
-State: parked, waiting on Chris's answers to the questions below and agreement to the order of the desks.
+State: questions answered 2026-11-08 (below); the order of the desks agreed. Next: the futures desk's own plan,
+`plans/desk-futures.md`, made on `opus` in plan mode.
 
 ## Context
 
@@ -117,7 +118,8 @@ firms paid for microwave towers to carry its price across.
 Why second: small to build (three books and a block) and it teaches arbitrage in its purest form, now with
 three legs, and a market that does not close.
 
-- **Market:** three fictional currencies, so three pairs and their cross, on two venues: an exchange-style book
+- **Market:** three real currencies, the dollar (the firm's home), the euro and the yen, so EUR/USD and USD/JPY
+  and their cross EUR/JPY, on two fictional venues: an exchange-style book
   and a **dealer venue** with "last look", where a dealer may refuse your fill a few milliseconds after it
   sees it.
 - **Lessons:** triangular arbitrage; a pip, and why prices are quoted to four places; three legs, so two
@@ -183,21 +185,24 @@ signals and comparisons work across desks ("the futures desk's lead pays for the
 
 ## The compressions the game makes, to be said in each desk's "what is not held"
 
-- Expiries are **weekly**, not monthly or quarterly, so a roll comes within an evening's play.
+- Futures and metals expire **weekly**, not monthly or quarterly, so a roll comes within an evening's play;
+  options' expiries are decided in their own plan.
 - One home currency; the firm's books are in dollars.
 - One volatility path a day for options, with a fixed skew; no volatility surface fitted to the crowd.
 - A contract's size is chosen so one is about what the stocks desk's one block risks. Real contract sizes would
   be beyond a small firm's means.
 
-## Questions for Chris
+## Questions for Chris, answered 2026-11-08
 
-- [ ] **Fictional currencies or real ones?** The README says no real companies or exchanges; three made-up
-      currencies keep that, real ones are easier to recognise. Proposed: fictional.
-- [ ] **One firm with desks, or a run per desk?** Proposed: one firm, one pot of capital, desks opened in turn,
-      so the cross-desk lessons are possible.
-- [ ] **Is the order right?** Futures, currencies, metals, options. Currencies could come first as the smallest
-      build; futures first is proposed because it extends what the stocks desk already teaches.
-- [ ] **Weekly expiries** acceptable as the game's compression?
+- [x] **Real currencies, not fictional ones:** the dollar, the euro and the yen, to ground the desk in something
+      the player knows. The venues stay fictional and the rates are the sim's own, drawn from `world:fx` at
+      realistic sizes (a pip, a day's move), not real history; the README's "no real money, no real exchanges,
+      no real companies" still holds.
+- [x] **One firm with desks,** one pot of capital, desks opened in turn, each desk on its own streams.
+- [x] **The order as proposed:** futures, currencies, metals, options. Futures adds two books, which matters
+      while the step-rate test is near its floor.
+- [x] **Weekly expiries** for futures and metals. For options, daily or weekly is decided in its own plan: real
+      index options now expire daily, so daily would be accurate, and it puts the volatility crush inside a day.
 
 ## Parts
 
