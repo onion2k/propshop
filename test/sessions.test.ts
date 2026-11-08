@@ -62,6 +62,8 @@ const WITH_DESK = {
   exchanges: [...CONTENT.exchanges, PRAIRIE],
   locations: CONTENT.locations.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: 12 } })),
 };
+/** The same with two stocks, for the tests that run long and only need the stocks there. */
+const SMALL_DESK = { ...WITH_DESK, stocks: [...CONTENT.stocks.filter((s) => !s.constituents).slice(0, 2), TF] };
 const STOCK_SYMBOLS = CONTENT.stocks.map((s) => s.symbol);
 
 /** A game with the player idle, five minutes into the stocks' open. */
@@ -155,7 +157,7 @@ describe('desks and venues', () => {
   }, 60_000);
 
   it('open and close a venue on its own hours: its books empty at its close, and an order then is refused', () => {
-    const g = new Game(WITH_DESK, 7);
+    const g = new Game(SMALL_DESK, 7);
     g.openDesk('futures');
     for (const b of g.firm.blocks) b.enabled = false;
     const prairie = g.market.venue('PRAIRIE');

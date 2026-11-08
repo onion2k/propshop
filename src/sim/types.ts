@@ -38,10 +38,38 @@ export interface InstrumentSpec {
   tickSize?: number;
   /** The venues that list it; absent, every venue of its desk. */
   venues?: string[];
-  /** What a contract is on. From part 3; not read yet. */
+  /** What a contract is on: what a delivered contract becomes. */
   underlying?: string;
-  /** When a contract expires, simulated ms. From part 3; not read yet. */
+  /** When a contract expires, simulated ms. */
   expiry?: number;
+  /** Held against margin, not paid for: absent for anything bought outright, as a stock is. */
+  margin?: MarginSpec;
+  /** At expiry, paid in cash, or delivered as its underlying. Absent, cash. */
+  settlement?: 'cash' | 'delivery';
+}
+
+/** What a margined instrument asks the firm to hold against it, as shares of a contract's value. */
+export interface MarginSpec {
+  /** To open or add to a position. */
+  initial: number;
+  /** To keep one: below it, the firm is flattened (the margin call). */
+  maintenance: number;
+}
+
+/**
+ * A series of contracts: contract `k` is `<root><k>`, expiring at `k × period + expiresAt`, and `live` of them are
+ * listed at a time, the next listed as one expires.
+ */
+export interface ContractSeriesSpec {
+  root: string;
+  /** Every contract's spec but its symbol and expiry. */
+  contract: Omit<InstrumentSpec, 'symbol' | 'expiry'>;
+  /** Simulated ms between expiries: a week. */
+  period: number;
+  /** When in its period a contract expires, ms from the period's start (Monday 00:00 for a week). */
+  expiresAt: number;
+  /** How many are listed at once; at most `MAX_LIVE_PER_SERIES`. */
+  live: number;
 }
 
 /** A stock is an instrument; the name stays for the content's list of stocks until venues arrive. */
@@ -182,6 +210,8 @@ export interface FactorSpec {
 /** Everything the content hands the sim. */
 export interface Content {
   stocks: StockSpec[];
+  /** Contract series, listed as time passes; absent, none. */
+  series?: ContractSeriesSpec[];
   exchanges: ExchangeSpec[];
   news: NewsTemplate[];
   locations: LocationSpec[];

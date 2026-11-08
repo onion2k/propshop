@@ -6,9 +6,9 @@
 
 import { MS_PER_HOUR, MS_PER_SECOND, activity, isMarketOpen } from './clock';
 import { Exchange, type SavedExchange } from './exchange';
-import { STOCKS_DESK, deskOf, listedOn, scaleOf } from './instrument';
+import { STOCKS_DESK, deskOf, listedOn, liveContracts, scaleOf } from './instrument';
 import type { Random } from './random';
-import type { ExchangeSpec, FactorSpec, RegimeSpec, StockSpec } from './types';
+import type { ContractSeriesSpec, ExchangeSpec, FactorSpec, MarginSpec, RegimeSpec, StockSpec } from './types';
 
 /** A day with no character: every multiplier one, no drift. What the market runs on until the game says. */
 export const PLAIN_DAY: RegimeSpec = {
@@ -59,8 +59,16 @@ export interface SavedMarket {
 }
 
 export class Market {
-  /** Every instrument, of every desk, open or not. */
-  readonly instruments: readonly StockSpec[];
+  /** Every instrument, of every desk, open or not: the content's, and the contracts listed now. */
+  readonly instruments: StockSpec[];
+  /** The contract series, listed as time passes. */
+  private readonly series: readonly ContractSeriesSpec[];
+  /** Each listed contract's series root. */
+  private readonly rootOf = new Map<string, string>();
+  /** The soonest expiry among the listed contracts; Infinity with none. */
+  nextExpiry = Infinity;
+  /** What a margined instrument asks the firm to hold against it, by symbol (`instrument.ts`). */
+  readonly margins = new Map<string, MarginSpec>();
   /** Every venue, of every desk, open or not. */
   readonly venues: readonly Exchange[];
   /** The instruments of the open desks: what the firms see, the snapshot shows and the history samples. */
@@ -86,14 +94,17 @@ export class Market {
   regime: RegimeSpec = PLAIN_DAY;
   private drifts = new Map<string, number>();
   /** Cents a price point of one held unit is worth, by symbol: one for every stock (`instrument.ts`). */
-  readonly scales: ReadonlyMap<string, number>;
+  readonly scales: Map<string, number>;
 
   constructor(
     stocks: StockSpec[],
     exchanges: ExchangeSpec[],
     factors: FactorSpec = { marketHourlyBps: 0, sectorHourlyBps: 0, ownReversionPerHour: 0.1 },
+    series: readonly ContractSeriesSpec[] = [],
   ) {
-    this.instruments = stocks;
+    this.series = series;
+    this.instruments = [...stocks];
+    for (const s of stocks) if (s.margin) this.margins.set(s.symbol, s.margin);
     this.stockDesk = stocks.filter((s) => deskOf(s) === STOCKS_DESK);
     this.scales = new Map(stocks.map((s) => [s.symbol, scaleOf(s)]));
     this.factorSpec = factors;
@@ -132,7 +143,11 @@ export class Market {
   /** The desks other than the stocks that have an instrument or a venue, in the content's order. */
   get desks(): string[] {
     const out: string[] = [];
-    for (const d of [...this.instruments.map(deskOf), ...this.venues.map((e) => e.desk)])
+    for (const d of [
+      ...this.instruments.map(deskOf),
+      ...this.series.map((s) => deskOf(s.contract)),
+      ...this.venues.map((e) => e.desk),
+    ])
       if (d !== STOCKS_DESK && !out.includes(d)) out.push(d);
     return out;
   }
@@ -145,8 +160,75 @@ export class Market {
   openDesk(desk: string): void {
     if (this.openDesks.has(desk)) return;
     this.openDesks.add(desk);
+    this.refreshLive();
+  }
+
+  private refreshLive(): void {
     this.stocks = this.instruments.filter((s) => this.openDesks.has(deskOf(s)));
     this.exchanges = this.venues.filter((e) => this.openDesks.has(e.desk));
+  }
+
+  /** The listed contracts of a series, in order of expiry. */
+  live(root: string): string[] {
+    return this.instruments.filter((s) => this.rootOf.get(s.symbol) === root).map((s) => s.symbol);
+  }
+
+  /** The listed contracts whose expiry has come: to settle, then delist with `refreshContracts`. */
+  expired(now: number): StockSpec[] {
+    return this.instruments.filter((s) => s.expiry !== undefined && s.expiry <= now);
+  }
+
+  /**
+   * List each series' live contracts at `now` and delist what has expired: the same steps, in the same order,
+   * for a game running on and one loaded from a save, so the two keep the same state to the byte. A new contract
+   * starts at the fair value of the nearest of its series still listed, or the series' start. Returns the orders
+   * that rested in a delisted book, for their owners.
+   */
+  refreshContracts(now: number): { symbol: string; owner: string; id: number }[] {
+    const gone: { symbol: string; owner: string; id: number }[] = [];
+    const wanted = this.series.map((s) => liveContracts(s, now));
+    const keep = new Set(wanted.flat().map((c) => c.symbol));
+    for (const s of [...this.instruments]) {
+      if (!this.rootOf.has(s.symbol) || keep.has(s.symbol)) continue;
+      for (const e of this.venues) gone.push(...e.delist(s.symbol));
+      this.instruments.splice(this.instruments.indexOf(s), 1);
+      for (const m of [this.fair, this.anchor, this.history, this.scales, this.margins, this.drifts, this.rootOf])
+        m.delete(s.symbol);
+    }
+    this.series.forEach((series, i) => {
+      for (const c of wanted[i] ?? []) {
+        if (this.rootOf.has(c.symbol)) continue;
+        const sibling = this.live(series.root)[0];
+        const fair = (sibling !== undefined ? this.fair.get(sibling) : undefined) ?? c.startPrice;
+        this.instruments.push(c);
+        this.rootOf.set(c.symbol, series.root);
+        this.fair.set(c.symbol, fair);
+        this.anchor.set(c.symbol, fair);
+        this.history.set(c.symbol, []);
+        this.scales.set(c.symbol, scaleOf(c));
+        if (c.margin) this.margins.set(c.symbol, c.margin);
+        const desk = deskOf(c);
+        const f = this.deskFactors.get(desk) ?? new Map<string, number>();
+        if (!f.has(c.sector)) f.set(c.sector, 0);
+        if (desk !== STOCKS_DESK) this.deskFactors.set(desk, f);
+        for (const e of this.venues) if (listedOn(c, e.spec)) e.list(c, fair);
+      }
+    });
+    this.nextExpiry = Math.min(Infinity, ...this.instruments.map((s) => s.expiry ?? Infinity));
+    this.refreshLive();
+    return gone;
+  }
+
+  /** The margined instruments a venue settles at its close: those it is the first live listing of. */
+  settlesOn(venue: string): string[] {
+    return this.stocks.filter((s) => s.margin && this.venuesOf(s.symbol)[0]?.id === venue).map((s) => s.symbol);
+  }
+
+  /** The price a margined instrument settles at: its fair value, on its grid. */
+  settlementPrice(symbol: string): number {
+    const spec = this.stock(symbol);
+    const tick = spec.tickSize ?? this.venues.find((e) => e.lists(symbol))?.rules.tickSize ?? 1;
+    return Math.round((this.fair.get(symbol) ?? spec.startPrice) / tick) * tick;
   }
 
   /** The live venues that list a symbol, in the content's order. */
@@ -216,7 +298,7 @@ export class Market {
     world: Random,
     crowd: Readonly<Record<string, Random>>,
     desks: Readonly<Record<string, Random>> = {},
-  ): { closed: { symbol: string; owner: string; id: number }[] | null } {
+  ): { closed: { symbol: string; owner: string; id: number }[] | null; closedVenues: string[] } {
     const open = isMarketOpen(now);
     this.open = open;
     this.drift(dt, world);
@@ -234,13 +316,17 @@ export class Market {
     }
     // Each venue closes on its own hours: its books empty and the orders go back to their owners.
     let closed: { symbol: string; owner: string; id: number }[] | null = null;
+    const closedVenues: string[] = [];
     for (const e of this.exchanges) {
       const isOpen = e.session ? e.isOpen(now) : open;
-      if (e.wasOpen && !isOpen) (closed ??= []).push(...e.close());
+      if (e.wasOpen && !isOpen) {
+        (closed ??= []).push(...e.close());
+        closedVenues.push(e.id);
+      }
       e.wasOpen = isOpen;
     }
     if (now - this.lastSample >= HISTORY_EVERY) this.sample(now);
-    return { closed };
+    return { closed, closedVenues };
   }
 
   /**

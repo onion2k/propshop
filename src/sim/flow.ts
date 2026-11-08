@@ -15,7 +15,7 @@ export function tick(
   streams: Streams,
   news: readonly Headline[],
 ) {
-  const { closed } = market.step(now, dt, streams.world, streams.crowd, streams.desks);
+  const { closed, closedVenues } = market.step(now, dt, streams.world, streams.crowd, streams.desks);
   const open = isMarketOpen(now);
   const bumps: Record<string, number> = {};
   const taxes: Record<string, number> = {};
@@ -28,6 +28,7 @@ export function tick(
     f.bumps = bumps;
     f.taxes = taxes;
     f.scales = market.scales;
+    f.margins = market.margins;
     f.batchedAt = now;
     f.step(now, market, news, open);
   }
@@ -36,7 +37,7 @@ export function tick(
     e.logQuotes(now);
   }
   if (closed) for (const f of firms) f.onClose(closed);
-  return { closed: closed !== null };
+  return { closed: closed !== null, closedVenues };
 }
 
 function fees(market: Market): Record<string, number> {

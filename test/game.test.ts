@@ -434,7 +434,7 @@ describe('Game', () => {
 
   it('refuses a save from another version', () => {
     const g = new Game(CONTENT, 11);
-    const saved = { ...g.save(), version: 3 } as unknown as SavedGame;
+    const saved = { ...g.save(), version: 4 } as unknown as SavedGame;
     expect(() => Game.load(CONTENT, saved)).toThrow(/version/);
   });
 
@@ -582,7 +582,7 @@ describe('Game streams', () => {
     g.skipToOpen();
     run(g, MS_PER_MINUTE);
     const saved = g.save();
-    expect(saved.version).toBe(2);
+    expect(saved.version).toBe(3);
     expect(Object.keys(saved.streams.crowd)).toEqual(CONTENT.exchanges.map((e) => e.id));
     const copy = Game.load(CONTENT, JSON.parse(JSON.stringify(saved)) as SavedGame);
     expect(copy.fingerprint()).toBe(g.fingerprint());
@@ -605,6 +605,6 @@ describe('Game streams', () => {
     run(b, MS_PER_MINUTE);
     expect(a.now).toBe(g.now + MS_PER_MINUTE);
     expect(a.fingerprint()).toBe(b.fingerprint());
-    expect(a.save().version).toBe(2);
+    expect(a.save().version).toBe(3);
   });
 });

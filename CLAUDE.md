@@ -119,10 +119,16 @@ For anything new, check what it does:
 - **one leg only:** an arbitrage whose far leg misses leaves a position; the block scratches its own.
 - **capacity:** orders past the computer's limit are dropped and counted, never queued.
 - **a tip:** real or made up, and the fine that may follow days later.
-- **saved:** a save from the previous tick loads to the same future. A version 1 save, from before the
-  streams, loads with its streams drawn from its one random state: a good game, not the future it had. Any
-  other version is refused. The page's save is packed in a worker, so the save begun as the page closes may not
+- **saved:** a save from the previous tick loads to the same future. Saves are version 3; a version 2 save, from
+  before margin, loads as it is. A version 1 save, from before the streams, loads with its streams drawn from its
+  one random state: a good game, not the future it had. Any other version is refused. The live contracts are not
+  saved: they are listed again from the save's time, by the same steps a running game took. The page's save is packed in a worker, so the save begun as the page closes may not
   land: a reload comes back to the last one written, at most ten seconds (`SAVE_EVERY`) of play behind.
+- **margin:** an instrument with a `margin` is held, not bought: a fill moves cash by the fee and what it
+  realises, equity counts its unrealised, the leverage cap leaves it out and an order past the initial margin is
+  refused. It settles at its first listing venue's close (cash moves, equity does not); below the maintenance
+  margin the firm is flattened in what is margined and trades on; at expiry it closes at the final price, or is
+  delivered as its underlying, and the next contract of its series is listed (`MAX_LIVE_PER_SERIES`).
 - **the same morning:** an experiment's two runs see the same fair values and headlines; the crowd answers
   each firm's orders, so the books differ, and the result page says so.
 - **a slow firm:** latency of twenty ticks sees the past and arrives late; a colocated one is one tick.

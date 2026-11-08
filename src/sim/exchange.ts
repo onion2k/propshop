@@ -24,6 +24,8 @@ import { DEFAULT_RULES, type ExchangeRules, type ExchangeSpec } from './types';
 export const BACKGROUND = 'bg';
 /** Why a venue with hours of its own refused an order: it arrived while the venue was closed. */
 export const REFUSED_CLOSED = 'market closed';
+/** Why a venue refused an order or a cancel: it does not list the symbol, or no longer (an expired contract). */
+export const REFUSED_UNLISTED = 'not listed here';
 
 /** How many resting orders the background crowd aims to keep on each side of each book. */
 const TARGET_DEPTH = 24;
@@ -123,6 +125,33 @@ export class Exchange {
   /** Whether it lists a symbol: an exchange has books for what it lists and no others. */
   lists(symbol: string): boolean {
     return this.stocks.has(symbol);
+  }
+
+  /** List an instrument from now: a new book, the crowd's belief at its fair value. */
+  list(spec: { symbol: string; tickSize?: number }, fair: number): void {
+    if (this.stocks.has(spec.symbol)) return;
+    this.stocks.set(spec.symbol, {
+      book: new OrderBook(),
+      index: false,
+      ...(spec.tickSize === undefined ? {} : { tickSize: spec.tickSize }),
+      belief: fair,
+      tape: [],
+      quoteLog: [],
+    });
+  }
+
+  /** Stop listing a symbol: its book goes, and every order resting in it goes back to its owner. */
+  delist(symbol: string): { symbol: string; owner: string; id: number }[] {
+    const s = this.stocks.get(symbol);
+    if (!s) return [];
+    const gone: { symbol: string; owner: string; id: number }[] = [];
+    for (const o of s.book.resting()) {
+      if (o.owner !== BACKGROUND) gone.push({ symbol, owner: o.owner, id: o.id });
+      s.book.cancel(o.id);
+    }
+    this.stocks.delete(symbol);
+    this.pending = this.pending.filter((p) => p.symbol !== symbol);
+    return gone;
   }
 
   isOpen(now: number): boolean {
@@ -289,8 +318,9 @@ export class Exchange {
    */
   submit(symbol: string, req: OrderRequest, now: number, done?: (r: SubmitResult) => void): SubmitResult | null {
     // A venue with hours of its own takes nothing while closed. A stock venue keeps its old behaviour, in which an
-    // order still in the wire at the close rests in the emptied book.
-    if (this.session && !isOpenIn(this.session, now)) {
+    // order still in the wire at the close rests in the emptied book. Nobody takes an order for what is not listed.
+    const unlisted = !this.stocks.has(symbol);
+    if (unlisted || (this.session && !isOpenIn(this.session, now))) {
       const order = {
         id: -1,
         owner: req.owner,
@@ -304,7 +334,7 @@ export class Exchange {
         display: req.display ?? null,
         shown: 0,
       };
-      const refused: SubmitResult = { order, trades: [], refused: REFUSED_CLOSED };
+      const refused: SubmitResult = { order, trades: [], refused: unlisted ? REFUSED_UNLISTED : REFUSED_CLOSED };
       return refused;
     }
     const shaped = this.shape(this.stock(symbol), req);
@@ -342,6 +372,7 @@ export class Exchange {
 
   /** Cancel a resting order; refused, with the time left, where it has not rested long enough. */
   cancel(symbol: string, id: number, now = Infinity): { order: Order | null; refused: string | null } {
+    if (!this.stocks.has(symbol)) return { order: null, refused: REFUSED_UNLISTED };
     const book = this.stock(symbol).book;
     const resting = book.resting().find((o) => o.id === id);
     if (resting && now - resting.at < this.rules.minRestMs) {

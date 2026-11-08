@@ -24,7 +24,7 @@ import {
   BEST,
   TAPE_VIEW,
 } from './strategy';
-import type { Headline, Infrastructure } from './types';
+import type { Headline, Infrastructure, MarginSpec } from './types';
 
 /** How many fills and how many finished orders a firm remembers. */
 const FILL_LOG = 200;
@@ -84,6 +84,10 @@ type Outbound =
 
 /** Why an order was refused before it left. */
 export const REJECT_EXPOSURE = 'over the exposure limit';
+/** An order that would take the initial margin of the firm's margined positions and orders past its equity. */
+export const REJECT_MARGIN = 'not enough margin';
+/** The block a delivered contract's underlying is booked to. */
+export const DELIVERY_BLOCK = 'delivery';
 export const REJECT_FLOOD = 'over the orders a second the computer can send';
 
 /** Why a hand order was refused at the click. */
@@ -293,6 +297,10 @@ export class Firm {
   taxes: Record<string, number> = {};
   /** Cents a price point of one held unit is worth, by symbol, handed in each tick from the market; absent, one. */
   scales: ReadonlyMap<string, number> = NO_SCALES;
+  /** What each margined instrument asks the firm to hold, by symbol, handed in each tick; absent, bought outright. */
+  margins: ReadonlyMap<string, MarginSpec> = new Map();
+  /** A margin call is under way: told once, until the firm is flat in what is margined or back above maintenance. */
+  marginCalled = false;
 
   /** How late an order reaches the exchange, the exchange's speed bump included. */
   latency(exchange: string): number {
@@ -355,7 +363,9 @@ export class Firm {
     for (const [symbol, pos] of this.positions) {
       if (pos.qty === 0) continue;
       const mark = this.mark(market, symbol, now) ?? pos.avgCost;
-      total += valueOf(market.scales.get(symbol) ?? 1, pos.qty, mark);
+      // A margined position was not paid for: it is worth only what it has made or lost since its cost.
+      const scale = market.scales.get(symbol) ?? 1;
+      total += market.margins.has(symbol) ? valueOf(scale, pos.qty, mark - pos.avgCost) : valueOf(scale, pos.qty, mark);
     }
     return total;
   }
@@ -366,7 +376,7 @@ export class Firm {
     this.tickResolved = [];
     this.receive(now);
     this.deliver(now, market);
-    this.releaseHand(now, open);
+    this.releaseHand(now, market);
     if (!open) return;
     if (this.halt && now < this.halt.until) return;
     this.halt = null;
@@ -443,7 +453,9 @@ export class Firm {
     const mine = this.blockPositions.get(order.block) ?? new Map<string, number>();
     mine.set(order.symbol, (mine.get(order.symbol) ?? 0) + signed);
     this.blockPositions.set(order.block, mine);
-    this.cash -= valueOf(scale, signed, price) + fee;
+    // Bought outright, the value changes hands; held on margin, only the fee and what a closing fill realises.
+    if (this.margins.has(order.symbol)) this.cash += realised - fee;
+    else this.cash -= valueOf(scale, signed, price) + fee;
     this.feesPaid += fee;
     // A fill that realised nothing says nought, not minus nought, which a save would lose.
     if (realised === 0) realised = 0;
@@ -494,9 +506,11 @@ export class Firm {
     for (const o of done.slice(0, done.length - ORDER_LOG)) this.orders.delete(o.localId);
   }
 
-  private view(now: number, market: Market, news: readonly Headline[]): MarketView {
+  private view(now: number, market: Market, news: readonly Headline[], include: readonly string[] = []): MarketView {
     const quotes: Record<string, Record<string, SeenQuote>> = {};
-    const symbols = this.watching(market.stocks.map((s) => s.symbol));
+    const watchedNow = this.watching(market.stocks.map((s) => s.symbol));
+    const symbols =
+      include.length === 0 ? watchedNow : [...watchedNow, ...include.filter((s) => !watchedNow.includes(s))];
     const watched = market.stocks.filter((s) => symbols.includes(s.symbol));
     for (const e of market.exchanges) {
       const seen = now - this.dataLatency(e.id);
@@ -648,12 +662,91 @@ export class Firm {
   /** Gross notional of what is held and what is resting or in flight, cents. */
   private exposure(): number {
     let total = 0;
-    for (const [symbol, pos] of this.positions) total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), pos.avgCost);
+    for (const [symbol, pos] of this.positions) {
+      if (this.margins.has(symbol)) continue;
+      total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), pos.avgCost);
+    }
     for (const o of this.orders.values()) {
+      if (this.margins.has(o.symbol)) continue;
       if (o.status === 'inflight' || o.status === 'resting')
         total += valueOf(this.scaleOf(o.symbol), o.size - o.filled, o.price);
     }
     return total;
+  }
+
+  /**
+   * The margin the firm's margined positions and live orders ask for, cents: `initial` at their cost and prices,
+   * as an order is weighed; `maintenance` with positions at `marks`, as the margin call is.
+   */
+  marginRequired(kind: keyof MarginSpec, marks?: ReadonlyMap<string, number>): number {
+    let total = 0;
+    for (const [symbol, pos] of this.positions) {
+      const m = this.margins.get(symbol);
+      if (!m || pos.qty === 0) continue;
+      total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), marks?.get(symbol) ?? pos.avgCost) * m[kind];
+    }
+    if (kind === 'initial') {
+      for (const o of this.orders.values()) {
+        const m = this.margins.get(o.symbol);
+        if (!m || (o.status !== 'inflight' && o.status !== 'resting')) continue;
+        total += valueOf(this.scaleOf(o.symbol), o.size - o.filled, o.price) * m.initial;
+      }
+    }
+    return total;
+  }
+
+  /** Margined symbols the firm holds. */
+  marginedHeld(): string[] {
+    return [...this.positions].filter(([s, p]) => p.qty !== 0 && this.margins.has(s)).map(([s]) => s);
+  }
+
+  /** The night's variation: a held margined position is paid, or pays, its move since cost, and the price is its cost. */
+  settle(symbol: string, price: number): void {
+    const pos = this.positions.get(symbol);
+    if (!pos || pos.qty === 0 || !this.margins.has(symbol)) return;
+    const amount = valueOf(this.scaleOf(symbol), pos.qty, price - pos.avgCost);
+    this.cash += amount;
+    this.realised += amount;
+    pos.avgCost = price;
+  }
+
+  /**
+   * A contract's expiry: its last variation at the final price, and the position closed; delivered, the holder then
+   * holds `quantity × multiplier` units of the underlying at that price, paid for.
+   */
+  expire(symbol: string, price: number, delivery: { underlying: string; units: number; scale: number } | null): void {
+    this.settle(symbol, price);
+    const pos = this.positions.get(symbol);
+    const qty = pos?.qty ?? 0;
+    this.positions.delete(symbol);
+    for (const mine of this.blockPositions.values()) mine.delete(symbol);
+    if (!delivery || qty === 0) return;
+    const units = qty * delivery.units;
+    const held = this.positions.get(delivery.underlying) ?? { qty: 0, avgCost: 0 };
+    const total = held.qty + units;
+    held.avgCost = total === 0 ? 0 : (held.avgCost * held.qty + price * units) / total;
+    held.qty = total;
+    this.positions.set(delivery.underlying, held);
+    const mine = this.blockPositions.get(DELIVERY_BLOCK) ?? new Map<string, number>();
+    mine.set(delivery.underlying, (mine.get(delivery.underlying) ?? 0) + units);
+    this.blockPositions.set(DELIVERY_BLOCK, mine);
+    this.cash -= valueOf(delivery.scale, units, price);
+  }
+
+  /**
+   * Below maintenance: the resting orders in what is margined are cancelled, and each margined position is sent
+   * to flat at the best price in view, as a halt flattens. The firm trades on.
+   */
+  marginCall(now: number, market: Market, news: readonly Headline[]): void {
+    const held = this.marginedHeld();
+    const view = this.view(now, market, news, held);
+    for (const o of view.openOrders)
+      if (o.status === 'resting' && this.margins.has(o.symbol))
+        this.send({ kind: 'cancel', localId: o.localId }, 'risk', now, view, true);
+    for (const symbol of held) {
+      const intent = flattenTo(view, symbol, view.positions[symbol] ?? 0, 0);
+      if (intent) this.send(intent, 'risk', now, view, true);
+    }
   }
 
   private scaleOf(symbol: string): number {
@@ -685,7 +778,14 @@ export class Firm {
       // An order that would carry more than the leverage allows is refused here, not at the exchange.
       const reduces = Math.sign(this.position(intent.symbol)) === (intent.side === 'buy' ? -1 : 1);
       const adds = valueOf(this.scaleOf(intent.symbol), intent.size, intent.price);
-      if (!reduces && this.exposure() + adds > this.equityNow * this.risk.maxLeverage) {
+      const margin = this.margins.get(intent.symbol);
+      if (margin) {
+        if (!reduces && this.marginRequired('initial') + adds * margin.initial > this.equityNow) {
+          this.stats.ordersRejected++;
+          this.recordRejected(intent, block, now, REJECT_MARGIN);
+          return;
+        }
+      } else if (!reduces && this.exposure() + adds > this.equityNow * this.risk.maxLeverage) {
         this.stats.ordersRejected++;
         this.recordRejected(intent, block, now, REJECT_EXPOSURE);
         return;
@@ -872,11 +972,12 @@ export class Firm {
   }
 
   /** Hand orders whose reaction time is up leave now, all stamped as seen at the click; at the close they are refused. */
-  private releaseHand(now: number, open: boolean): void {
+  private releaseHand(now: number, market: Market): void {
     while (this.pendingHand[0] && this.pendingHand[0].dueAt <= now) {
       const p = this.pendingHand.shift()!;
       for (const c of p.children) {
-        if (open) {
+        // Each child leaves while its own venue is open: for a stock venue that is the stocks' hours, as before.
+        if (market.exchange(c.exchange).isOpen(now)) {
           const id = this.nextLocalId;
           this.send(c, HAND_BLOCK, now, null, false, p.seenAt);
           const sent = this.nextLocalId > id ? this.orders.get(id) : undefined;

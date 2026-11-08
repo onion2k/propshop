@@ -60,6 +60,8 @@ export {
   REJECT_FLOOD,
   REJECT_HAND_BACKLOG,
   REJECT_MARKET_CLOSED,
+  REJECT_MARGIN,
+  DELIVERY_BLOCK,
   REJECT_NO_QUOTE,
 } from './firm';
 export type { Tip, Fine } from './darkweb';
@@ -77,6 +79,8 @@ export type {
   StockSpec,
   InstrumentSpec,
   InstrumentKind,
+  ContractSeriesSpec,
+  MarginSpec,
   ExchangeSpec,
   LocationSpec,
   NetworkSpec,
@@ -98,9 +102,21 @@ export {
   MS_PER_HOUR,
   MS_PER_MINUTE,
   MS_PER_SECOND,
+  MS_PER_WEEK,
 } from './clock';
 export { regimeFor } from './regime';
 export { BACKTEST_WINDOW_MS, MAX_DAY_PINS, MAX_VARIANTS, pinTimes, testNight, variants } from './backtest';
 export type { NightEvent, Pin, Variant, VariantOptions } from './backtest';
-export { STOCKS_DESK, deskOf, kindOf, listedOn, scaleOf, tickOf, valueOf } from './instrument';
+export {
+  MAX_LIVE_PER_SERIES,
+  STOCKS_DESK,
+  contractOf,
+  deskOf,
+  kindOf,
+  listedOn,
+  liveContracts,
+  scaleOf,
+  tickOf,
+  valueOf,
+} from './instrument';
 export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';

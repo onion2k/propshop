@@ -2,7 +2,7 @@
 // one share is one unit, so its value is quantity times price; a contract counts its price in its own points and
 // holds many units. Everything that values a position, an order or a fill asks here.
 
-import type { ExchangeSpec, InstrumentKind, InstrumentSpec } from './types';
+import type { ContractSeriesSpec, ExchangeSpec, InstrumentKind, InstrumentSpec } from './types';
 
 /** The desk every instrument and venue belongs to unless it says otherwise: the stocks, always open. */
 export const STOCKS_DESK = 'stocks';
@@ -39,4 +39,23 @@ export function deskOf(spec: { desk?: string }): string {
 /** Whether a venue lists an instrument: those it names, or, naming none, every venue of its desk. */
 export function listedOn(spec: InstrumentSpec, venue: ExchangeSpec): boolean {
   return spec.venues ? spec.venues.includes(venue.id) : deskOf(spec) === deskOf(venue);
+}
+
+/** The most contracts of one series listed at once: a bound on the market's lists, whatever the content asks. */
+export const MAX_LIVE_PER_SERIES = 6;
+
+/** Contract `k` of a series, as an instrument. */
+export function contractOf(series: ContractSeriesSpec, k: number): InstrumentSpec {
+  return { ...series.contract, symbol: `${series.root}${k}`, expiry: k * series.period + series.expiresAt };
+}
+
+/** The contracts of a series listed at `now`: the first not yet expired and the next ones, `live` in all. */
+export function liveContracts(series: ContractSeriesSpec, now: number): InstrumentSpec[] {
+  const first = Math.max(0, Math.floor((now - series.expiresAt) / series.period) + 1);
+  const out: InstrumentSpec[] = [];
+  for (let k = first; out.length < Math.min(series.live, MAX_LIVE_PER_SERIES); k++) {
+    const c = contractOf(series, k);
+    if ((c.expiry ?? Infinity) > now) out.push(c);
+  }
+  return out;
 }

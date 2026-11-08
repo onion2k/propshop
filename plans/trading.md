@@ -217,7 +217,7 @@ its own. Part 1 must change nothing a player sees.
       by venue, a venue listing a subset of instruments, the world and crowd streams by desk, a desk not open
       not stepped. Check: the same fingerprint; a test venue with other hours opens and closes on them; opening
       a desk leaves the stocks' fair values and headlines the same.
-- [ ] **3. Margin, settlement and expiry** (`plans/margin.md`): the risk rule per kind, daily variation
+- [x] **3. Margin, settlement and expiry** (`plans/margin.md`, built 2026-11-08): the risk rule per kind, daily variation
       settlement, the margin call, the contract lifecycle (list, trade, expire, settle in cash or deliver), the
       bounded list of live contracts, P&L by desk, save version 3. Check: hand-made tests of a future through
       a settlement, a margin call and an expiry; a version 2 save loads to the same future.

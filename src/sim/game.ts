@@ -25,7 +25,7 @@ import {
   type Wire,
 } from './firm';
 import { tick } from './flow';
-import { STOCKS_DESK, valueOf } from './instrument';
+import { STOCKS_DESK, deskOf, valueOf } from './instrument';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
@@ -68,7 +68,8 @@ export type GameEvent =
   | { kind: 'upgrade'; at: number; kind2: UpgradeKind; id: string }
   | { kind: 'halt'; at: number; reason: string; until: number }
   | { kind: 'rules'; at: number; exchange: string; rules: ExchangeRules }
-  | { kind: 'regulator'; at: number; note: string; heat: number };
+  | { kind: 'regulator'; at: number; note: string; heat: number }
+  | { kind: 'margin'; at: number; symbols: string[] };
 
 /** A point of the day so far: the firm's equity and each block's net (realised less fees), cents. */
 export interface IntradayPoint {
@@ -114,6 +115,8 @@ export interface DayReport {
   beatenBy?: Record<string, { count: number; medianMs: number }>;
   /** Orders dropped for capacity that day. Missing in a report saved before it. */
   dropped?: number;
+  /** By desk, where a desk other than the stocks traded that day; absent otherwise. */
+  byDesk?: Record<string, Tally>;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -130,7 +133,7 @@ export interface SavedGameV1 extends Omit<SavedGame, 'version' | 'streams'> {
 }
 
 export interface SavedGame {
-  version: 2;
+  version: 3;
   /** The seed the game began from, which the day's regime is drawn from. */
   seed?: number;
   now: number;
@@ -172,6 +175,8 @@ interface Today {
   statsAtOpen: { ordersSent: number; cancelsSent: number; ordersDropped: number };
   /** By the rival's name; the rivals are the content's, so the keys are bounded by it. Margins by `MAX_MARGINS_KEPT`. */
   beatenBy?: Record<string, { count: number; marginsMs: number[] }>;
+  /** Fills of desks other than the stocks, by desk; absent until one trades. */
+  byDesk?: Record<string, Tally>;
 }
 
 function median(xs: readonly number[]): number {
@@ -349,7 +354,8 @@ export class Game {
     this.seed = seed >>> 0;
     // The game begins at six on Monday morning: the market opens in a few hours, so the player has time to look.
     this.now = 6 * 60 * MS_PER_MINUTE;
-    this.market = new Market(content.stocks, content.exchanges, content.factors);
+    this.market = new Market(content.stocks, content.exchanges, content.factors, content.series ?? []);
+    this.market.refreshContracts(this.now);
     this.streams = deriveStreams(
       this.seed,
       this.market.venues.map((e) => e.id),
@@ -418,14 +424,17 @@ export class Game {
   step(dt = TICK_MS): void {
     this.now += dt;
     this.news.step(this.now, this.market, this.streams.world);
-    tick(this.now, dt, this.market, this.firms(), this.streams, this.news.feed());
+    const { closedVenues } = tick(this.now, dt, this.market, this.firms(), this.streams, this.news.feed());
     this.dark.step(this.now, this.firm, this.news, this.streams.dark);
     for (const f of this.firm.tickFills) {
       this.emit({ kind: 'fill', at: this.now, fill: f });
       tally(this.today.byBlock, f.block, f);
       tally(this.today.bySymbol, f.symbol, f);
+      const desk = deskOf(this.market.stock(f.symbol));
+      if (desk !== STOCKS_DESK) tally((this.today.byDesk ??= {}), desk, f);
       this.today.fees += f.fee;
     }
+    this.contracts(closedVenues);
     for (const o of this.firm.tickResolved) {
       if (!o.ioc) continue;
       if (o.filled >= o.size) this.today.races.won++;
@@ -446,6 +455,60 @@ export class Game {
     if (!open && this.wasOpen) this.onClose();
     this.wasOpen = open;
     this.version++;
+  }
+
+  /**
+   * What margin asks of the firms each tick: the night's variation where a venue closed, the margin call on the
+   * half second, and a contract's expiry when it comes. A game with nothing margined pays two checks a tick.
+   */
+  private contracts(closedVenues: readonly string[]): void {
+    for (const venue of closedVenues) {
+      for (const symbol of this.market.settlesOn(venue)) {
+        const price = this.market.settlementPrice(symbol);
+        for (const f of this.firms()) f.settle(symbol, price);
+      }
+    }
+    if (this.now % LOSS_CHECK_EVERY === 0 && this.market.margins.size > 0) this.checkMargins();
+    if (this.now >= this.market.nextExpiry) {
+      for (const c of this.market.expired(this.now)) {
+        const price = this.market.settlementPrice(c.symbol);
+        const delivery =
+          c.settlement === 'delivery' && c.underlying !== undefined
+            ? { underlying: c.underlying, units: c.multiplier ?? 1, scale: this.market.scales.get(c.underlying) ?? 1 }
+            : null;
+        for (const f of this.firms()) f.expire(c.symbol, price, delivery);
+      }
+      const gone = this.market.refreshContracts(this.now);
+      for (const f of this.firms()) f.onClose(gone);
+    }
+  }
+
+  /** Each firm holding a margined position on an open venue: below the maintenance margin, it is flattened in them. */
+  private checkMargins(): void {
+    for (const f of this.firms()) {
+      const held = f.marginedHeld().filter((s) => this.market.isOpenFor(s, this.now));
+      if (held.length === 0) {
+        f.marginCalled = false;
+        continue;
+      }
+      const marks = new Map<string, number>();
+      for (const s of held) {
+        const mid = this.market.venuesOf(s)[0]?.book(s).mid() ?? null;
+        if (mid !== null) marks.set(s, mid);
+      }
+      if (f.equity(this.market, this.now) >= f.marginRequired('maintenance', marks)) {
+        f.marginCalled = false;
+        continue;
+      }
+      f.marginCall(this.now, this.market, this.news.feed());
+      if (f.marginCalled) continue;
+      f.marginCalled = true;
+      if (f === this.firm) {
+        const reason = `margin call: below the maintenance margin in ${held.join(', ')}, flattened`;
+        this.today.halts.push(reason);
+        this.emit({ kind: 'margin', at: this.now, symbols: held });
+      }
+    }
   }
 
   /** One point of the day: on the simulated minute only, so the stepping loop pays a modulo and nothing more. */
@@ -568,6 +631,7 @@ export class Game {
         ]),
       ),
       dropped: this.firm.stats.ordersDropped - this.today.statsAtOpen.ordersDropped,
+      ...(this.today.byDesk ? { byDesk: this.byDesk() } : {}),
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -587,6 +651,19 @@ export class Game {
     if (this.speed === 0) return;
     const ticks = Math.min(MAX_TICKS_PER_ADVANCE, Math.floor((wallMs * this.speed) / TICK_MS));
     for (let i = 0; i < ticks; i++) this.step();
+  }
+
+  /** The day by desk: the stocks' from their symbols, the others' as tallied. */
+  private byDesk(): Record<string, Tally> {
+    const stocks: Tally = { fills: 0, realised: 0, fees: 0 };
+    for (const [symbol, t] of Object.entries(this.today.bySymbol)) {
+      const spec = this.market.instruments.find((s) => s.symbol === symbol);
+      if (!spec || deskOf(spec) !== STOCKS_DESK) continue;
+      stocks.fills += t.fills;
+      stocks.realised += t.realised;
+      stocks.fees += t.fees;
+    }
+    return { [STOCKS_DESK]: stocks, ...this.today.byDesk };
   }
 
   /** Open another desk: its instruments and venues step from now on, and the firms and the page see them. */
@@ -897,7 +974,7 @@ export class Game {
 
   save(): SavedGame {
     return {
-      version: 2,
+      version: 3,
       seed: this.seed,
       now: this.now,
       speed: this.speed,
@@ -930,11 +1007,15 @@ export class Game {
 
   static load(content: Content, input: SavedGame | SavedGameV1): Game {
     const version: number = input.version;
-    if (version !== 1 && version !== 2) throw new Error(`Cannot load a save of version ${String(version)}`);
+    if (version !== 1 && version !== 2 && version !== 3)
+      throw new Error(`Cannot load a save of version ${String(version)}`);
+    // Version 2 is version 3 with nothing margined: it loads as it is.
     const s: Omit<SavedGame, 'version'> =
-      input.version === 2 ? input : { ...input, streams: Game.streamsFromV1(input) };
+      input.version === 1 ? { ...input, streams: Game.streamsFromV1(input) } : input;
     const g = new Game(content, s.seed ?? 0);
     g.now = s.now;
+    // The contracts listed at the save's time, by the same steps a running game took to reach them.
+    g.market.refreshContracts(g.now);
     g.speed = s.speed;
     g.streams = loadStreams(s.streams);
     // A save from before a venue or a desk existed has no stream for it: it is derived from the seed, as a new game's.

@@ -439,7 +439,7 @@ describe('intraday series', () => {
     expect(h.snapshot().intraday).toEqual(g.snapshot().intraday);
     const old = { ...saved };
     delete old.intraday;
-    expect(old.version).toBe(2);
+    expect(old.version).toBe(3);
     expect(Game.load(CONTENT, old).snapshot().intraday).toEqual([]);
   });
 
