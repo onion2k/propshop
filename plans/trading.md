@@ -213,7 +213,7 @@ its own. Part 1 must change nothing a player sees.
       venues, underlying, expiry; `StockSpec` folded in; value worked out in one place. Check: a fingerprint of
       a seed's game over a day, taken before the change and held equal after it; `npm run check` green; the PACE
       harness on one seed reads the same to the dollar.
-- [ ] **2. Venues and sessions** (`plans/sessions.md`): per-venue hours, the calendar and the skip to the open
+- [x] **2. Venues and sessions** (`plans/sessions.md`, built 2026-11-08): per-venue hours, the calendar and the skip to the open
       by venue, a venue listing a subset of instruments, the world and crowd streams by desk, a desk not open
       not stepped. Check: the same fingerprint; a test venue with other hours opens and closes on them; opening
       a desk leaves the stocks' fair values and headlines the same.

@@ -81,31 +81,43 @@ export class Random {
  * which still reacts to the books; `dark` is the dark web.
  */
 export interface Streams {
+  /** The stocks' world: fair values, factors and news. */
   world: Random;
   crowd: Record<string, Random>;
   dark: Random;
+  /** Each other desk's world, `world:<desk>`, so opening a desk draws nothing from the stocks'. */
+  desks: Record<string, Random>;
 }
 
 export interface SavedStreams {
   world: number;
   crowd: Record<string, number>;
   dark: number;
+  /** Absent in a save from before desks, and where there are none. */
+  desks?: Record<string, number>;
 }
 
-export function deriveStreams(seed: number, exchangeIds: readonly string[]): Streams {
+export function deriveStreams(seed: number, exchangeIds: readonly string[], deskIds: readonly string[] = []): Streams {
   const crowd: Record<string, Random> = {};
   for (const id of exchangeIds) crowd[id] = Random.derive(seed, `crowd:${id}`);
-  return { world: Random.derive(seed, 'world'), crowd, dark: Random.derive(seed, 'dark') };
+  const desks: Record<string, Random> = {};
+  for (const id of deskIds) desks[id] = Random.derive(seed, `world:${id}`);
+  return { world: Random.derive(seed, 'world'), crowd, dark: Random.derive(seed, 'dark'), desks };
 }
 
 export function saveStreams(s: Streams): SavedStreams {
   const crowd: Record<string, number> = {};
   for (const [id, r] of Object.entries(s.crowd)) crowd[id] = r.save();
-  return { world: s.world.save(), crowd, dark: s.dark.save() };
+  const desks: Record<string, number> = {};
+  for (const [id, r] of Object.entries(s.desks)) desks[id] = r.save();
+  // A game with no desk but the stocks saves as it did before desks, to the byte.
+  return { world: s.world.save(), crowd, dark: s.dark.save(), ...(Object.keys(desks).length > 0 ? { desks } : {}) };
 }
 
 export function loadStreams(s: SavedStreams): Streams {
   const crowd: Record<string, Random> = {};
   for (const [id, n] of Object.entries(s.crowd)) crowd[id] = Random.load(n);
-  return { world: Random.load(s.world), crowd, dark: Random.load(s.dark) };
+  const desks: Record<string, Random> = {};
+  for (const [id, n] of Object.entries(s.desks ?? {})) desks[id] = Random.load(n);
+  return { world: Random.load(s.world), crowd, dark: Random.load(s.dark), desks };
 }

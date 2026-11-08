@@ -102,4 +102,5 @@ export {
 export { regimeFor } from './regime';
 export { BACKTEST_WINDOW_MS, MAX_DAY_PINS, MAX_VARIANTS, pinTimes, testNight, variants } from './backtest';
 export type { NightEvent, Pin, Variant, VariantOptions } from './backtest';
-export { kindOf, scaleOf, tickOf, valueOf } from './instrument';
+export { STOCKS_DESK, deskOf, kindOf, listedOn, scaleOf, tickOf, valueOf } from './instrument';
+export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';

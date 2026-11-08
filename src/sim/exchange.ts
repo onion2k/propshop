@@ -14,12 +14,16 @@ import {
 } from './orderbook';
 
 export type SubmitResult = ReturnType<OrderBook['add']>;
-import { tickOf } from './instrument';
+import { activity as stockActivity, isMarketOpen, nextOpen as stockNextOpen } from './clock';
+import { deskOf, tickOf } from './instrument';
+import { activityIn, isOpenIn, nextOpenIn, type SessionSpec } from './session';
 import type { Random } from './random';
 import { DEFAULT_RULES, type ExchangeRules, type ExchangeSpec } from './types';
 
 /** The owner tag for the background crowd, who are nobody in particular. */
 export const BACKGROUND = 'bg';
+/** Why a venue with hours of its own refused an order: it arrived while the venue was closed. */
+export const REFUSED_CLOSED = 'market closed';
 
 /** How many resting orders the background crowd aims to keep on each side of each book. */
 const TARGET_DEPTH = 24;
@@ -87,11 +91,19 @@ export class Exchange {
   private pending: { symbol: string; req: OrderRequest; at: number; resolve: (r: SubmitResult) => void }[] = [];
   /** Trades made this tick, by anyone, for the game to route to their owners. */
   tickTrades: { symbol: string; trade: Trade }[] = [];
+  /** The desk whose instruments it lists. */
+  readonly desk: string;
+  /** Its own hours; null keeps the stocks', worked out by the clock exactly as before sessions. */
+  readonly session: SessionSpec | null;
+  /** Whether it was open at the last step, so it closes its books on the tick its own session ends. Not saved. */
+  wasOpen = false;
   constructor(
     spec: ExchangeSpec,
     symbols: { symbol: string; startPrice: number; constituents?: string[]; tickSize?: number }[],
   ) {
     this.spec = spec;
+    this.desk = deskOf(spec);
+    this.session = spec.session ?? null;
     for (const s of symbols) {
       this.stocks.set(s.symbol, {
         book: new OrderBook(),
@@ -106,6 +118,25 @@ export class Exchange {
 
   get id(): string {
     return this.spec.id;
+  }
+
+  /** Whether it lists a symbol: an exchange has books for what it lists and no others. */
+  lists(symbol: string): boolean {
+    return this.stocks.has(symbol);
+  }
+
+  isOpen(now: number): boolean {
+    return this.session ? isOpenIn(this.session, now) : isMarketOpen(now);
+  }
+
+  /** How busy it is, nought to one, on its own hours. */
+  activity(now: number): number {
+    return this.session ? activityIn(this.session, now) : stockActivity(now);
+  }
+
+  /** The next moment it opens, strictly after now. */
+  nextOpen(now: number): number {
+    return this.session ? nextOpenIn(this.session, now) : stockNextOpen(now);
   }
 
   private stock(symbol: string): StockState {
@@ -207,7 +238,9 @@ export class Exchange {
 
   /** The quote as it stood at a past moment: what a firm that far behind is looking at. */
   quoteAsOf(symbol: string, at: number): LoggedQuote | null {
-    const log = this.stock(symbol).quoteLog;
+    const listed = this.stocks.get(symbol);
+    if (!listed) return null;
+    const log = listed.quoteLog;
     for (let i = log.length - 1; i >= 0; i--) {
       const q = log[i];
       if (q && q.at <= at) return q;
@@ -255,6 +288,25 @@ export class Exchange {
    * order waits for the next batch, and the result comes through the callback when it matches.
    */
   submit(symbol: string, req: OrderRequest, now: number, done?: (r: SubmitResult) => void): SubmitResult | null {
+    // A venue with hours of its own takes nothing while closed. A stock venue keeps its old behaviour, in which an
+    // order still in the wire at the close rests in the emptied book.
+    if (this.session && !isOpenIn(this.session, now)) {
+      const order = {
+        id: -1,
+        owner: req.owner,
+        side: req.side,
+        price: req.price,
+        size: req.size,
+        remaining: req.size,
+        at: now,
+        ioc: req.ioc ?? false,
+        postOnly: req.postOnly ?? false,
+        display: req.display ?? null,
+        shown: 0,
+      };
+      const refused: SubmitResult = { order, trades: [], refused: REFUSED_CLOSED };
+      return refused;
+    }
     const shaped = this.shape(this.stock(symbol), req);
     if (this.rules.batchMs > 0 && done) {
       this.pending.push({ symbol, req: shaped, at: now, resolve: done });

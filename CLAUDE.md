@@ -92,8 +92,8 @@ DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one per
 
 ## Rules for the code
 
-- Chance comes from one seed, in named streams handed in: `world` (fair value, news), one `crowd:<exchange>`
-  each, and `dark`. No `Math.random`, no `Date.now` in the sim: the same seed replays the same game. Nothing
+- Chance comes from one seed, in named streams handed in: `world` (the stocks' fair value, news), one
+  `world:<desk>` for each other desk, one `crowd:<exchange>` each, and `dark`. No `Math.random`, no `Date.now` in the sim: the same seed replays the same game. Nothing
   the firm does may draw from `world`: that is what makes two runs of one morning the same morning.
 - Time is stepped: `game.step()` advances one fixed tick of simulated
   time. The wall clock never reaches the sim.
@@ -109,7 +109,13 @@ DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one per
 For anything new, check what it does:
 
 - **closed hours:** the books are empty, nothing fills, and a block sends nothing; skipping to the open lands
-  the overnight news on the way.
+  the overnight news on the way. Hours are each venue's: one without a `session` keeps the stocks' (the clock),
+  one with its own opens, quiets and closes on it, empties its books at its own close and refuses an order that
+  arrives while closed. The firm's blocks, the day and its report are still the stocks'.
+- **a desk not open:** its instruments and venues are kept and not stepped, and the firms and the page do not see
+  them (`market.stocks` and `market.exchanges` are the live ones; `instruments` and `venues` all). Opening one draws
+  from its own `world:<desk>` stream and changes nothing of the stocks' (their factors, news and regime drifts read
+  the stocks desk alone). An instrument is listed on its `venues`, or every venue of its desk.
 - **one leg only:** an arbitrage whose far leg misses leaves a position; the block scratches its own.
 - **capacity:** orders past the computer's limit are dropped and counted, never queued.
 - **a tip:** real or made up, and the fine that may follow days later.

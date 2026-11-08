@@ -2,7 +2,10 @@
 // one share is one unit, so its value is quantity times price; a contract counts its price in its own points and
 // holds many units. Everything that values a position, an order or a fill asks here.
 
-import type { InstrumentKind, InstrumentSpec } from './types';
+import type { ExchangeSpec, InstrumentKind, InstrumentSpec } from './types';
+
+/** The desk every instrument and venue belongs to unless it says otherwise: the stocks, always open. */
+export const STOCKS_DESK = 'stocks';
 
 /** No instrument scaled: every symbol is worth its price in cents a unit. */
 export const NO_SCALES: ReadonlyMap<string, number> = new Map();
@@ -27,4 +30,13 @@ export function kindOf(spec: InstrumentSpec): InstrumentKind {
 /** The grid an instrument is quoted on: its own where it has one, else the exchange's rule. */
 export function tickOf(spec: Pick<InstrumentSpec, 'tickSize'>, exchangeTick: number): number {
   return spec.tickSize ?? exchangeTick;
+}
+
+export function deskOf(spec: { desk?: string }): string {
+  return spec.desk ?? STOCKS_DESK;
+}
+
+/** Whether a venue lists an instrument: those it names, or, naming none, every venue of its desk. */
+export function listedOn(spec: InstrumentSpec, venue: ExchangeSpec): boolean {
+  return spec.venues ? spec.venues.includes(venue.id) : deskOf(spec) === deskOf(venue);
 }

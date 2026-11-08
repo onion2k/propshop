@@ -25,11 +25,11 @@ import {
   type Wire,
 } from './firm';
 import { tick } from './flow';
-import { valueOf } from './instrument';
+import { STOCKS_DESK, valueOf } from './instrument';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
-import { deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
+import { Random, deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
 import {
   BLOCKS,
@@ -154,6 +154,8 @@ export interface SavedGame {
   /** When the rules last changed, and each firm's equity then, for the lab's scoreboard. */
   rulesChangedAt?: number;
   equityAtRulesChange?: Record<string, number>;
+  /** The desks open besides the stocks; absent in a save from before desks, and where none is. */
+  desks?: string[];
 }
 
 /** The day's tallies, from the open. */
@@ -350,7 +352,8 @@ export class Game {
     this.market = new Market(content.stocks, content.exchanges, content.factors);
     this.streams = deriveStreams(
       this.seed,
-      this.market.exchanges.map((e) => e.id),
+      this.market.venues.map((e) => e.id),
+      this.market.desks,
     );
     this.news = new News(content.news, content.stocks);
     this.dark = new DarkWeb();
@@ -476,7 +479,9 @@ export class Game {
     const day = calendar(this.now).day;
     const regime = this.regimeFor(day);
     const drifts = new Map<string, number>();
+    // The day's character is the stocks desk's: another desk's instruments take no drift from it.
     this.market.stocks.forEach((s, i) => {
+      if ((s.desk ?? STOCKS_DESK) !== STOCKS_DESK) return;
       drifts.set(
         s.symbol,
         driftPerMs(regime, this.market.fair.get(s.symbol) ?? s.startPrice, driftSign(this.seed, day, i)),
@@ -582,6 +587,18 @@ export class Game {
     if (this.speed === 0) return;
     const ticks = Math.min(MAX_TICKS_PER_ADVANCE, Math.floor((wallMs * this.speed) / TICK_MS));
     for (let i = 0; i < ticks; i++) this.step();
+  }
+
+  /** Open another desk: its instruments and venues step from now on, and the firms and the page see them. */
+  openDesk(desk: string): void {
+    if (!this.market.desks.includes(desk)) throw new Error(`No desk ${desk}`);
+    this.market.openDesk(desk);
+    this.version++;
+  }
+
+  /** The next moment a venue opens, strictly after now, on its own hours. */
+  nextOpenOf(venue: string): number {
+    return this.market.venue(venue).nextOpen(this.now);
   }
 
   /** Jump to a minute before the next open, in coarse steps, so overnight news lands and prices in on the way. */
@@ -690,7 +707,7 @@ export class Game {
     const positions: Snapshot['positions'] = [];
     for (const [symbol, pos] of firm.positions) {
       if (pos.qty === 0) continue;
-      const mark = this.market.exchanges[0]?.book(symbol).mid() ?? null;
+      const mark = this.market.venuesOf(symbol)[0]?.book(symbol).mid() ?? null;
       positions.push({
         symbol,
         qty: pos.qty,
@@ -759,7 +776,7 @@ export class Game {
         fair: this.market.fair.get(s.symbol) ?? s.startPrice,
         ...this.touchAcross(s.symbol, now),
         dayChange: this.dayChange(s.symbol),
-        exchanges: this.market.exchanges.map((e) => ({
+        exchanges: this.market.venuesOf(s.symbol).map((e) => ({
           id: e.id,
           seen: e.quoteAsOf(s.symbol, now - firm.dataLatency(e.id)),
           last: e.book(s.symbol).lastPrice,
@@ -885,6 +902,9 @@ export class Game {
       now: this.now,
       speed: this.speed,
       streams: saveStreams(this.streams),
+      ...(this.market.desks.some((d) => this.market.isDeskOpen(d))
+        ? { desks: this.market.desks.filter((d) => this.market.isDeskOpen(d)) }
+        : {}),
       market: this.market.save(),
       news: this.news.save(),
       dark: this.dark.save(),
@@ -917,6 +937,10 @@ export class Game {
     g.now = s.now;
     g.speed = s.speed;
     g.streams = loadStreams(s.streams);
+    // A save from before a venue or a desk existed has no stream for it: it is derived from the seed, as a new game's.
+    for (const e of g.market.venues) g.streams.crowd[e.id] ??= Random.derive(g.seed, `crowd:${e.id}`);
+    for (const d of g.market.desks) g.streams.desks[d] ??= Random.derive(g.seed, `world:${d}`);
+    for (const d of s.desks ?? []) if (g.market.desks.includes(d)) g.market.openDesk(d);
     g.market.load(s.market);
     g.news.load(s.news);
     g.dark.load(s.dark);

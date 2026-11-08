@@ -3,6 +3,7 @@
 // dark web has something to leak. Some read like news and move nothing: that is deliberate, and a lesson.
 
 import { MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, isMarketOpen, isWeekday, nextOpen } from './clock';
+import { STOCKS_DESK, deskOf } from './instrument';
 import type { Market } from './market';
 import type { Random } from './random';
 import type { Headline, NewsTemplate, RegimeSpec, StockSpec } from './types';
@@ -48,7 +49,8 @@ export class News {
 
   constructor(templates: readonly NewsTemplate[], stocks: readonly StockSpec[]) {
     this.templates = templates;
-    this.stocks = stocks;
+    // The news is the stocks desk's: another desk's instruments are not picked, nor moved by a market-wide story.
+    this.stocks = stocks.filter((s) => deskOf(s) === STOCKS_DESK);
   }
 
   /** The headlines a strategy may see: the published feed, without what the market did about each. */
@@ -129,7 +131,7 @@ export class News {
   private publish(h: Scheduled, market: Market): void {
     const midsAt: Record<string, number | null> = {};
     for (const symbol of h.symbols) {
-      midsAt[symbol] = market.exchanges[0]?.book(symbol).mid() ?? null;
+      midsAt[symbol] = market.venuesOf(symbol)[0]?.book(symbol).mid() ?? null;
       const move = h.moves[symbol] ?? 0;
       // Overnight news is priced in by the time the market opens, which is as fast as the game can show it.
       const window = isMarketOpen(h.at) ? h.priceInMs : Math.max(1, nextOpen(h.at) - h.at - MS_PER_MINUTE);

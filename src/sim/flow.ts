@@ -15,7 +15,7 @@ export function tick(
   streams: Streams,
   news: readonly Headline[],
 ) {
-  const { closed } = market.step(now, dt, streams.world, streams.crowd);
+  const { closed } = market.step(now, dt, streams.world, streams.crowd, streams.desks);
   const open = isMarketOpen(now);
   const bumps: Record<string, number> = {};
   const taxes: Record<string, number> = {};

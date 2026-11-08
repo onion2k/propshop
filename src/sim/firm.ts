@@ -2,7 +2,7 @@
 // allows, sends orders that arrive late, and books the fills that come back later still. Cash, positions and
 // P&L live here, and so does the regulator's interest in it.
 
-import { MS_PER_SECOND, isMarketOpen } from './clock';
+import { MS_PER_SECOND } from './clock';
 import type { Exchange, SubmitResult } from './exchange';
 import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
 import { NO_SCALES, valueOf } from './instrument';
@@ -518,7 +518,7 @@ export class Firm {
       for (const e of market.exchanges) {
         const seen = now - this.dataLatency(e.id);
         const perSymbol: Record<string, readonly SeenPrint[]> = {};
-        for (const s of watched) perSymbol[s.symbol] = e.tapeAsOf(s.symbol, seen, TAPE_VIEW);
+        for (const s of watched) if (e.lists(s.symbol)) perSymbol[s.symbol] = e.tapeAsOf(s.symbol, seen, TAPE_VIEW);
         out[e.id] = perSymbol;
       }
       return out;
@@ -783,7 +783,7 @@ export class Firm {
     };
     const whole = (n: number | undefined) => n !== undefined && Number.isInteger(n) && n > 0;
     if (!whole(intent.size) || (intent.type === 'limit' && !whole(intent.price))) return refuse(REJECT_BAD_ORDER);
-    if (!isMarketOpen(now)) return refuse(REJECT_MARKET_CLOSED);
+    if (!market.isOpenFor(intent.symbol, now)) return refuse(REJECT_MARKET_CLOSED);
     // A halted firm is not a trading firm: a click is refused with the halt's own reason, as a block's order is.
     if (this.halt && now < this.halt.until) return refuse(this.halt.reason);
     if (this.pendingHand.length >= MAX_PENDING_HAND) return refuse(REJECT_HAND_BACKLOG);

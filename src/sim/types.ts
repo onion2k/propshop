@@ -1,5 +1,7 @@
 // The shapes the content hands the sim at construction. The sim never imports content; it is given these.
 
+import type { SessionSpec } from './session';
+
 /** What an instrument is: a stock, an index, or one of the contracts the later desks trade. */
 export type InstrumentKind = 'equity' | 'index' | 'future' | 'option' | 'fx' | 'metal';
 
@@ -14,6 +16,8 @@ export interface InstrumentSpec {
   sector: string;
   /** What it is; absent, an index where it has constituents and a stock otherwise. */
   kind?: InstrumentKind;
+  /** The desk that trades it; absent, the stocks desk. */
+  desk?: string;
   /** How much of the market's move this stock takes: one is the market's own. */
   beta?: number;
   /** An index: its fair value is the average of these symbols', and it has no wander of its own. */
@@ -32,7 +36,7 @@ export interface InstrumentSpec {
   priceUnit?: number;
   /** The price grid, in price points; absent, the exchange's rule. */
   tickSize?: number;
-  /** The exchanges that list it; absent, every one. From part 2 of the trading roadmap; not read yet. */
+  /** The venues that list it; absent, every venue of its desk. */
   venues?: string[];
   /** What a contract is on. From part 3; not read yet. */
   underlying?: string;
@@ -53,6 +57,10 @@ export interface ExchangeSpec {
   lag: number;
   /** How far, in cents, this exchange's belief wobbles around fair value on its own. */
   noise: number;
+  /** The desk whose instruments it lists; absent, the stocks desk. */
+  desk?: string;
+  /** Its hours; absent, the stocks' (09:30 to 16:00, Monday to Friday), worked out by the clock. */
+  session?: SessionSpec;
 }
 
 export interface LocationSpec {
