@@ -1,6 +1,6 @@
 # The futures desk: part 4 of the trading roadmap
 
-State: 4a to 4d built 2026-11-08, on Opus; 4e in part: the lessons and the tuning are in, the experiment "the lead" to come, and the tuning's check is not met (below). See
+State: built 2026-11-08, on Opus. 4e's tuning check is not met, by Chris's choice, and "the roll" as an experiment is dropped (below). See
 `plans/trading.md`, part 4, and the foundation in `plans/instruments.md`, `plans/sessions.md`, `plans/margin.md`.
 
 ## Context
@@ -79,13 +79,20 @@ position shows the margin to keep while one is held; the day's report has a "By 
 traded; nine glossary entries (future, basis, carry, margin, variation margin, margin call, expiry, roll,
 lead-lag). Looked at headless at 1280 and 375: no overflow, no console errors. `npm run check` green, 466 tests.
 
-Result for 4e so far, 2026-11-08: three lessons that open with the desk and open no stage (`DESK_LESSONS`):
+Result for 4e, 2026-11-08: three lessons that open with the desk and open no stage (`DESK_LESSONS`):
 "See the future lead the index", "Trade a future through a close", "Ride the lead", in their own section of the
 First week. The PACE harness has the desk's setups. Lead-lag's default threshold is half a cent, where the gap
 lives, and the rival races at half a cent with 3,000 shares. Lead-lag over three seeds: home 737 a day, a rack at
 the Prairie Board on fibre 919, at Lakeside on microwave 1,290, at the Prairie Board on microwave 1,515. The order
 is the lesson's; the check is not met (a rack and microwave beat home by about 780 a day against microwave's
-120,000). Widening it means the index's books following more slowly, which is the stocks' game: a question for
-Chris. Basis arbitrage loses at half a cent and does not trade at one. "The roll" as an experiment is dropped: a
+120,000). Widening it means the index's books following more slowly, which is the stocks' game: Chris chose to
+leave it as it is (2026-11-08), so the check stays unmet. Basis arbitrage loses at half a cent and does not trade at one. "The roll" as an experiment is dropped: a
 window of five minutes cannot hold a roll a day early against one on the last day, and a start on a Friday costs
 four days of stepping; the roll is taught by its block and its lesson instead. Figures in `docs/measured.md`.
+
+The experiment "the lead": seed 566, a two-minute window from 9:31:06 on Monday with the futures desk open
+(`desks` on an experiment, handed to `startOf`), the inflation print forty seconds in. A rack at the Prairie Board on
+fibre running lead-lag wins 4 races for the index and loses 14 to Prairie Partners, for $148; on microwave it wins
+13 and loses 1, for $387 (better); from home 5 and 6, $152, racing fewer times (same); a rack at Lakeside on
+microwave 6 and 5, $146 (same). Two minutes measures the races well and the money barely, and the takeaway says
+so. The seed was found by reading each seed's schedule for a market-moving headline in the first quarter hour.

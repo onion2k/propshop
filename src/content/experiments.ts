@@ -5,7 +5,8 @@
 
 import type { Game, GameEvent, Measures, Moment, MomentSource, OpenOrder, Setup } from '../sim';
 import { MS_PER_HOUR, MS_PER_MINUTE, MS_PER_SECOND } from '../sim';
-import { COMPETITORS, LOCATIONS, NETWORKS } from './upgrades';
+import { CONTENT } from './index';
+import { COMPETITORS } from './upgrades';
 
 const OPEN = 9 * MS_PER_HOUR + 30 * MS_PER_MINUTE;
 /** Every window starts a minute after Monday's open: the books have filled and the warm-up stays short. */
@@ -56,6 +57,8 @@ export interface Experiment {
   /** Glossary ids the briefing links. */
   terms: string[];
   seed: number;
+  /** Desks open from the start, besides the stocks': their instruments, venues, rivals and blocks. */
+  desks?: readonly string[];
   startAt: number;
   windowMs: number;
   /** The stock the live view charts. */
@@ -82,8 +85,8 @@ export function dollars(cents: number): string {
 
 /** One-way milliseconds from a setup to an exchange, as the sim works it out (src/sim/latency.ts). */
 export function latencyMs(setup: Setup, exchange: string): number {
-  const loc = LOCATIONS.find((l) => l.id === setup.location);
-  const net = NETWORKS.find((n) => n.id === setup.network);
+  const loc = CONTENT.locations.find((l) => l.id === setup.location);
+  const net = CONTENT.networks.find((n) => n.id === setup.network);
   const d = loc?.distance[exchange];
   if (!loc || !net || d === undefined) return NaN;
   return Math.max(1, d * net.factor + net.overhead);
@@ -506,7 +509,153 @@ const OPTION: Experiment = {
     'their quotes, and by not being there when they cannot know the price.',
 };
 
-export const EXPERIMENTS: readonly Experiment[] = [HEADLINE, MILES, OPTION];
+// ---- 4. The lead -------------------------------------------------------------------------------------------
+
+const LEAD_SEED = 566;
+/** The inflation print lands about forty seconds into this window, a minute after the open. */
+const LEAD_START = OPEN + 66 * MS_PER_SECOND;
+
+const leadBase: Setup = {
+  location: 'colo-prairie',
+  network: 'fibre',
+  computer: 'rack',
+  // Monday's two listed contracts, the near and the next.
+  watched: ['IDX', 'IXF0', 'IXF1'],
+  blocks: [block('leadLag')],
+};
+
+function leadTracker(): Tracker {
+  let headline: Moment | null = null;
+  let entry: Moment | null = null;
+  let closest: { m: Moment; margin: number } | null = null;
+  const source: MomentSource = (_g, events, resolved) => {
+    for (const e of events) {
+      if (e.kind === 'news' && !headline && e.headline.sector === null && e.headline.symbols.length > 1) {
+        headline = { at: e.at, from: e.at - 100, kind: 'headline', label: `The headline lands: “${e.headline.text}”` };
+      }
+    }
+    for (const o of resolved) {
+      if (o.symbol !== 'IDX') continue;
+      if (headline && !entry && o.sentAt >= headline.at) {
+        entry = {
+          at: o.arrivedAt ?? o.sentAt,
+          from: raceFrom(o),
+          kind: 'entry',
+          label: `The first index order after it: ${o.side} ${o.size} on ${o.exchange}, ${ms(o.sentAt - headline.at)} after the headline, ${o.filled >= o.size ? 'filled' : 'not filled'}`,
+          symbol: 'IDX',
+          exchange: o.exchange,
+        };
+      }
+      const first = o.beatenBy[0];
+      if (!first || o.arrivedAt === null) continue;
+      const margin = o.arrivedAt - first.at;
+      if (!closest || margin < closest.margin) {
+        closest = {
+          margin,
+          m: {
+            at: o.arrivedAt,
+            from: raceFrom(o),
+            kind: 'beaten',
+            label: `${rivalName(first.owner)} beat you to the index on ${o.exchange} by ${ms(margin)}`,
+            symbol: 'IDX',
+            exchange: o.exchange,
+          },
+        };
+      }
+    }
+    return [];
+  };
+  return {
+    source,
+    pick: () => [headline, entry, closest?.m ?? null].filter((m): m is Moment => m !== null).sort(byAt),
+  };
+}
+
+const seat = (s: Setup) => `${ms(latencyMs(s, 'PRAIRIE'))} from the future; to the stocks, ${latencies(s)}`;
+
+const LEAD: Experiment = {
+  id: 'lead',
+  title: 'The lead',
+  teaches: 'The future moves first; the lead is worth what your line to the stocks is worth.',
+  briefing:
+    'Monday morning, with the futures desk open: a rack beside the Prairie Board’s crowd, running lead-lag. The ' +
+    'index future is the index carried to Friday, and its crowd catches up with a move in a twentieth of a second; ' +
+    'the index’s own books take a second or two. When the future jumps, lead-lag buys the index before its books ' +
+    'follow. About forty seconds in, an inflation print moves the whole market. Prairie Partners, on the next rack, ' +
+    `reads the same future and races you to the index. On leased fibre your seat is ${seat(leadBase)}.`,
+  terms: ['lead-lag', 'future', 'basis', 'latency', 'microwave'],
+  seed: LEAD_SEED,
+  desks: ['futures'],
+  startAt: LEAD_START,
+  windowMs: 2 * MS_PER_MINUTE,
+  symbol: 'IDX',
+  baseline: leadBase,
+  baselineLabel: 'lead-lag from a rack at the Prairie Board, on fibre',
+  changes: [
+    {
+      id: 'microwave',
+      label: 'Microwave to the stocks',
+      detail:
+        'The same rack, with a microwave link to the stock exchanges: the same news from the future, there sooner.',
+      apply: (s) => ({ ...s, network: 'microwave' }),
+    },
+    {
+      id: 'home',
+      label: 'Run it from home',
+      detail:
+        'Give up the rack and run lead-lag from home, still on fibre: further from the future, and from two of the three stock exchanges.',
+      apply: (s) => ({ ...s, location: 'home' }),
+    },
+    {
+      id: 'lakeside',
+      label: 'A rack at LAKESIDE, on microwave',
+      detail:
+        'A rack in the LAKESIDE building on microwave: near the stock exchanges, a few milliseconds from the future.',
+      apply: (s) => ({ ...s, location: 'colo-lakeside', network: 'microwave' }),
+    },
+  ],
+  tracker: leadTracker,
+  explain: (a, b, change) => {
+    const after = change.apply(structuredClone(leadBase));
+    const out = [
+      `On fibre from the rack you won ${a.races.won} races for the index and lost ${a.races.beaten}, for ${dollars(a.pnl)}. ` +
+        `After “${change.label}” you won ${b.races.won} and lost ${b.races.beaten}, for ${dollars(b.pnl)}.`,
+      `The seat is now ${seat(after)}. On fibre from the rack it was ${seat(leadBase)}.`,
+    ];
+    const med = medianMargin(b);
+    if (med !== null && b.races.beaten > 0) out.push(`The firm that beat you got there a median ${ms(med)} sooner.`);
+    if (change.id === 'microwave') {
+      out.push(
+        b.races.beaten * 3 < a.races.beaten
+          ? 'Both firms knew where the index was going at the same moment. What decided the race was the trip to the stocks, and on the same microwave as Prairie Partners you stopped losing it.'
+          : 'The trip to the stocks is shorter, but the races did not all turn: look at the replay for who got there first.',
+      );
+    }
+    if (change.id === 'home') {
+      const raced = (m: Measures) => m.races.won + m.races.beaten;
+      out.push(
+        raced(b) < raced(a)
+          ? `From home it saw the future late and raced ${raced(b)} times, not ${raced(a)}: by the time it saw most jumps, the index had already followed. It lost fewer races by entering fewer, not by being faster.`
+          : 'From home it saw the future late, and reached the stocks late: every race it entered, it entered behind.',
+      );
+    }
+    if (change.id === 'lakeside') {
+      out.push(
+        answerOf(a, b) === 'same'
+          ? 'Seeing the future later and reaching the stocks sooner came out about even. The lead is a race of two legs, the news from the future and the order to the stocks, and both count.'
+          : 'Seeing the future later and reaching the stocks sooner did not come out even: the leg that is shorter decided it.',
+      );
+    }
+    return out.join(' ');
+  },
+  takeaway:
+    'The future is where the market moves first, so a firm that sits beside it knows a second early what the ' +
+    'index will do. Knowing is not enough: every firm at the Prairie Board knows it at the same moment, and the ' +
+    'money goes to the one whose order reaches the stocks first. Two minutes is too short to measure the money ' +
+    'well; the races are where the lesson shows.',
+};
+
+export const EXPERIMENTS: readonly Experiment[] = [HEADLINE, MILES, OPTION, LEAD];
 
 export function experiment(id: string): Experiment | undefined {
   return EXPERIMENTS.find((e) => e.id === id);

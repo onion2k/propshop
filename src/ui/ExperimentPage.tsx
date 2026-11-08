@@ -272,7 +272,7 @@ export function ExperimentPage({
         let side = e[which];
         if (!side) {
           // Building the start is the one lump of work; the frame it lands in is not drawn on time.
-          e.start ??= startOf(CONTENT, x.seed, x.startAt);
+          e.start ??= startOf(CONTENT, x.seed, x.startAt, x.desks);
           const tracker = x.tracker();
           const setup = which === 'a' ? x.baseline : e.setupB!.change.apply(structuredClone(x.baseline));
           side = {

@@ -878,7 +878,7 @@ describe('Root', () => {
     expect(store.game.now).toBeGreaterThan(t0);
   });
 
-  it('lists the three experiments and Free play', () => {
+  it('lists the four experiments and Free play', () => {
     const store = createStore(CONTENT, null, 25);
     render(<Root store={store} />);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
@@ -887,7 +887,7 @@ describe('Root', () => {
       expect(screen.getByRole('button', { name: new RegExp(e.title) })).toBeInTheDocument();
       expect(screen.getByText(e.teaches)).toBeInTheDocument();
     }
-    expect(EXPERIMENTS).toHaveLength(3);
+    expect(EXPERIMENTS).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'Free play' })).toBeInTheDocument();
   });
 

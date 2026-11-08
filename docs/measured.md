@@ -62,7 +62,7 @@ Measured by the PACE harness (`test/pace.test.ts`) and tuned by hand. A run of
   microwave 1,515 (1,351 to 1,807); the rival itself 924. The ladder is the lesson's, but the plan's check is not
   met: a rack and microwave beat home by about 780 a day, and microwave alone is 120,000, about 150 days of it.
   What would widen it is how slowly the index's books follow (one to two and a half seconds, `INDEX_LAG`), which is
-  the stocks' and was left alone. Before the rival raced at 0.5 cents (it never traded at 3), home earned as much
+  the stocks' and was left alone, by Chris's choice (2026-11-08). Before the rival raced at 0.5 cents (it never traded at 3), home earned as much
   as a rack on fibre.
 - Basis arbitrage, one seed: -319 a day at 0.5 cents (534 fills an hour) and no fill at 1 or more: two legs on two
   venues pay more in fees and spread than a basis the crowd keeps this tight. Roll from home, one seed: -439, the
@@ -168,3 +168,9 @@ The seeds were picked by searching (the day's headlines are scheduled when the g
 is read without running it). On 2026-11-06 the answers were: the headline, size better, threshold same, news
 better; a few miles, city worse, fibre better, rack better; the free option, wider better, aside better, city
 same. A run of two minutes takes 2 to 3.5 seconds in the browser.
+
+The lead, 2026-11-08 (seed 566, `npx vitest run test/experiments.test.ts`): from a rack at the Prairie Board on
+fibre, 4 races won and 14 lost, $148; microwave better (13 and 1, $387); home the same (5 and 6, $152); a rack at
+Lakeside on microwave the same (6 and 5, $146). Over ten seeds with a market-moving headline early on Monday,
+microwave cut the races lost to Prairie Partners from 12 to 46 down to 0 to 4 on every one, and its P&L was
+higher on three of ten: two minutes of lead-lag is a few hundred dollars, inside the noise.

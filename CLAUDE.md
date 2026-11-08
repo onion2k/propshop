@@ -69,7 +69,7 @@ DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one per
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
   `propshop.stages.v1` (the last stage whose intro was seen; a save without it is from before the stages and
   opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again, and Free play sets
-  it). `experiments.ts` is the three experiments: seed, window, setup, changes, the moments worth replaying,
+  it). `experiments.ts` is the four experiments: seed, desks open, window, setup, changes, the moments worth replaying,
   and the result sentence written from the two runs' numbers. The browser keeps `propshop.experiments.v1`,
   the ones done.
 - `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, `experiments.test.ts` for the

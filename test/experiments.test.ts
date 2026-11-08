@@ -12,7 +12,7 @@ const starts = new Map<string, ReturnType<typeof startOf>>();
 
 function run(e: Experiment, setup: Setup) {
   const tracker = e.tracker();
-  if (!starts.has(e.id)) starts.set(e.id, startOf(CONTENT, e.seed, e.startAt));
+  if (!starts.has(e.id)) starts.set(e.id, startOf(CONTENT, e.seed, e.startAt, e.desks));
   const r = new Run(CONTENT, starts.get(e.id)!, setup, e.windowMs, tracker.source);
   while (!r.advance(50_000));
   return { measures: r.measures(), moments: tracker.pick() };
@@ -37,7 +37,9 @@ describe.each(EXPERIMENTS.map((e) => [e.id, e] as const))('experiment %s', (_id,
   it('holds its promise, and every change does something', () => {
     const base = run(e, e.baseline);
     momentsFit(e, base.moments);
-    if (e.id === 'headline' || e.id === 'option') expect(base.moments.some((m) => m.kind === 'headline')).toBe(true);
+    if (e.id === 'headline' || e.id === 'option' || e.id === 'lead')
+      expect(base.moments.some((m) => m.kind === 'headline')).toBe(true);
+    if (e.id === 'lead') expect(base.measures.races.beaten + base.measures.races.won).toBeGreaterThanOrEqual(10);
     if (e.id === 'miles') expect(base.measures.races.beaten + base.measures.races.won).toBeGreaterThanOrEqual(50);
     expect(base.measures.fills).toBeGreaterThan(0);
 

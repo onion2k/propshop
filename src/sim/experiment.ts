@@ -78,9 +78,13 @@ export interface Measures {
   fees: number;
 }
 
-/** The world at the experiment's start: a new game at the open, stepped on to `startAt` (an absolute time). */
-export function startOf(content: Content, seed: number, startAt: number): SavedGame {
+/**
+ * The world at the experiment's start: a new game with these desks open, at the open, stepped on to `startAt` (an
+ * absolute time). A desk draws from its own stream, so opening one leaves the stocks' morning as it was.
+ */
+export function startOf(content: Content, seed: number, startAt: number, desks: readonly string[] = []): SavedGame {
   const g = new Game(content, seed);
+  for (const d of desks) g.openDesk(d);
   g.skipToOpen();
   if (startAt < g.now) throw new Error(`startAt ${startAt} is before the open at ${g.now}`);
   while (g.now < startAt) g.step();
