@@ -112,7 +112,7 @@ describe('the store and the stages', () => {
     expect(store.getIntro()).toBe(2);
     store.dismissIntro();
     expect(store.getIntro()).toBeNull();
-    store.save();
+    void store.save();
     const again = createStore(CONTENT, storage, 2);
     expect(again.getStage()).toBe(2);
     expect(again.getIntro()).toBeNull();
@@ -130,7 +130,7 @@ describe('the store and the stages', () => {
   it('opens everything for a save from before the stages (a save and no stages key)', () => {
     const storage = memory();
     const old = createStore(CONTENT, storage, 3);
-    old.save();
+    void old.save();
     storage.data.delete(STAGES_KEY);
     const store = createStore(CONTENT, storage, 4);
     expect(store.getStage()).toBe(5);
@@ -145,7 +145,7 @@ describe('the store and the stages', () => {
 
   it('opens everything for an old save whose progress is past stage 1', () => {
     const storage = memory();
-    createStore(CONTENT, storage, 3).save();
+    void createStore(CONTENT, storage, 3).save();
     storage.data.delete(STAGES_KEY);
     storage.data.set(PROGRESS_KEY, JSON.stringify(done('gap', 'race', 'home')));
     const store = createStore(CONTENT, storage, 4);

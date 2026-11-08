@@ -30,6 +30,8 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
   the two together and runs the sim loop; `src/ui/Root.tsx` shows the cover
   first, then the experiments list, both with the sim held; Free play opens `App` with everything shown.
   `ExperimentPage.tsx` runs an experiment's two runs itself, under the same frame budget as the store.
+  The free-play save is kept packed (`src/ui/savefile.ts`: gzip and base64 behind `gz:`, packed in
+  `src/save.worker.ts`) and unpacked before the store is made; a plain JSON save still reads.
 - The **Overview** is the page the game opens on (`src/ui/OverviewPanel.tsx`, its sections and charts beside it;
   the Market page is one tab along). `src/ui/overview.ts` works out its verdicts, records, payback and trends,
   pure; `src/content/signals.ts` is the signals (thresholds and words together) from the day reports. The night's
@@ -80,7 +82,8 @@ For anything new, check what it does:
 - **a tip:** real or made up, and the fine that may follow days later.
 - **saved:** a save from the previous tick loads to the same future. A version 1 save, from before the
   streams, loads with its streams drawn from its one random state: a good game, not the future it had. Any
-  other version is refused.
+  other version is refused. The page's save is packed in a worker, so the save begun as the page closes may not
+  land: a reload comes back to the last one written, at most ten seconds (`SAVE_EVERY`) of play behind.
 - **the same morning:** an experiment's two runs see the same fair values and headlines; the crowd answers
   each firm's orders, so the books differ, and the result page says so.
 - **a slow firm:** latency of twenty ticks sees the past and arrives late; a colocated one is one tick.
@@ -177,9 +180,13 @@ For anything new, check what it does:
   window) makes most five-minute variants "about the same" from home. The signals' thresholds and words are
   drafts, tuned by nothing. On a phone the comparisons table scrolls sideways and hides the total and the "N of
   M" summary.
-- The free-play save does not fit the browser's storage: 5 minutes into the open it is 7.9 million characters
-  (the quote logs) and `localStorage` refuses it (`QuotaExceededError`, caught in `store.save`), so a reload
-  loads the last save that fit, an early one. Measured 2026-11-07, not fixed.
+- The free-play save, 5 minutes into the open, is about 8 million characters of JSON (6.2 million the quote
+  logs), past `localStorage`'s usual 5 million; packed it is 540,000 to 630,000. Measured headless on
+  2026-11-08: the main thread pays 7 to 8 ms a save (JSON and the copy to the worker; 27 to 33 throttled four
+  times), the worker 50 more; at 300× over 32 s the worst frames match the parent's (33 ms; throttled 83, at
+  56.7 frames a second against 54.6). Packed on the main thread, gzip and base64 held a frame 50 ms, and 170 to
+  200 ms throttled: Chrome's `CompressionStream` runs on the calling thread. A storage still full, from other
+  keys, is caught in `store.save` and says nothing.
 - No fuzzer and no invariants file yet.
 - The experiments' seeds were picked by searching (the day's headlines are scheduled when the game is built,
   so a seed's news is read without running it). `test/experiments.test.ts` holds what each briefing promises:

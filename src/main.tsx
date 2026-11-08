@@ -5,7 +5,8 @@ import { createRoot } from 'react-dom/client';
 import { CONTENT } from './content';
 import { Root } from './ui/Root';
 import { WorkerRunner, type NightRunner } from './ui/nights';
-import { createStore } from './ui/store';
+import { readSave, workerPacker } from './ui/savefile';
+import { createStore, SAVE_KEY } from './ui/store';
 import './ui/styles.css';
 
 const root = document.getElementById('root');
@@ -19,7 +20,14 @@ try {
   runner = undefined;
 }
 
-const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0, () => performance.now(), runner);
+// The save is kept packed (it outgrows localStorage as JSON), packed in a worker of its own, and unpacked before
+// the store is made.
+const saved = await readSave(window.localStorage.getItem(SAVE_KEY));
+const pack = workerPacker(() => new Worker(new URL('./save.worker.ts', import.meta.url), { type: 'module' }));
+const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0, () => performance.now(), runner, {
+  pack,
+  saved,
+});
 createRoot(root).render(
   <StrictMode>
     <Root store={store} storage={window.localStorage} />
@@ -33,9 +41,10 @@ const loop = (t: number) => {
 };
 requestAnimationFrame(loop);
 setInterval(() => store.pump(performance.now()), 100);
-window.addEventListener('pagehide', () => store.save());
+// The page's last save is packed out of the frame, so a reload or a closed tab may beat it: the save before stands.
+window.addEventListener('pagehide', () => void store.save());
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') store.save();
+  if (document.visibilityState === 'hidden') void store.save();
 });
 
 // For poking at from the console and from tests.

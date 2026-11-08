@@ -117,7 +117,7 @@ describe('App', () => {
     const store = createStore(CONTENT, storage, 5);
     store.skipToOpen();
     for (let i = 0; i < 1000; i++) store.game.step(TICK_MS);
-    store.save();
+    void store.save();
     expect(storage.data.has(SAVE_KEY)).toBe(true);
     const again = createStore(CONTENT, storage, 99);
     expect(again.game.now).toBe(store.game.now);
@@ -772,7 +772,7 @@ describe('Store: hold', () => {
     const first = createStore(CONTENT, storage, 23);
     first.skipToOpen();
     for (let i = 0; i < 200; i++) first.game.step(TICK_MS);
-    first.save();
+    void first.save();
     const again = createStore(CONTENT, storage, 99);
     again.hold(true);
     const now = again.game.now;
@@ -1147,7 +1147,7 @@ describe('stages', () => {
   it('criterion 6: a save from before the stages opens every stage, with no intro cards', () => {
     const storage = memory();
     const old = createStore(CONTENT, storage, 38);
-    old.save();
+    void old.save();
     storage.data.delete(STAGES_KEY);
     const store = createStore(CONTENT, storage, 39);
     store.setTutorial({ state: 'done' });

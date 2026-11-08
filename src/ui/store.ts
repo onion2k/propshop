@@ -90,7 +90,8 @@ export interface Store {
   /** Hold the sim still (the cover is up): pump advances nothing, but keeps its clock so release does not catch up. */
   hold: (on: boolean) => void;
   publish: () => void;
-  save: () => void;
+  /** Writes the game to storage; resolves once it is written, or given up (storage full, or a reset meanwhile). */
+  save: () => Promise<void>;
   reset: (seed: number) => void;
   game: Game;
   // Actions, so components never touch the game.
@@ -121,6 +122,13 @@ export interface Storage {
 export interface StoreOptions {
   /** The length of each test window, ms of simulated time; the tests' default where absent. For tests. */
   windowMs?: number;
+  /**
+   * Packs the save's JSON before it is written: the page's gzip (`packSave`), as the save outgrows localStorage
+   * unpacked. Without one the JSON is written as it is, at once, as the tests want.
+   */
+  pack?: (json: string) => Promise<string>;
+  /** The kept save, already unpacked by the page (`readSave`); where absent the store reads storage itself. */
+  saved?: string | null;
 }
 
 /** The day's pins, as the store keeps them from the open to the close. */
@@ -154,7 +162,11 @@ export function createStore(
   runner?: NightRunner,
   options: StoreOptions = {},
 ): Store {
-  let game = loadOrNew(content, storage, seed);
+  let game = loadOrNew(
+    content,
+    options.saved !== undefined ? options.saved : (storage?.getItem(SAVE_KEY) ?? null),
+    seed,
+  );
   let running = 0;
   let snapshot = game.snapshot();
   let progress: Progress = loadProgress(storage);
@@ -169,6 +181,9 @@ export function createStore(
   let publishedVersion = game.version;
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
+  // A packed save lands only if it is the newest begun and no reset came between: `saveGen` counts resets.
+  let saveGen = 0;
+  let saveSeq = 0;
   let lastPump: number | null = null;
   let held = false;
   const listeners = new Set<() => void>();
@@ -516,7 +531,7 @@ export function createStore(
       }
       if (wallNow - lastSave >= SAVE_EVERY) {
         lastSave = wallNow;
-        store.save();
+        void store.save();
       }
     },
     hold(on) {
@@ -534,14 +549,32 @@ export function createStore(
     },
     publish,
     save() {
-      if (!storage) return;
-      try {
-        storage.setItem(SAVE_KEY, JSON.stringify(game.save()));
-      } catch {
-        // Storage can be full or forbidden; the game goes on without it.
+      if (!storage) return Promise.resolve();
+      const write = (text: string) => {
+        try {
+          storage.setItem(SAVE_KEY, text);
+        } catch {
+          // Storage can be full or forbidden; the game goes on without it.
+        }
+      };
+      const json = JSON.stringify(game.save());
+      if (!options.pack) {
+        write(json);
+        return Promise.resolve();
       }
+      const gen = saveGen;
+      const seq = ++saveSeq;
+      return options.pack(json).then(
+        (packed) => {
+          if (gen === saveGen && seq === saveSeq) write(packed);
+        },
+        () => {
+          // A browser that cannot pack keeps the last save that was written.
+        },
+      );
     },
     reset(newSeed) {
+      saveGen++;
       storage?.removeItem(SAVE_KEY);
       storage?.removeItem(PROGRESS_KEY);
       storage?.removeItem(TUTORIAL_KEY);
@@ -583,8 +616,7 @@ export function createStore(
   return store;
 }
 
-function loadOrNew(content: Content, storage: Storage | null, seed: number): Game {
-  const raw = storage?.getItem(SAVE_KEY);
+function loadOrNew(content: Content, raw: string | null, seed: number): Game {
   if (raw) {
     try {
       return Game.load(content, JSON.parse(raw) as SavedGame);
