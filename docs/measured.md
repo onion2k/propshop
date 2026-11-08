@@ -16,6 +16,11 @@ Measured by the PACE harness (`test/pace.test.ts`) and tuned by hand. A run of
   a day, read home momentum 339 (93, 496, 429) and city momentum 599 (159, 1,955, -316): the first hour is
   momentum's weakest, and scaling it to a day understates a day by more than ten times. Use whole days for
   momentum's pace.
+- 2026-11-08, the PACE harness on seed 1, twenty minutes, before and after instruments (`plans/instruments.md`),
+  identical to the dollar, dollars a day: home momentum -218; colocated arbitrage 8,395; colocated maker 6,962,
+  and 28,647 at no half-spread; colocated pairs -1,006; city arbitrage with the maker 4,251; the hand from home
+  -83,604; Harbor Quant 14,542 while the hand sweeps. Colocated index arbitrage made no fill at all, where on
+  2026-11-02 it fired a few hundred times an hour: not looked into.
 - The figures below are from before chance was split into streams (2026-11-06), which changed every draw. One
   seed at twenty minutes since, dollars a day: home momentum -200 (was 2,200); colocated arbitrage 8,400;
   Harbor Quant 14,900; the maker positive everywhere (home 1,600, colocated 7,000, city 4,800); city momentum

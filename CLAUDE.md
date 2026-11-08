@@ -97,8 +97,9 @@ DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one per
   the firm does may draw from `world`: that is what makes two runs of one morning the same morning.
 - Time is stepped: `game.step()` advances one fixed tick of simulated
   time. The wall clock never reaches the sim.
-- Prices are integer cents and sizes integer shares: no float drift in
-  money. Fair values are floats and are rounded at the book.
+- Prices are integer price points (cents, for a stock) and sizes integer units: no float drift in money. Fair
+  values are floats and are rounded at the book. A quantity and a price become money in `src/sim/instrument.ts`
+  (`valueOf`, by the instrument's `scaleOf`) and nowhere else.
 - Every list the sim keeps is bounded, and the bound is named beside it.
 - Each concept the player meets has a glossary entry, and the UI links
   to it where the concept is used.

@@ -14,6 +14,7 @@ import {
 } from './orderbook';
 
 export type SubmitResult = ReturnType<OrderBook['add']>;
+import { tickOf } from './instrument';
 import type { Random } from './random';
 import { DEFAULT_RULES, type ExchangeRules, type ExchangeSpec } from './types';
 
@@ -67,6 +68,8 @@ export interface StockState {
   tape: Trade[];
   /** The quote at the end of each recent tick, oldest first. */
   quoteLog: LoggedQuote[];
+  /** The instrument's own price grid; absent, the exchange's rule. Not saved: it comes from the content. */
+  tickSize?: number;
 }
 
 export interface SavedExchange {
@@ -84,12 +87,16 @@ export class Exchange {
   private pending: { symbol: string; req: OrderRequest; at: number; resolve: (r: SubmitResult) => void }[] = [];
   /** Trades made this tick, by anyone, for the game to route to their owners. */
   tickTrades: { symbol: string; trade: Trade }[] = [];
-  constructor(spec: ExchangeSpec, symbols: { symbol: string; startPrice: number; constituents?: string[] }[]) {
+  constructor(
+    spec: ExchangeSpec,
+    symbols: { symbol: string; startPrice: number; constituents?: string[]; tickSize?: number }[],
+  ) {
     this.spec = spec;
     for (const s of symbols) {
       this.stocks.set(s.symbol, {
         book: new OrderBook(),
         index: (s.constituents?.length ?? 0) > 0,
+        ...(s.tickSize === undefined ? {} : { tickSize: s.tickSize }),
         belief: s.startPrice,
         tape: [],
         quoteLog: [],
@@ -248,7 +255,7 @@ export class Exchange {
    * order waits for the next batch, and the result comes through the callback when it matches.
    */
   submit(symbol: string, req: OrderRequest, now: number, done?: (r: SubmitResult) => void): SubmitResult | null {
-    const shaped = this.shape(req);
+    const shaped = this.shape(this.stock(symbol), req);
     if (this.rules.batchMs > 0 && done) {
       this.pending.push({ symbol, req: shaped, at: now, resolve: done });
       return null;
@@ -259,8 +266,8 @@ export class Exchange {
   }
 
   /** A request as this exchange's rules make it: on the tick grid, and post-only only where honoured. */
-  private shape(req: OrderRequest): OrderRequest {
-    const tick = this.rules.tickSize;
+  private shape(s: StockState, req: OrderRequest): OrderRequest {
+    const tick = tickOf(s, this.rules.tickSize);
     const price = tick > 1 ? Math.max(tick, Math.round(req.price / tick) * tick) : req.price;
     return { ...req, price, postOnly: this.rules.postOnly ? req.postOnly : false };
   }
@@ -359,7 +366,7 @@ export class Exchange {
     sweep: boolean,
   ) {
     const scale = dt / REFERENCE_DT;
-    const tick = this.rules.tickSize;
+    const tick = tickOf(s, this.rules.tickSize);
     const bidCenter = Math.floor(s.belief / tick) * tick;
     const askCenter = bidCenter + tick;
     // How many crowd orders rest near the touch on each side: a bounded walk, since this runs every tick.
@@ -443,9 +450,11 @@ export class Exchange {
     if (saved.rules) this.rules = { ...DEFAULT_RULES, ...saved.rules };
     this.pending = [];
     for (const [symbol, s] of Object.entries(saved.stocks)) {
+      const built = this.stocks.get(symbol);
       this.stocks.set(symbol, {
         book: OrderBook.load(s.book),
-        index: this.stocks.get(symbol)?.index ?? false,
+        index: built?.index ?? false,
+        ...(built?.tickSize === undefined ? {} : { tickSize: built.tickSize }),
         belief: s.belief,
         tape: s.tape.map((t) => ({ ...t })),
         quoteLog: s.quoteLog.map((q) => ({ ...q })),

@@ -75,6 +75,8 @@ export type {
   FactorSpec,
   RegimeSpec,
   StockSpec,
+  InstrumentSpec,
+  InstrumentKind,
   ExchangeSpec,
   LocationSpec,
   NetworkSpec,
@@ -100,3 +102,4 @@ export {
 export { regimeFor } from './regime';
 export { BACKTEST_WINDOW_MS, MAX_DAY_PINS, MAX_VARIANTS, pinTimes, testNight, variants } from './backtest';
 export type { NightEvent, Pin, Variant, VariantOptions } from './backtest';
+export { kindOf, scaleOf, tickOf, valueOf } from './instrument';

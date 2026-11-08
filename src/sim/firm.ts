@@ -5,6 +5,7 @@
 import { MS_PER_SECOND, isMarketOpen } from './clock';
 import type { Exchange, SubmitResult } from './exchange';
 import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
+import { NO_SCALES, valueOf } from './instrument';
 import type { Market } from './market';
 import type { Quote, Side, Trade } from './orderbook';
 import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
@@ -290,6 +291,8 @@ export class Firm {
   bumps: Record<string, number> = {};
   /** The tax each exchange charges a fill, cents a share, set the same way. */
   taxes: Record<string, number> = {};
+  /** Cents a price point of one held unit is worth, by symbol, handed in each tick from the market; absent, one. */
+  scales: ReadonlyMap<string, number> = NO_SCALES;
 
   /** How late an order reaches the exchange, the exchange's speed bump included. */
   latency(exchange: string): number {
@@ -330,7 +333,7 @@ export class Firm {
       if (pos.qty === 0) continue;
       const mark = this.mark(market, symbol, now);
       if (mark === null) continue;
-      total += (mark - pos.avgCost) * pos.qty;
+      total += valueOf(market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost);
     }
     return total;
   }
@@ -352,7 +355,7 @@ export class Firm {
     for (const [symbol, pos] of this.positions) {
       if (pos.qty === 0) continue;
       const mark = this.mark(market, symbol, now) ?? pos.avgCost;
-      total += pos.qty * mark;
+      total += valueOf(market.scales.get(symbol) ?? 1, pos.qty, mark);
     }
     return total;
   }
@@ -423,6 +426,7 @@ export class Firm {
       (taker ? Math.round(this.feeFor(order.exchange) * size) : 0) +
       Math.round((this.taxes[order.exchange] ?? 0) * size);
     const pos = this.positions.get(order.symbol) ?? { qty: 0, avgCost: 0 };
+    const scale = this.scaleOf(order.symbol);
     const signed = order.side === 'buy' ? size : -size;
     let realised = 0;
     if (pos.qty === 0 || Math.sign(pos.qty) === Math.sign(signed)) {
@@ -430,7 +434,7 @@ export class Firm {
       pos.qty += signed;
     } else {
       const closing = Math.min(Math.abs(pos.qty), size);
-      realised = (price - pos.avgCost) * closing * Math.sign(pos.qty);
+      realised = valueOf(scale, closing * Math.sign(pos.qty), price - pos.avgCost);
       pos.qty += signed;
       if (Math.sign(pos.qty) === Math.sign(signed)) pos.avgCost = price;
       if (pos.qty === 0) pos.avgCost = 0;
@@ -439,7 +443,7 @@ export class Firm {
     const mine = this.blockPositions.get(order.block) ?? new Map<string, number>();
     mine.set(order.symbol, (mine.get(order.symbol) ?? 0) + signed);
     this.blockPositions.set(order.block, mine);
-    this.cash -= signed * price + fee;
+    this.cash -= valueOf(scale, signed, price) + fee;
     this.feesPaid += fee;
     // A fill that realised nothing says nought, not minus nought, which a save would lose.
     if (realised === 0) realised = 0;
@@ -644,11 +648,16 @@ export class Firm {
   /** Gross notional of what is held and what is resting or in flight, cents. */
   private exposure(): number {
     let total = 0;
-    for (const pos of this.positions.values()) total += Math.abs(pos.qty) * pos.avgCost;
+    for (const [symbol, pos] of this.positions) total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), pos.avgCost);
     for (const o of this.orders.values()) {
-      if (o.status === 'inflight' || o.status === 'resting') total += (o.size - o.filled) * o.price;
+      if (o.status === 'inflight' || o.status === 'resting')
+        total += valueOf(this.scaleOf(o.symbol), o.size - o.filled, o.price);
     }
     return total;
+  }
+
+  private scaleOf(symbol: string): number {
+    return this.scales.get(symbol) ?? 1;
   }
 
   /**
@@ -675,7 +684,8 @@ export class Firm {
     if (intent.kind === 'order' && !force) {
       // An order that would carry more than the leverage allows is refused here, not at the exchange.
       const reduces = Math.sign(this.position(intent.symbol)) === (intent.side === 'buy' ? -1 : 1);
-      if (!reduces && this.exposure() + intent.size * intent.price > this.equityNow * this.risk.maxLeverage) {
+      const adds = valueOf(this.scaleOf(intent.symbol), intent.size, intent.price);
+      if (!reduces && this.exposure() + adds > this.equityNow * this.risk.maxLeverage) {
         this.stats.ordersRejected++;
         this.recordRejected(intent, block, now, REJECT_EXPOSURE);
         return;

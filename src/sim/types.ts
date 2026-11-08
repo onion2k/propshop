@@ -1,22 +1,47 @@
 // The shapes the content hands the sim at construction. The sim never imports content; it is given these.
 
-export interface StockSpec {
+/** What an instrument is: a stock, an index, or one of the contracts the later desks trade. */
+export type InstrumentKind = 'equity' | 'index' | 'future' | 'option' | 'fx' | 'metal';
+
+/**
+ * Anything that trades. A stock is the plain case, and every field beyond a stock's is optional with the stock's
+ * value as its default, so a stock is written as it always was. Value is worked out in `instrument.ts` and nowhere
+ * else.
+ */
+export interface InstrumentSpec {
   symbol: string;
   name: string;
   sector: string;
+  /** What it is; absent, an index where it has constituents and a stock otherwise. */
+  kind?: InstrumentKind;
   /** How much of the market's move this stock takes: one is the market's own. */
   beta?: number;
   /** An index: its fair value is the average of these symbols', and it has no wander of its own. */
   constituents?: string[];
-  /** Opening price, cents. */
+  /** Opening price, in price points. */
   startPrice: number;
-  /** How far the fair value wanders in an hour, in cents, one standard deviation. */
+  /** How far the fair value wanders in an hour, in price points, one standard deviation. */
   hourlyVol: number;
   /** Sudden moves a second, on average: bursts of buying or selling that fast exchanges see before slow ones. */
   jumpsPerSecond: number;
-  /** How big a sudden move is, in cents, one standard deviation. */
+  /** How big a sudden move is, in price points, one standard deviation. */
   jumpSize: number;
+  /** Units of the underlying in one contract: an index future may be fifty times the index. Absent, one. */
+  multiplier?: number;
+  /** Cents in one price point: one for a stock quoted in cents. Absent, one. */
+  priceUnit?: number;
+  /** The price grid, in price points; absent, the exchange's rule. */
+  tickSize?: number;
+  /** The exchanges that list it; absent, every one. From part 2 of the trading roadmap; not read yet. */
+  venues?: string[];
+  /** What a contract is on. From part 3; not read yet. */
+  underlying?: string;
+  /** When a contract expires, simulated ms. From part 3; not read yet. */
+  expiry?: number;
 }
+
+/** A stock is an instrument; the name stays for the content's list of stocks until venues arrive. */
+export type StockSpec = InstrumentSpec;
 
 export interface ExchangeSpec {
   id: string;

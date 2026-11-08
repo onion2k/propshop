@@ -3,6 +3,7 @@
 
 import { MS_PER_HOUR, MS_PER_SECOND, activity, isMarketOpen } from './clock';
 import { Exchange, type SavedExchange } from './exchange';
+import { scaleOf } from './instrument';
 import type { Random } from './random';
 import type { ExchangeSpec, FactorSpec, RegimeSpec, StockSpec } from './types';
 
@@ -69,6 +70,8 @@ export class Market {
   /** The day's character, and the drift it gives each stock in cents per ms while the market is open. */
   regime: RegimeSpec = PLAIN_DAY;
   private drifts = new Map<string, number>();
+  /** Cents a price point of one held unit is worth, by symbol: one for every stock (`instrument.ts`). */
+  readonly scales: ReadonlyMap<string, number>;
 
   constructor(
     stocks: StockSpec[],
@@ -76,6 +79,7 @@ export class Market {
     factors: FactorSpec = { marketHourlyBps: 0, sectorHourlyBps: 0, ownReversionPerHour: 0.1 },
   ) {
     this.stocks = stocks;
+    this.scales = new Map(stocks.map((s) => [s.symbol, scaleOf(s)]));
     this.factorSpec = factors;
     this.exchanges = exchanges.map((e) => new Exchange(e, stocks));
     for (const s of stocks) {

@@ -209,7 +209,7 @@ signals and comparisons work across desks ("the futures desk's lead pays for the
 Each part is its own plan in `plans/`, specified when its turn comes, and is held to the definition of done on
 its own. Part 1 must change nothing a player sees.
 
-- [ ] **1. Instruments** (`plans/instruments.md`): `InstrumentSpec` with kind, multiplier, price unit, tick size,
+- [x] **1. Instruments** (`plans/instruments.md`, built 2026-11-08): `InstrumentSpec` with kind, multiplier, price unit, tick size,
       venues, underlying, expiry; `StockSpec` folded in; value worked out in one place. Check: a fingerprint of
       a seed's game over a day, taken before the change and held equal after it; `npm run check` green; the PACE
       harness on one seed reads the same to the dollar.

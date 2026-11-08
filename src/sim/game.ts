@@ -25,6 +25,7 @@ import {
   type Wire,
 } from './firm';
 import { tick } from './flow';
+import { valueOf } from './instrument';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
@@ -695,7 +696,7 @@ export class Game {
         qty: pos.qty,
         avgCost: pos.avgCost,
         mark,
-        unrealised: mark === null ? 0 : (mark - pos.avgCost) * pos.qty,
+        unrealised: mark === null ? 0 : valueOf(this.market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost),
       });
     }
     const unrealised = firm.unrealised(this.market, now);
@@ -868,7 +869,11 @@ export class Game {
       if (f.block !== HAND_BLOCK || f.at < this.today.openedAt) continue;
       const touch = this.firm.orders.get(f.localId)?.clickTouch;
       if (touch === undefined || touch === null) continue;
-      total += (f.side === 'buy' ? f.price - touch : touch - f.price) * f.size;
+      total += valueOf(
+        this.market.scales.get(f.symbol) ?? 1,
+        f.size,
+        f.side === 'buy' ? f.price - touch : touch - f.price,
+      );
     }
     return total;
   }

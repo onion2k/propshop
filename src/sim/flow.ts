@@ -27,6 +27,7 @@ export function tick(
     f.feeTable = fees(market);
     f.bumps = bumps;
     f.taxes = taxes;
+    f.scales = market.scales;
     f.batchedAt = now;
     f.step(now, market, news, open);
   }
