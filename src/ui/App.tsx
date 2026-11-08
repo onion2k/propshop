@@ -1,6 +1,7 @@
-// The page's layout: the top bar on every page, then one of three pages. Market is the market and your firm's
-// live book; Strategy is the blocks, the script, the risk limits and the shop; Reports is the first week, the
-// days, the news, the dark web, the rivals and the glossary. All state lives in the store; this file arranges it.
+// The page's layout: the top bar on every page, then one of the pages. Overview is the firm read over time and
+// the page the game opens on; Market is the market and your firm's live book; Strategy is the blocks, the script,
+// the risk limits and the shop; Reports is the first week, the days, the news, the dark web, the rivals and the
+// glossary. All state lives in the store; this file arranges it.
 
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import { LESSONS, lessonStage, shows, type Feature, type TutorialPage } from '../content';
@@ -12,6 +13,7 @@ import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
 import { LabPanel } from './LabPanel';
 import { LearnContext, LearnPanel } from './Glossary';
 import { MarketPanel } from './MarketPanel';
+import { OverviewPanel } from './OverviewPanel';
 import { Microscope } from './Microscope';
 import { NewsPanel } from './NewsPanel';
 import { RiskPanel } from './RiskPanel';
@@ -22,8 +24,9 @@ import { StrategyPanel } from './StrategyPanel';
 import { TopBar } from './TopBar';
 import { StageIntro, TutorialCard, Welcome } from './Tutorial';
 
-type Page = 'market' | 'desk' | 'strategy' | 'reports';
+type Page = 'overview' | 'market' | 'desk' | 'strategy' | 'reports';
 const PAGES: { id: Page; label: string; feature?: Feature }[] = [
+  { id: 'overview', label: 'Overview' },
   { id: 'market', label: 'Market' },
   { id: 'desk', label: 'Desk', feature: 'page:desk' },
   { id: 'strategy', label: 'Strategy' },
@@ -48,10 +51,10 @@ export function App({ store }: { store: Store }) {
   const stage = useSyncExternalStore(store.subscribe, store.getStage, store.getStage);
   const reveal = useSyncExternalStore(store.subscribe, store.getReveal, store.getReveal);
   const intro = useSyncExternalStore(store.subscribe, store.getIntro, store.getIntro);
-  const [wantPage, setPage] = useState<Page>('market');
-  // A page that is not open (the switch turned off while on it) falls back to the market.
+  const [wantPage, setPage] = useState<Page>('overview');
+  // A page that is not open (the switch turned off while on it) falls back to the overview.
   const pages = PAGES.filter((p) => !p.feature || shows(p.feature, stage));
-  const page: Page = pages.some((p) => p.id === wantPage) ? wantPage : 'market';
+  const page: Page = pages.some((p) => p.id === wantPage) ? wantPage : 'overview';
   const goPage = useCallback((p: TutorialPage) => setPage(p), []);
   const [micro, setMicro] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
@@ -117,6 +120,7 @@ export function App({ store }: { store: Store }) {
           </button>
         )}
       </nav>
+      {page === 'overview' && <OverviewPanel s={s} store={store} />}
       {page === 'market' && (
         <main className="layout">
           <div className="column">

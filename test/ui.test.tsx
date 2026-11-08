@@ -12,9 +12,10 @@ import { EXPERIMENTS, type Experiment } from '../src/content/experiments';
 import { EXPERIMENTS_KEY } from '../src/ui/Root';
 import { MARKET_OPEN } from '../src/sim/clock';
 import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
+import { TESTS_KEY, type Night } from '../src/ui/nights';
 
 /** The page switcher under the top bar. */
-function goTo(page: 'Market' | 'Desk' | 'Strategy' | 'Reports') {
+function goTo(page: 'Overview' | 'Market' | 'Desk' | 'Strategy' | 'Reports') {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${page}`) }));
 }
 
@@ -104,6 +105,7 @@ describe('App', () => {
   it('opens the glossary at a term when one is clicked', () => {
     const store = createStore(CONTENT, null, 4);
     render(<App store={store} />);
+    goTo('Market');
     fireEvent.click(screen.getAllByText('fair')[0]!);
     expect(screen.getByRole('tab', { name: 'Learn' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /^Reports/ })).toHaveAttribute('aria-current', 'page');
@@ -134,6 +136,7 @@ describe('App', () => {
     for (let i = 0; i < (6 * 60 * 1000) / TICK_MS; i++) store.game.step();
     store.publish();
     render(<App store={store} />);
+    goTo('Market');
     const items = document.querySelectorAll('.orders li');
     expect(items.length).toBeGreaterThan(0);
     const words = [...document.querySelectorAll('.race-words')].map((e) => e.textContent);
@@ -316,6 +319,7 @@ describe('App', () => {
   it('lists every symbol on the watchlist, watches as many as the computer allows, and shows the picked one', () => {
     const store = createStore(CONTENT, null, 16);
     render(<App store={store} />);
+    goTo('Market');
     expect(document.querySelectorAll('.watchlist tbody tr')).toHaveLength(13);
     expect(document.querySelector('.market h2')?.textContent).toMatch(/watching 4 of 4/);
     // Four watched, so an unwatched box is disabled until one is freed.
@@ -336,6 +340,7 @@ describe('App', () => {
     store.setBlock('arbitrage', { enabled: false });
     store.setBlock('marketMaker', { enabled: true });
     render(<App store={store} />);
+    goTo('Market');
     act(() => {
       store.skipToOpen();
       for (let i = 0; i < (3 * 60 * 1000) / TICK_MS; i++) store.game.step();
@@ -1001,7 +1006,7 @@ function buySeat(store: ReturnType<typeof createStore>) {
 }
 
 describe('stages', () => {
-  it('criterion 1: a fresh game shows Market, Strategy and Reports, momentum only and on, and none of the later things', () => {
+  it('criterion 1: a fresh game shows Overview, Market, Strategy and Reports, momentum only and on, and none of the later things', () => {
     const store = createStore(CONTENT, null, 31);
     store.setTutorial({ state: 'done' });
     act(() => {
@@ -1011,7 +1016,8 @@ describe('stages', () => {
     });
     render(<App store={store} />);
     const pages = [...document.querySelectorAll('nav.pages > button:not(.link)')].map((b) => b.textContent);
-    expect(pages.map((p) => p.replace(/\d+$/, ''))).toEqual(['Market', 'Strategy', 'Reports']);
+    expect(pages.map((p) => p.replace(/\d+$/, ''))).toEqual(['Overview', 'Market', 'Strategy', 'Reports']);
+    goTo('Market');
     // Things a later stage shows: the gap counter, the scorecard, the race under an order, the microscope.
     expect(screen.queryByText(/gaps seen/)).toBeNull();
     expect(document.querySelector('.gap-line, .gap-list')).toBeNull();
@@ -1164,4 +1170,190 @@ describe('stages', () => {
     const titles = [...document.querySelectorAll('.lesson-head strong')].map((e) => e.textContent);
     expect(titles).toEqual(['Find what earns from home', 'Buy a better seat']);
   });
+});
+
+describe('Overview', () => {
+  const FIVE = 5 * 60_000;
+  const PINS = ['open', 'headline', 'afternoon'] as const;
+  const measure = (pnl: number) => ({
+    pnl,
+    fills: 4,
+    races: { won: 2, beaten: 1, missed: 0 },
+    byExchange: {},
+    byBlock: {},
+    fees: 120,
+  });
+  /** A hand-made night: the baseline and variants, each with a P&L per window. */
+  function night(day: number, results: Record<string, number[]>, extra: Partial<Night> = {}): Night {
+    const ids = Object.keys(results);
+    return {
+      day,
+      closedAt: 0,
+      status: 'done',
+      windowMs: FIVE,
+      variants: ids.map((id) => ({
+        id,
+        kind: id === 'baseline' ? 'baseline' : id.startsWith('upgrade') ? 'upgrade' : 'toggle',
+        label: id === 'baseline' ? 'baseline' : id,
+        ...(id.startsWith('upgrade') ? { price: 1_000_000 } : {}),
+        signals: [],
+      })),
+      pins: PINS.map((p, i) => ({ label: p, at: i })),
+      runs: ids.flatMap((id) =>
+        PINS.map((p, i) => ({ variantId: id, pin: p, at: i, measures: measure(results[id]![i]!) })),
+      ),
+      missing: [],
+      setupChanged: false,
+      skipped: false,
+      reason: null,
+      playerNote: null,
+      ...extra,
+    };
+  }
+  const seeded = (nights: Night[]) => {
+    const storage = memory();
+    storage.setItem(TESTS_KEY, JSON.stringify({ nights, player: null }));
+    return storage;
+  };
+  const BIG = 50_000;
+
+  it('opens a fresh game on the Overview, every section with its reading line, a note and what will appear', () => {
+    const store = createStore(CONTENT, null, 41);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(screen.getByRole('button', { name: /^Overview/ })).toHaveAttribute('aria-current', 'page');
+    for (const h of ['Position', 'Today so far', 'Trends', 'Signals', 'Comparisons'])
+      expect(screen.getByRole('heading', { name: h, level: 2 })).toBeInTheDocument();
+    expect(document.querySelectorAll('.ov-section')).toHaveLength(5);
+    expect(document.querySelectorAll('.ov-section .ov-how')).toHaveLength(5);
+    expect(document.querySelectorAll('.ov-section details.ov-note')).toHaveLength(5);
+    expect(screen.getByText(/No day has closed yet. After the first close/)).toBeInTheDocument();
+    expect(screen.getByText(/The market is closed. From the open, a point a minute/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing yet. After each close a day is added/)).toBeInTheDocument();
+    expect(screen.getByText(/Appears once a block has traded/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing to look at yet/)).toBeInTheDocument();
+    expect(screen.getByText('No night tested yet.')).toBeInTheDocument();
+    expect(screen.getByText(/Nothing yet. At the first close the game runs/)).toBeInTheDocument();
+    expect(screen.getByText(/Once a change has been tested on more than one night/)).toBeInTheDocument();
+    expect(screen.getByText('Nothing queued.')).toBeInTheDocument();
+    // The notes link the glossary, and a click opens the entry.
+    expect(document.querySelectorAll('.ov-section .term').length).toBeGreaterThan(4);
+    expect(screen.getByText('Setup:').parentElement?.textContent).toMatch(/Momentum/);
+    // Stage 1 hides the races and the rivals.
+    expect(screen.queryByText('Races won')).toBeNull();
+    expect(screen.queryByText('Strategies you did not run')).toBeNull();
+  });
+
+  it('shows the races and the rivals once the stage shows them', () => {
+    const store = createStore(CONTENT, null, 42);
+    store.setTutorial({ state: 'done' });
+    store.setReveal(true);
+    render(<App store={store} />);
+    expect(screen.getByText('Races won')).toBeInTheDocument();
+    expect(screen.getByText('Strategies you did not run')).toBeInTheDocument();
+  });
+
+  it('shows a stored night: baseline and variants, a verdict per window, N of M windows, and mixed', () => {
+    const storage = seeded([
+      night(7, {
+        baseline: [0, 0, 0],
+        'toggle:a': [BIG, BIG, BIG],
+        'toggle:b': [BIG, -BIG, 0],
+        'upgrade:location:city': [BIG, BIG, BIG],
+      }),
+    ]);
+    const store = createStore(CONTENT, storage, 43);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    const table = document.querySelector('.ov-compare') as HTMLElement;
+    expect(table).not.toBeNull();
+    const rows = within(table).getAllByRole('row');
+    expect(rows).toHaveLength(5);
+    expect(within(rows[1]!).getByText('The firm as it closed')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('better in 3 of 3 windows')).toBeInTheDocument();
+    expect(within(rows[2]!).getAllByText('better').length).toBeGreaterThanOrEqual(3);
+    expect(within(rows[3]!).getByText(/^mixed: better in 1 of 3 windows, worse in 1$/)).toBeInTheDocument();
+    expect(within(rows[3]!).getByText('worse')).toBeInTheDocument();
+    // An upgrade with a price says how long it takes to pay, as an extrapolation.
+    expect(screen.getByText(/pays back in/)).toBeInTheDocument();
+    expect(screen.getByText(/An extrapolation/)).toBeInTheDocument();
+    // The caveats the plan asks for.
+    const caveats = within(document.querySelector('.ov-caveats') as HTMLElement);
+    expect(caveats.getByText(/crowd answers each setup/)).toBeInTheDocument();
+    expect(caveats.getByText(/dark web are left out/)).toBeInTheDocument();
+    expect(screen.getByText(/Tests of Mon, week 2: done/)).toBeInTheDocument();
+  });
+
+  it('says why a night ran nothing, or only in part, and keeps a record over nights', () => {
+    const storage = seeded([
+      night(7, { baseline: [0, 0, 0], 'toggle:a': [BIG, BIG, BIG] }),
+      night(8, { baseline: [0, 0, 0], 'toggle:a': [-BIG, -BIG, -BIG] }),
+      night(9, { baseline: [0, 0, 0], 'toggle:a': [BIG, BIG, BIG] }, { playerNote: 'Your test: toggle:a' }),
+      night(
+        10,
+        { baseline: [0, 0, 0], 'toggle:a': [0, 0, 0] },
+        {
+          runs: [],
+          status: 'none',
+          reason: 'No open was seen on this page for the day, so there is nothing to run.',
+          setupChanged: true,
+          missing: [{ pin: 'open', reason: 'A reload loses the pins.' }],
+        },
+      ),
+    ]);
+    const store = createStore(CONTENT, storage, 44);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(screen.getByText(/nothing to run/)).toBeInTheDocument();
+    expect(screen.getByText(/Open window: A reload loses the pins/)).toBeInTheDocument();
+    expect(screen.getByText(/baseline is the firm as it was at the close/)).toBeInTheDocument();
+    expect(screen.getByText(/The table below is from Wed, week 2/)).toBeInTheDocument();
+    expect(screen.getByText(/toggle:a: better on 2 of 3 nights/)).toBeInTheDocument();
+  });
+
+  it("queues the player's own change from the form, and clears it", () => {
+    const store = createStore(CONTENT, null, 45);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    const queue = screen.getByRole('button', { name: 'Test tonight' });
+    fireEvent.click(queue);
+    expect(store.getTests().player).toEqual({ kind: 'toggle', block: 'momentum' });
+    expect(screen.getByText(/Queued for tonight/).textContent).toMatch(/Momentum switched off/);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(store.getTests().player).toBeNull();
+    // A parameter of a running block, from its own range.
+    fireEvent.change(screen.getByLabelText('Change'), { target: { value: 'param' } });
+    const slider = document.querySelector('.ov-fields input[type="range"]') as HTMLInputElement;
+    expect(slider.min).not.toBe('');
+    fireEvent.change(slider, { target: { value: slider.max } });
+    fireEvent.click(screen.getByRole('button', { name: 'Test tonight' }));
+    const p = store.getTests().player;
+    expect(p).toMatchObject({ kind: 'param', block: 'momentum', value: Number(slider.max) });
+    // An upgrade from the shop.
+    fireEvent.change(screen.getByLabelText('Change'), { target: { value: 'upgrade' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Test tonight' }));
+    expect(store.getTests().player?.kind).toBe('upgrade');
+  });
+
+  it('after a close shows yesterday, the day in the trends, and the Days tab still keeps the reports', () => {
+    const store = createStore(CONTENT, null, 46, undefined, undefined, { windowMs: 3000 });
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < (3 * 60 * 1000) / TICK_MS; i++) store.game.step();
+      while (store.game.snapshot().open) store.game.step(60_000);
+      store.publish();
+    });
+    expect(screen.getByText(/Yesterday \(Mon, week 1\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/No day has closed yet/)).toBeNull();
+    expect(screen.getByText(/1 day; latest/)).toBeInTheDocument();
+    // A closed session's minutes are kept on the page until the next open.
+    expect(screen.getByText(/Showing the session that closed/)).toBeInTheDocument();
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /Days/ }));
+    expect(document.querySelector('.day')).not.toBeNull();
+    expect(document.querySelector('.pnl-chart')).toBeNull();
+    expect(screen.getByText('By block')).toBeInTheDocument();
+  }, 60_000);
 });

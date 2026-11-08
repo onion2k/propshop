@@ -1,15 +1,11 @@
-// The days: each close's report, newest first and the latest open, under a chart of daily P&L and equity.
+// The days: each close's report, newest first and the latest open. The chart of daily P&L is on the Overview.
 // The report says what the day was in numbers the top bar cannot: by block, by stock, by race.
 
-import { useEffect, useRef } from 'react';
 import { REGIMES } from '../content';
-import { BLOCKS, type DayReport, type Snapshot, type Tally } from '../sim';
+import type { DayReport, Snapshot, Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
-
-function blockName(id: string): string {
-  return BLOCKS.find((b) => b.spec.id === id)?.spec.name ?? id;
-}
+import { blockName, dayVerdict } from './overview';
 
 function net(t: Tally): number {
   return t.realised - t.fees;
@@ -28,7 +24,6 @@ export function DaysPanel({ s }: { s: Snapshot }) {
   }
   return (
     <div className="days">
-      <PnlChart days={s.days} />
       {days.map((d, i) => (
         <details key={d.day} className="day" open={i === 0}>
           <summary>
@@ -39,7 +34,7 @@ export function DaysPanel({ s }: { s: Snapshot }) {
             <span className="muted small">
               {' '}
               · {d.regime ? `${REGIMES.find((r) => r.id === d.regime)?.name.toLowerCase() ?? d.regime} · ` : ''}
-              {verdict(d)}
+              {dayVerdict(d)}
             </span>
           </summary>
           <Report d={d} />
@@ -47,15 +42,6 @@ export function DaysPanel({ s }: { s: Snapshot }) {
       ))}
     </div>
   );
-}
-
-function verdict(d: DayReport): string {
-  const blocks = Object.entries(d.byBlock);
-  if (blocks.length === 0) return 'nothing traded';
-  const best = blocks.reduce((a, b) => (net(b[1]) > net(a[1]) ? b : a));
-  const races = d.races.won + d.races.beaten + d.races.missed;
-  const won = races > 0 ? `${Math.round((100 * d.races.won) / races)}% of races won` : 'no races';
-  return `${blockName(best[0])} did best, ${won}`;
 }
 
 function Report({ d }: { d: DayReport }) {
@@ -174,58 +160,5 @@ function TallyTable({ rows }: { rows: [string, Tally][] }) {
         ))}
       </tbody>
     </table>
-  );
-}
-
-/** Daily P&L as bars, green and red, and equity at each close as a line. */
-function PnlChart({ days }: { days: DayReport[] }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-    const maxAbs = Math.max(1, ...days.map((d) => Math.abs(d.pnl)));
-    const slot = w / Math.max(days.length, 10);
-    const mid = h / 2;
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(0, mid);
-    ctx.lineTo(w, mid);
-    ctx.stroke();
-    days.forEach((d, i) => {
-      const bar = (d.pnl / maxAbs) * (mid - 6);
-      ctx.fillStyle = d.pnl >= 0 ? '#4fd18b' : '#ff6b6b';
-      ctx.fillRect(i * slot + 2, bar >= 0 ? mid - bar : mid, Math.max(2, slot - 4), Math.abs(bar));
-    });
-    const eq = days.map((d) => d.equityAtClose).filter((e) => e > 0);
-    if (eq.length > 1) {
-      const lo = Math.min(...eq);
-      const hi = Math.max(...eq);
-      ctx.strokeStyle = 'rgba(94,200,255,0.8)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      days.forEach((d, i) => {
-        if (d.equityAtClose <= 0) return;
-        const y = h - 4 - ((d.equityAtClose - lo) / Math.max(1, hi - lo)) * (h - 8);
-        if (i === 0) ctx.moveTo(i * slot + slot / 2, y);
-        else ctx.lineTo(i * slot + slot / 2, y);
-      });
-      ctx.stroke();
-    }
-  }, [days]);
-  return (
-    <div className="pnl-chart">
-      <canvas ref={ref} role="img" aria-label="Daily P&L, and equity at each close" />
-      <span className="muted small">
-        Each bar a day&apos;s <Term id="pnl">P&L</Term>; the line is equity at the close.
-      </span>
-    </div>
   );
 }

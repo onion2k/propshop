@@ -4,7 +4,7 @@
 // back the exact state at any tick, and two runs from one start see the same world (the sim's chance is in
 // streams the firm cannot reach).
 
-import { Game, TICK_MS, type GameEvent, type SavedGame } from './game';
+import { Game, TICK_MS, type GameEvent, type SavedGame, type Tally } from './game';
 import type { BlockSetting } from './firm';
 import type { OpenOrder } from './strategy';
 import type { Content } from './types';
@@ -72,6 +72,10 @@ export interface Measures {
   races: RaceTally;
   byExchange: Record<string, RaceTally>;
   beaten: BeatenRace[];
+  /** The run's fills, realised P&L (before fees) and fees by the block that made them. At most one entry per block. */
+  byBlock: Record<string, Tally>;
+  /** Fees paid in the window, cents. */
+  fees: number;
 }
 
 /** The world at the experiment's start: a new game at the open, stepped on to `startAt` (an absolute time). */
@@ -98,6 +102,8 @@ export class Run {
   private readonly source: MomentSource | undefined;
   private events: GameEvent[] = [];
   private fills = 0;
+  private fees = 0;
+  private readonly byBlock: Record<string, Tally> = {};
   private readonly races: RaceTally = { won: 0, beaten: 0, missed: 0 };
   private readonly byExchange: Record<string, RaceTally> = {};
   private readonly beaten: BeatenRace[] = [];
@@ -130,7 +136,7 @@ export class Run {
     for (let i = 0; i < maxTicks && g.now < this.endAt; i++) {
       this.events = [];
       g.step();
-      for (const e of this.events) if (e.kind === 'fill') this.fills++;
+      for (const e of this.events) if (e.kind === 'fill') this.fill(e.fill);
       for (const o of g.firm.tickResolved) this.race(o);
       if (this.source) {
         for (const m of this.source(g, this.events, g.firm.tickResolved)) {
@@ -142,6 +148,15 @@ export class Run {
     return this.finished;
   }
 
+  private fill(f: { block: string; realised: number; fee: number }): void {
+    this.fills++;
+    this.fees += f.fee;
+    const t = (this.byBlock[f.block] ??= { fills: 0, realised: 0, fees: 0 });
+    t.fills++;
+    t.realised += f.realised;
+    t.fees += f.fee;
+  }
+
   /** What the run has measured so far. */
   measures(): Measures {
     return {
@@ -150,6 +165,8 @@ export class Run {
       races: { ...this.races },
       byExchange: Object.fromEntries(Object.entries(this.byExchange).map(([k, v]) => [k, { ...v }])),
       beaten: this.beaten.map((b) => ({ ...b })),
+      byBlock: Object.fromEntries(Object.entries(this.byBlock).map(([k, v]) => [k, { ...v }])),
+      fees: this.fees,
     };
   }
 

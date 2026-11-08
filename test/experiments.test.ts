@@ -57,7 +57,15 @@ describe.each(EXPERIMENTS.map((e) => [e.id, e] as const))('experiment %s', (_id,
 });
 
 describe('answerOf', () => {
-  const m = (pnl: number) => ({ pnl, fills: 1, races: { won: 0, beaten: 0, missed: 0 }, byExchange: {}, beaten: [] });
+  const m = (pnl: number) => ({
+    pnl,
+    fills: 1,
+    races: { won: 0, beaten: 0, missed: 0 },
+    byExchange: {},
+    beaten: [],
+    byBlock: {},
+    fees: 0,
+  });
   it('calls a change within a hundred dollars or a tenth the same', () => {
     expect(answerOf(m(-126_700), m(-131_100))).toBe('same');
     expect(answerOf(m(5_000), m(14_000))).toBe('same');

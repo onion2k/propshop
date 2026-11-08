@@ -204,6 +204,48 @@ describe('Game', () => {
     expect(b.days[0]).toEqual(r);
   });
 
+  it(
+    'writes who beat the firm in its races, and the orders dropped, and loads a save without them',
+    { timeout: 120_000 },
+    () => {
+      const g = new Game(CONTENT, 15);
+      g.setBlock('momentum', { enabled: false });
+      g.setBlock('arbitrage', { enabled: true });
+      g.skipToOpen();
+      run(g, 10 * MS_PER_MINUTE);
+      const before = g.firm.stats.ordersDropped;
+      while (isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
+      const r = g.days[0]!;
+      expect(r.races.beaten).toBeGreaterThan(0);
+      const by = Object.entries(r.beatenBy ?? {});
+      expect(by.length).toBeGreaterThan(0);
+      expect(by.reduce((n, [, t]) => n + t.count, 0)).toBe(r.races.beaten);
+      const names = new Set([...CONTENT.competitors.map((c) => c.name), 'the crowd']);
+      for (const [name, t] of by) {
+        expect(names.has(name)).toBe(true);
+        expect(t.medianMs).toBeGreaterThanOrEqual(0);
+      }
+      expect(r.dropped).toBe(g.firm.stats.ordersDropped);
+      expect(r.dropped).toBeGreaterThanOrEqual(before);
+      const kept = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
+      expect(kept.days[0]).toEqual(r);
+
+      // A report saved before them loads, and the next day writes them.
+      const saved = JSON.parse(JSON.stringify(g.save())) as SavedGame;
+      for (const d of saved.days) {
+        delete (d as { beatenBy?: unknown }).beatenBy;
+        delete (d as { dropped?: unknown }).dropped;
+      }
+      const old = Game.load(CONTENT, saved);
+      expect(old.days[0]!.beatenBy).toBeUndefined();
+      expect(old.days[0]!.dropped).toBeUndefined();
+      old.skipToOpen();
+      run(old, MS_PER_MINUTE);
+      while (isMarketOpen(old.now)) old.step(MS_PER_MINUTE);
+      expect(old.days[1]!.dropped).toBeDefined();
+    },
+  );
+
   it('halts the firm for the day when it is down past the loss limit', { timeout: 60_000 }, () => {
     const g = new Game(CONTENT, 17);
     g.setRisk({ dailyLossLimit: 500 });

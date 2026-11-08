@@ -30,6 +30,14 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
   the two together and runs the sim loop; `src/ui/Root.tsx` shows the cover
   first, then the experiments list, both with the sim held; Free play opens `App` with everything shown.
   `ExperimentPage.tsx` runs an experiment's two runs itself, under the same frame budget as the store.
+- The **Overview** is the page the game opens on (`src/ui/OverviewPanel.tsx`, its sections and charts beside it;
+  the Market page is one tab along). `src/ui/overview.ts` works out its verdicts, records, payback and trends,
+  pure; `src/content/signals.ts` is the signals (thresholds and words together) from the day reports. The night's
+  tests: `src/sim/backtest.ts` is `testNight` and `variants`, pure; `src/nightjob.ts` is one job as a plain module,
+  `src/backtest.worker.ts` carries it in a Web Worker, and `src/ui/nights.ts` holds the stored nights, the
+  player's own test and the main-thread runner. The store pins the live game three times a day (the open, a
+  minute before the day's largest scheduled headline, 14:30; `MAX_DAY_PINS`) in memory only, and at the close
+  hands the pins to the runner. The browser keeps `propshop.tests.v1`, the last `MAX_NIGHTS` nights' results.
 - `src/sim/experiment.ts` runs an experiment: `startOf` builds the starting save, `Run` runs a window from it
   under a setup and measures it, `Prepare` pins a save before each chosen moment, `replayAt` gives the game at
   one. A save is about 7 MB (the exchanges' quote logs), so a run keeps its start and at most `MAX_PINNED`
@@ -76,6 +84,13 @@ For anything new, check what it does:
 - **the same morning:** an experiment's two runs see the same fair values and headlines; the crowd answers
   each firm's orders, so the books differ, and the result page says so.
 - **a slow firm:** latency of twenty ticks sees the past and arrives late; a colocated one is one tick.
+- **the night's tests:** they run in closed hours, after the close, over the three pins of the day just traded;
+  skipping to the open does not wait for them, and the results arrive labelled with their day. A reload mid-day
+  loses that day's pins (they are in memory only), and the night says why. A setup changed mid-day: the baseline
+  is the setup at the close, and the night says so. Without a worker (jsdom, or a browser that refuses one) the
+  same job runs on the main thread, in closed hours only, within the frame budget. A day closed while the store
+  is held (the cover, the list, an experiment) records no night. A tip is the player's, not a block's: the tests
+  leave it out.
 
 ## What is not held
 
@@ -120,7 +135,11 @@ For anything new, check what it does:
   and the top bar says the speed reached when it falls short. Measured headless with the CPU throttled four
   times, about a mid-range phone: 1× and 10× hold 60 frames a second; 60× and 300× hold about 49, with the sim
   reaching 20×. Before the budget they ran at one frame a second with 800 ms stalls. A worker would lift the
-  ceiling; the sim's one surface is the seam for it.
+  ceiling; the sim's one surface is the seam for it. On 2026-11-07, a fresh game in an open market, 12 s at each
+  speed: the desktop's 300× reaches 70 to 75 at 60 frames a second, so a game day (23,400 s) takes about 300 s,
+  not 78 (8 ms of 16.7 is under half the time, at about 52,000 ticks a second); throttled, 300× reaches 21 at
+  54 frames, a day about 18 minutes. A game two days old holds about 50 frames at 10× throttled, on the
+  Overview and the Market alike.
 - No end-to-end browser test: the UI test is React Testing Library in jsdom. Looked at by hand in the
   browser pane, whose frames run slowly when it is not in front.
 - When the stages open is measured by the stage harness and held by nothing. A stage opens when every lesson of
@@ -137,7 +156,30 @@ For anything new, check what it does:
   fifteen seconds at 10×, on a fresh game with everything shown: the phone 0.33 to 0.03; the desktop's market
   page about 0.6, nearly all of it the orders and gaps lists moving down a row as the newest arrives, which is
   their design. The other pages 0. Playwright is borrowed from `~/projects/artshape-game-template`; there is
-  none here.
+  none here. The Overview, 2026-11-07, the same way: the phone 0 in every case; the desktop 0 to 0.02 (a fresh
+  game 0 to 0.015, two days and their nights 0.001), the charts block moving as the first points arrive.
+- The night's tests, headless Chrome on 2026-11-07, one 12-core machine: a night is 3 pinned windows by 7
+  setups, 21 runs of five simulated minutes. Close to `done` with the sim stopped: 48 to 52 s over eight
+  nights, and the same with the sim running at 10× or 300×. CDP's CPU throttle refuses a worker, so the page
+  throttled four times changed nothing; a phone-speed core is a guess from the stepping rate (a fourth), 190 to
+  200 s. The main-thread fallback was not timed in a browser. Live sim beside a night, desktop: 60 frames a
+  second at 10× and 59 at 300×, the speed reached as without (9.9; 76 to 81 against 70 to 75). Throttled, a
+  game two days old, 10×: 51.5 frames a second with a night, 51.3 without; 300×: 47.4 and 48.7, reaching 14.7
+  and 17.5, each window holding a pin or two. The worker has a core of its own; a phone with fewer may differ.
+- A pin costs a stall the frame budget cannot cut: `structuredClone` of a save, which is 8 MB five minutes into
+  the open and 9.5 MB by 14:30 (`game.save()` itself under 1 ms), takes 45 to 50 ms on the desktop and 165 to
+  230 ms throttled four times (3 frames; 10 to 14). Timed as `publish()` at the pin: the first open of a game
+  2 ms (empty quote logs), every later open, the headline and 14:30 pins 45 to 50 ms, throttled 183 and 185;
+  the close, handing the pins to the worker, 42 to 64 ms (once 137), throttled 169. In real play at 300× the
+  longest frames at pins were 33 to 50 ms against 17, once 117. Three pins and a close a day.
+- Overview odds and ends: `propshop.tests.v1` is about 9,000 characters a night (8,700 to 9,100 after one),
+  so 180,000 at twenty, under 4% of the usual 5,000,000-character limit. The verdict band (`SAME_CENTS`, $100 a
+  window) makes most five-minute variants "about the same" from home. The signals' thresholds and words are
+  drafts, tuned by nothing. On a phone the comparisons table scrolls sideways and hides the total and the "N of
+  M" summary.
+- The free-play save does not fit the browser's storage: 5 minutes into the open it is 7.9 million characters
+  (the quote logs) and `localStorage` refuses it (`QuotaExceededError`, caught in `store.save`), so a reload
+  loads the last save that fit, an early one. Measured 2026-11-07, not fixed.
 - No fuzzer and no invariants file yet.
 - The experiments' seeds were picked by searching (the day's headlines are scheduled when the game is built,
   so a seed's news is read without running it). `test/experiments.test.ts` holds what each briefing promises:
@@ -147,7 +189,8 @@ For anything new, check what it does:
   city same. A run of two minutes takes 2 to 3.5 seconds in the browser.
 - `steps fast enough for the top speed` in `game.test.ts` starts timing a minute before the open, so a closed
   market flatters it: alone it reads about 77,000 ticks a second, but the open market alone is about 52,000,
-  and under the whole suite it falls under its floor of 75,000 now and then.
+  and under the whole suite it falls under its floor of 75,000 now and then. Alone on 2026-11-07, after the
+  Overview's sim changes: 95,000 (four runs, 94,900 to 96,200).
 
 ## Plans
 

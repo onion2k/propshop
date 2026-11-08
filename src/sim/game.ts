@@ -69,6 +69,19 @@ export type GameEvent =
   | { kind: 'rules'; at: number; exchange: string; rules: ExchangeRules }
   | { kind: 'regulator'; at: number; note: string; heat: number };
 
+/** A point of the day so far: the firm's equity and each block's net (realised less fees), cents. */
+export interface IntradayPoint {
+  at: number;
+  equity: number;
+  byBlock: Record<string, number>;
+}
+
+/** The most points the day keeps: one a simulated minute of a 390-minute session, with room over. */
+export const MAX_INTRADAY = 400;
+
+/** The most margins the day keeps for each rival that beat the firm (the count stays exact); the median reads these. */
+export const MAX_MARGINS_KEPT = 400;
+
 export interface Tally {
   fills: number;
   realised: number;
@@ -96,6 +109,10 @@ export interface DayReport {
   regulator?: string[];
   /** The kind of day it was. Missing in a report saved before regimes. */
   regime?: string;
+  /** Races lost to each named rival: how many, and the median ms its order was ahead. Missing in a report saved before it. */
+  beatenBy?: Record<string, { count: number; medianMs: number }>;
+  /** Orders dropped for capacity that day. Missing in a report saved before it. */
+  dropped?: number;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -131,6 +148,8 @@ export interface SavedGame {
   log: GameEvent[];
   wasOpen: boolean;
   today?: Today;
+  /** The day so far, a point a minute. Missing in a save from before it: it loads empty. */
+  intraday?: IntradayPoint[];
   /** When the rules last changed, and each firm's equity then, for the lab's scoreboard. */
   rulesChangedAt?: number;
   equityAtRulesChange?: Record<string, number>;
@@ -148,6 +167,14 @@ interface Today {
   halts: string[];
   regulator: string[];
   statsAtOpen: { ordersSent: number; cancelsSent: number; ordersDropped: number };
+  /** By the rival's name; the rivals are the content's, so the keys are bounded by it. Margins by `MAX_MARGINS_KEPT`. */
+  beatenBy?: Record<string, { count: number; marginsMs: number[] }>;
+}
+
+function median(xs: readonly number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)]!;
 }
 
 function freshToday(): Today {
@@ -199,6 +226,8 @@ export interface Snapshot {
   orders: OrderStory[];
   /** Hand orders between the click and the send, oldest first, as the firm keeps them. */
   pendingHand: PendingHand[];
+  /** The day so far from the open, a point a simulated minute (at most `MAX_INTRADAY`), oldest first. */
+  intraday: IntradayPoint[];
   /** Today's hand trading against the touch at each click, cents: positive is what it cost the player. */
   handSlippage: number;
   /** Who the rivals are, by owner id, so a race can name who won it. */
@@ -302,6 +331,8 @@ export class Game {
   private weekStartEquity: number;
   days: DayReport[] = [];
   private today: Today = freshToday();
+  /** Bounded by `MAX_INTRADAY`; cleared at each open. */
+  private intraday: IntradayPoint[] = [];
   private rulesChangedAt = 0;
   private equityAtRulesChange: Record<string, number> = {};
   log: GameEvent[] = [];
@@ -394,8 +425,10 @@ export class Game {
     for (const o of this.firm.tickResolved) {
       if (!o.ioc) continue;
       if (o.filled >= o.size) this.today.races.won++;
-      else if (o.beatenBy.length > 0) this.today.races.beaten++;
-      else this.today.races.missed++;
+      else if (o.beatenBy.length > 0) {
+        this.today.races.beaten++;
+        this.noteBeaten(o);
+      } else this.today.races.missed++;
     }
     for (const h of this.news.tickPublished) this.emit({ kind: 'news', at: this.now, headline: h });
     for (const f of this.dark.tickFines) {
@@ -404,10 +437,19 @@ export class Game {
     }
     const open = isMarketOpen(this.now);
     if (open && !this.wasOpen) this.onOpen();
+    if (open && this.now % MS_PER_MINUTE === 0) this.record();
     if (open && !this.firm.halt && this.now % LOSS_CHECK_EVERY === 0) this.checkLoss();
     if (!open && this.wasOpen) this.onClose();
     this.wasOpen = open;
     this.version++;
+  }
+
+  /** One point of the day: on the simulated minute only, so the stepping loop pays a modulo and nothing more. */
+  private record(): void {
+    const byBlock: Record<string, number> = {};
+    for (const [id, t] of Object.entries(this.today.byBlock)) byBlock[id] = t.realised - t.fees;
+    this.intraday.push({ at: this.now, equity: this.firm.equity(this.market, this.now), byBlock });
+    if (this.intraday.length > MAX_INTRADAY) this.intraday.splice(0, this.intraday.length - MAX_INTRADAY);
   }
 
   /** Down more than the limit: halted until the next open, flat, and told so. */
@@ -443,6 +485,7 @@ export class Game {
     this.dayStartEquity = this.firm.equity(this.market, this.now);
     if (calendar(this.now).weekday === 'Mon') this.weekStartEquity = this.dayStartEquity;
     this.today = freshToday();
+    this.intraday = [];
     this.today.openedAt = this.now;
     this.today.statsAtOpen = {
       ordersSent: this.firm.stats.ordersSent,
@@ -451,6 +494,17 @@ export class Game {
     };
     for (const c of this.competitors) this.today.rivalsAtOpen[c.id] = c.equity(this.market, this.now);
     this.emit({ kind: 'open', at: this.now });
+  }
+
+  /** Who won a lost race, and by how long: the first rival to take the quote, as `Run` reads it. */
+  private noteBeaten(o: { arrivedAt: number | null; beatenBy: { owner: string; at: number }[] }): void {
+    const rival = o.beatenBy[0]!;
+    const name =
+      this.competitors.find((c) => c.id === rival.owner)?.name ?? (rival.owner === 'bg' ? 'the crowd' : rival.owner);
+    const by = (this.today.beatenBy ??= {});
+    const t = (by[name] ??= { count: 0, marginsMs: [] });
+    t.count++;
+    if (t.marginsMs.length < MAX_MARGINS_KEPT) t.marginsMs.push(Math.max(0, (o.arrivedAt ?? rival.at) - rival.at));
   }
 
   /** The regulator reads the day's order flow at the close. A pattern is a note and heat; the fines follow. */
@@ -501,6 +555,13 @@ export class Game {
       halts: this.today.halts,
       regulator: this.today.regulator,
       regime: this.market.regime.id,
+      beatenBy: Object.fromEntries(
+        Object.entries(this.today.beatenBy ?? {}).map(([name, t]) => [
+          name,
+          { count: t.count, medianMs: median(t.marginsMs) },
+        ]),
+      ),
+      dropped: this.firm.stats.ordersDropped - this.today.statsAtOpen.ordersDropped,
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -663,6 +724,7 @@ export class Game {
         (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
       ),
       orders: this.stories(),
+      intraday: this.intraday.map((p) => ({ ...p, byBlock: { ...p.byBlock } })),
       pendingHand: firm.pendingHand.map((p) => ({ ...p, children: p.children.map((c) => ({ ...c })) })),
       handSlippage: this.handSlippage(),
       names: Object.fromEntries([
@@ -835,6 +897,7 @@ export class Game {
       log: this.log,
       wasOpen: this.wasOpen,
       today: this.today,
+      intraday: this.intraday,
       rulesChangedAt: this.rulesChangedAt,
       equityAtRulesChange: this.equityAtRulesChange,
     };
@@ -874,6 +937,7 @@ export class Game {
     g.weekStartEquity = s.weekStartEquity;
     g.days = s.days.map((d) => ('byBlock' in d ? { ...d } : upgraded(d)));
     g.today = s.today ? { ...freshToday(), ...s.today } : freshToday();
+    g.intraday = (s.intraday ?? []).map((p) => ({ ...p, byBlock: { ...p.byBlock } }));
     g.log = s.log.map((e) => ({ ...e }));
     g.wasOpen = s.wasOpen;
     g.rulesChangedAt = s.rulesChangedAt ?? 0;

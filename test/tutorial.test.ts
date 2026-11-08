@@ -13,7 +13,7 @@ function memory(): Storage & { data: Map<string, string> } {
 }
 
 describe('the tutorial', () => {
-  it('has ten steps for stage 1, each with words and a page, pointing at things that exist and are shown', () => {
+  it('has eleven steps for stage 1, each with words and a page, pointing at things that exist and are shown', () => {
     expect(TUTORIAL.map((t) => t.id)).toEqual([
       'welcome',
       'watchlist',
@@ -24,13 +24,14 @@ describe('the tutorial', () => {
       'shop',
       'risk',
       'reports',
+      'overview',
       'go',
     ]);
     // Everything a stage 1 card points at is on the screen of a new game.
-    const targets = ['pages', 'watchlist', 'quotes', 'speed', 'firm', 'strategy', 'shop', 'risk', 'tabs'];
+    const targets = ['pages', 'watchlist', 'quotes', 'speed', 'firm', 'strategy', 'shop', 'risk', 'tabs', 'overview'];
     for (const step of TUTORIAL) {
       expect(step.text.length).toBeGreaterThan(80);
-      expect(['market', 'strategy', 'reports']).toContain(step.page);
+      expect(['overview', 'market', 'strategy', 'reports']).toContain(step.page);
       if (step.target) expect(targets).toContain(step.target);
     }
     expect(TUTORIAL[0]!.enter?.speed).toBe(0);

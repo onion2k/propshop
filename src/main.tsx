@@ -4,13 +4,22 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CONTENT } from './content';
 import { Root } from './ui/Root';
+import { WorkerRunner, type NightRunner } from './ui/nights';
 import { createStore } from './ui/store';
 import './ui/styles.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root in the page.');
 
-const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0, () => performance.now());
+// The night's tests run in a worker. A browser that refuses one leaves the store its main-thread fallback.
+let runner: NightRunner | undefined;
+try {
+  runner = new WorkerRunner(() => new Worker(new URL('./backtest.worker.ts', import.meta.url), { type: 'module' }));
+} catch {
+  runner = undefined;
+}
+
+const store = createStore(CONTENT, window.localStorage, Date.now() >>> 0, () => performance.now(), runner);
 createRoot(root).render(
   <StrictMode>
     <Root store={store} storage={window.localStorage} />

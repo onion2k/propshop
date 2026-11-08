@@ -9,6 +9,7 @@ export {
   STUFFING_ORDERS,
   STUFFING_CANCEL_SHARE,
   FLOOD_DROPPED,
+  MAX_INTRADAY,
 } from './game';
 export type {
   GameEvent,
@@ -19,6 +20,7 @@ export type {
   DayRecord,
   DayReport,
   Tally,
+  IntradayPoint,
   OrderStory,
 } from './game';
 export {
@@ -34,7 +36,7 @@ export {
   startOf,
 } from './experiment';
 export type { BeatenRace, Measures, Moment, MomentDraft, MomentSource, RaceTally, Setup } from './experiment';
-export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById } from './strategy';
+export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById, clampParam, paramsFrom } from './strategy';
 export type {
   BeatenBy,
   BlockSpec,
@@ -88,9 +90,13 @@ export {
   isMarketOpen,
   nextOpen,
   nextClose,
+  MARKET_OPEN,
+  MARKET_CLOSE,
   MS_PER_DAY,
   MS_PER_HOUR,
   MS_PER_MINUTE,
   MS_PER_SECOND,
 } from './clock';
 export { regimeFor } from './regime';
+export { BACKTEST_WINDOW_MS, MAX_DAY_PINS, MAX_VARIANTS, pinTimes, testNight, variants } from './backtest';
+export type { NightEvent, Pin, Variant, VariantOptions } from './backtest';

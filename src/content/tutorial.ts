@@ -6,7 +6,7 @@
 import type { Snapshot } from '../sim';
 import { STAGES, type StageId } from './stages';
 
-export type TutorialPage = 'market' | 'desk' | 'strategy' | 'reports';
+export type TutorialPage = 'overview' | 'market' | 'desk' | 'strategy' | 'reports';
 
 export interface TutorialStep {
   id: string;
@@ -29,7 +29,7 @@ export const TUTORIAL: TutorialStep[] = [
     text:
       'A small one, from a spare room on the west coast, with a laptop and two hundred thousand dollars. You ' +
       'will build a strategy out of blocks, watch it trade among faster firms, and spend what it makes on ' +
-      'speed. The game is paused while we look around. Three pages: Market, Strategy, Reports.',
+      'speed. The game is paused while we look around. Four pages: Overview, Market, Strategy, Reports.',
     page: 'market',
     target: 'pages',
     enter: { speed: 0 },
@@ -109,6 +109,16 @@ export const TUTORIAL: TutorialStep[] = [
       'tabs arrive as you go.',
     page: 'reports',
     target: 'tabs',
+  },
+  {
+    id: 'overview',
+    title: 'The overview',
+    text:
+      'The first page you meet is the overview: the firm read over days instead of milliseconds. It shows ' +
+      'your position, the day so far, the trends, and what to try next. After each close the game tests ' +
+      'changes to your setup overnight, and the comparisons say which helped. Come back to it at the end of every day.',
+    page: 'overview',
+    target: 'overview',
   },
   {
     id: 'go',

@@ -352,6 +352,15 @@ export const GLOSSARY: GlossaryEntry[] = [
       'as another. In the game, either at the close adds to your heat, and the fines that heat brings follow.',
   },
   {
+    id: 'concentration',
+    term: 'Concentration',
+    short: 'Most of the result coming from one stock, or one trade.',
+    long:
+      'A firm that earns nearly all of its money from one name has one bet, however many trades it made. ' +
+      'It may be a real edge on that stock, or a run of luck, or the story of one company on one week. ' +
+      'Spread over more names the same method either holds or does not, and that is the test.',
+  },
+  {
     id: 'regimes',
     term: 'Market regimes',
     short: 'Kinds of day: calm, trending, choppy, news-heavy. The right block depends on which.',
@@ -361,6 +370,68 @@ export const GLOSSARY: GlossaryEntry[] = [
       'a maker leans against all day. On a choppy day the exchanges disagree often, which arbitrage lives on, ' +
       'and momentum bleeds. On a news-heavy day the headlines come all session, and the news reaction block ' +
       'has its day. The top bar names the day from the open; the day report keeps it; the player switches.',
+  },
+  {
+    id: 'backtest',
+    term: 'Backtest',
+    short: 'Running a changed strategy over a day that has happened, to see what it would have done.',
+    long:
+      'Before betting the firm on a change, a desk runs it over the past and compares it with what it ' +
+      'already does. Here the game re-runs short windows of the day that just closed, once as you were and ' +
+      'once with the change, from the same starting moment. The market is the same market: the same fair ' +
+      'values and the same headlines. But the crowd answers each firm’s orders, so the books of the changed ' +
+      'run differ from the day that was, and a backtest is never quite the history. It is evidence, not a ' +
+      'promise.',
+  },
+  {
+    id: 'sample',
+    term: 'Sample',
+    short: 'The part of the past a result rests on. A small one proves little.',
+    long:
+      'Three windows of five minutes are a sliver of a day, and a day is a sliver of a market. A change that ' +
+      'wins in all three might be better, or might have met three kind moments. A change that wins in one and ' +
+      'loses in another has told you very little. That is why the table says “mixed” so often, and why a ' +
+      'record over several nights counts for more than any one of them.',
+  },
+  {
+    id: 'overfitting',
+    term: 'Overfitting',
+    short: 'A change that wins the windows it was tried on, because it suits them and not the market.',
+    long:
+      'Try enough variations on the same few windows and one will win by luck. If you then keep it because it ' +
+      'won, you have fitted your strategy to those windows, and it will lose its edge on the next day. The ' +
+      'defence is the dull one: ask for a win in every window, ask for it again on another night, and prefer a ' +
+      'change you can explain to one that only happens to score.',
+  },
+  {
+    id: 'payback',
+    term: 'Payback',
+    short: 'How many days of the extra profit it takes to earn back what an upgrade cost.',
+    long:
+      'An upgrade has a price now and a gain every day after. The payback is the price over the gain a day. ' +
+      'Here the gain is measured in a few minutes of the day and scaled up to a whole session, which assumes ' +
+      'the rest of the day is like those minutes. It rarely is, so read it as an order of magnitude: a payback ' +
+      'of days is worth a look, and a payback of years is not.',
+  },
+  {
+    id: 'attribution',
+    term: 'Attribution',
+    short: 'Saying which block, stock or trade earned what.',
+    long:
+      'A firm’s profit is one number, and one number cannot tell you what to change. Attribution splits it: ' +
+      'by block, by stock, by race. A block that bleeds under a profitable firm is carried by the others, and ' +
+      'the total hides it. The overview’s block lines and the day reports are attribution; every signal starts ' +
+      'from one.',
+  },
+  {
+    id: 'regime-dependence',
+    term: 'Regime dependence',
+    short: 'A block whose result changes sign with the kind of day.',
+    long:
+      'Look at a block’s average day for each kind of day. If it earns on calm days and loses on trending ' +
+      'ones, its overall average is a mixture, and it will look good or bad according to the weather of the ' +
+      'days you happened to have. The table on the overview shows each block by kind of day, with how many ' +
+      'days each average rests on: a few days is a hint. See Market regimes for the kinds of day.',
   },
   {
     id: 'market-structure',
