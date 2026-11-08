@@ -206,6 +206,18 @@ export const COMPETITORS: CompetitorSpec[] = [
     // alone: a sweep child of ten thousand shares never comes.
     blocks: [{ id: 'anticipate', params: { bigPrint: 10_000 } }],
   },
+  {
+    // The futures desk's rival, there once the desk opens: a rack at the Prairie Board and microwave to the stock
+    // exchanges, trading the index on what the future already says. The firm the player races for the lead.
+    id: 'prairie-partners',
+    name: 'Prairie Partners',
+    location: 'colo-prairie',
+    network: 'microwave',
+    computer: 'rack',
+    minEdge: 0,
+    desk: 'futures',
+    blocks: [{ id: 'leadLag', params: { threshold: 3, shares: 500 } }],
+  },
 ];
 
 export const STARTING_CASH = 200 * K;

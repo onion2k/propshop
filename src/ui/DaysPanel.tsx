@@ -53,6 +53,12 @@ function Report({ d }: { d: DayReport }) {
           <h3>By block</h3>
           <TallyTable rows={Object.entries(d.byBlock).map(([k, t]) => [blockName(k), t])} />
         </div>
+        {d.byDesk && (
+          <div>
+            <h3>By desk</h3>
+            <TallyTable rows={Object.entries(d.byDesk).map(([k, t]) => [k, t])} />
+          </div>
+        )}
         <div>
           <h3>By stock</h3>
           <TallyTable rows={Object.entries(d.bySymbol).map(([k, t]) => [k, t])} />

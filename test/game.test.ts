@@ -198,7 +198,8 @@ describe('Game', () => {
     expect(r.races.won + r.races.beaten + r.races.missed).toBeGreaterThanOrEqual(iocs);
     expect(r.headlines.length).toBeGreaterThan(0);
     expect(r.latency.HARBOR).toBe(44);
-    expect(r.rivals.map((x) => x.name)).toEqual(CONTENT.competitors.map((c) => c.name));
+    // The stocks' rivals; a desk's join when it opens.
+    expect(r.rivals.map((x) => x.name)).toEqual(CONTENT.competitors.filter((c) => !c.desk).map((c) => c.name));
     expect(r.rivals.some((x) => x.pnl !== 0)).toBe(true);
     const b = Game.load(CONTENT, JSON.parse(JSON.stringify(g.save())) as SavedGame);
     expect(b.days[0]).toEqual(r);
@@ -403,7 +404,9 @@ describe('Game', () => {
     const saved = JSON.parse(JSON.stringify(g.save())) as SavedGame;
     saved.competitors = saved.competitors.filter((c) => c.id !== 'bot:shadow');
     const b = Game.load(CONTENT, saved);
-    expect(b.competitors.map((c) => c.id)).toEqual(CONTENT.competitors.map((c) => `bot:${c.id}`));
+    expect(b.competitors.map((c) => c.id)).toEqual(
+      CONTENT.competitors.filter((c) => !c.desk).map((c) => `bot:${c.id}`),
+    );
     expect(b.competitors.at(-1)!.blocks.map((x) => x.id)).toEqual(['anticipate']);
     b.skipToOpen();
     for (let i = 0; i < 2000; i++) b.step();

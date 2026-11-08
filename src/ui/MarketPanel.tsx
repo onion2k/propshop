@@ -3,9 +3,9 @@
 // computer says how many that may be.
 
 import { useState } from 'react';
-import { TICK_MS, type Level, type Snapshot } from '../sim';
+import { TICK_MS, calendar, formatTime, type Level, type Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
-import { price, shares } from './format';
+import { moneyShort, price, shares } from './format';
 import { GapLine, GapList } from './Gaps';
 import { Term } from './Glossary';
 import type { Store } from './store';
@@ -81,7 +81,13 @@ export function MarketPanel({
               <td>
                 <strong>{st.symbol}</strong> <span className="muted small col-name">{st.name}</span>
               </td>
-              <td className="muted col-sector">{st.constituents ? `index of ${st.constituents.length}` : st.sector}</td>
+              <td className="muted col-sector">
+                {st.contract
+                  ? `future on ${st.contract.underlying}, ${expiryLabel(st.contract.expiry)}`
+                  : st.constituents
+                    ? `index of ${st.constituents.length}`
+                    : st.sector}
+              </td>
               <td className="num bid">{price(st.bid)}</td>
               <td className="num ask">{price(st.ask)}</td>
               <td className={`num ${st.dayChange === null ? 'muted' : st.dayChange >= 0 ? 'up' : 'down'}`}>
@@ -97,12 +103,35 @@ export function MarketPanel({
             <strong>{selected.symbol}</strong>{' '}
             <span className="muted">
               {selected.name} ·{' '}
-              {selected.constituents ? `index of ${selected.constituents.join(', ')}` : selected.sector}
+              {selected.contract ? (
+                <>
+                  <Term id="future">future</Term> on {selected.contract.underlying}, {selected.contract.multiplier} to a
+                  contract, <Term id="expiry">expires</Term> {expiryLabel(selected.contract.expiry)}
+                </>
+              ) : selected.constituents ? (
+                `index of ${selected.constituents.join(', ')}`
+              ) : (
+                selected.sector
+              )}
             </span>
             <span className="muted right">
               <Term id="fair-value">fair</Term> <span className="num">{price(Math.round(selected.fair))}</span>
             </span>
           </div>
+          {selected.contract && (
+            <p className="contract-line small muted">
+              <Term id="basis">basis</Term> <span className="num">{selected.contract.basis.toFixed(1)}¢</span> over the
+              index (<Term id="carry">carry</Term> {(selected.contract.carry * 100).toFixed(1)}% a year to expiry)
+              {selected.contract.margin && (
+                <>
+                  {' · '}
+                  <Term id="margin">margin</Term>{' '}
+                  <span className="num">{moneyShort(selected.contract.margin.initial)}</span> a contract to open,{' '}
+                  <span className="num">{moneyShort(selected.contract.margin.maintenance)}</span> to keep
+                </>
+              )}
+            </p>
+          )}
           <table className="quotes" data-tut="quotes">
             <thead>
               <tr>
@@ -204,4 +233,10 @@ function Ladder({ exchange, bids, asks }: { exchange: string; bids: Level[]; ask
       </table>
     </div>
   );
+}
+
+/** When a contract expires, as the top bar writes a time: "Fri wk 1 16:00". */
+function expiryLabel(at: number): string {
+  const c = calendar(at);
+  return `${c.weekday} wk ${c.week} ${formatTime(at).slice(0, 5)}`;
 }

@@ -453,6 +453,94 @@ export const GLOSSARY: GlossaryEntry[] = [
       'day. The edges come from being faster: seeing a quote change first, reaching the book first. The business ' +
       'is an arms race in latency, which is what this game is about.',
   },
+  {
+    id: 'future',
+    term: 'Future',
+    short: 'A contract to buy or sell something later at a price agreed now, held on margin.',
+    long:
+      'A future on the index is a promise to settle at the index’s price on a set day, the expiry. Nobody pays ' +
+      'the price up front: each side posts margin, a slice of it, and the gains and losses change hands in cash ' +
+      'every night. So one contract carries far more market than the cash it ties up. Here a contract is a ' +
+      'hundred times the index, about five thousand dollars of it, and it trades on the Prairie Board.',
+  },
+  {
+    id: 'basis',
+    term: 'Basis',
+    short: 'How far a future’s price is from what it is on.',
+    long:
+      'A future on the index is not the index: buying the future instead of the stocks saves the interest on the ' +
+      'money and gives up their dividends until expiry. So it is priced at the index carried forward, a few cents ' +
+      'over it here, more the further out it expires, and nothing on the day it expires. When the basis is not ' +
+      'what carry says, one of them is wrong, and basis arbitrage sells the dear one and buys the cheap.',
+  },
+  {
+    id: 'carry',
+    term: 'Carry',
+    short: 'What it costs, or earns, to hold something until a later day.',
+    long:
+      'Holding the index for a week costs the interest on what you paid and earns its dividends. The difference, ' +
+      'a share a year, is the carry: here 3.5%, so a contract a week out is about 3.5 cents over the index and one ' +
+      'two weeks out about 7. Carry is why the next contract is always dearer than the near, and why rolling from ' +
+      'one to the other is never quite free.',
+  },
+  {
+    id: 'margin',
+    term: 'Margin',
+    short: 'The money posted against a position held on credit: initial to open it, maintenance to keep it.',
+    long:
+      'A future is not bought outright. The venue asks for a share of its value as a deposit, the initial margin ' +
+      '(8% here), before you may open it, and a smaller share, the maintenance margin (6%), to keep it. Your ' +
+      'equity is what stands behind it: an order that would need more initial margin than your equity is refused. ' +
+      'Margin is leverage you may not notice: a few hundred dollars holds five thousand dollars of index.',
+  },
+  {
+    id: 'variation-margin',
+    term: 'Variation margin',
+    short: 'A future’s gain or loss paid in cash every night, not at the end.',
+    long:
+      'At each close the venue marks every future to its settlement price, and the move since yesterday changes ' +
+      'hands: losers pay, winners are paid, and the price becomes the position’s new cost. So a losing future ' +
+      'is not a paper loss waiting for a better day; it is cash gone tonight, and a firm short of cash meets the ' +
+      'margin call however right it turns out to be.',
+  },
+  {
+    id: 'margin-call',
+    term: 'Margin call',
+    short: 'Below the maintenance margin, the position is closed for you.',
+    long:
+      'When your equity falls below the maintenance margin your futures ask for, the firm is flattened in them at ' +
+      'whatever price there is, in the middle of the move that put it there. The stocks may carry on; the futures ' +
+      'are gone. A margin call is a loss locked in by being too big for your cash, not by being wrong.',
+  },
+  {
+    id: 'expiry',
+    term: 'Expiry',
+    short: 'The day a contract ends and settles.',
+    long:
+      'Each future ends on a set day: here every Friday at the stocks’ close. Whoever still holds it is settled ' +
+      'in cash at the index’s price and is out; a contract on a metal may instead be delivered, the metal itself ' +
+      'paid for. As expiry nears the basis goes to nought and the trading thins. A new contract is listed as one ' +
+      'ends, so there are always two: the near and the next.',
+  },
+  {
+    id: 'roll',
+    term: 'Roll',
+    short: 'Moving a futures position from the contract about to expire to the next.',
+    long:
+      'To hold the index through futures for longer than a week, sell the near contract before it expires and buy ' +
+      'the next. It crosses two spreads and pays the difference in carry, since the next is dearer. Roll early and ' +
+      'you pay for a longer carry; roll late and you trade in the thin last hours or are settled out.',
+  },
+  {
+    id: 'lead-lag',
+    term: 'Lead-lag',
+    short: 'One market moves first and another follows: trading the follower on what the leader did.',
+    long:
+      'The future on the index trades where the crowd catches up with a move in tens of milliseconds; the stocks ' +
+      'trade where it takes hundreds. After the market moves, the future has repriced and the index has not. A ' +
+      'firm that sees the future soon enough knows where the index is going before its crowd does. The edge is ' +
+      'the time between them, so it is bought with a rack at the futures venue and the fastest line to the stocks.',
+  },
 ];
 
 export function glossary(id: string): GlossaryEntry | undefined {

@@ -178,6 +178,9 @@ export function createStore(
   if (storage && stagesRaw === null && !legacy) writeSeen(storage, seen);
   let reveal = storage?.getItem(REVEAL_KEY) === '1';
   const stageNow = (): StageId => (reveal || legacy ? LAST_STAGE : (Math.max(stageOf(progress), seen) as StageId));
+  // A desk the stage already shows is open from the first look.
+  for (const d of game.market.desks) if (!game.market.isDeskOpen(d) && shows(`desk:${d}`, stageNow())) game.openDesk(d);
+  snapshot = game.snapshot();
   let publishedVersion = game.version;
   let lastPublish = -Infinity;
   let lastSave = -Infinity;
@@ -434,7 +437,14 @@ export function createStore(
   // A page loaded into an open day has lost that day's earlier pins; it says so at the close.
   ensureSchedule(true);
 
+  /** A desk opens in the game once the stage shows it (or everything is shown), and stays open: a save keeps it. */
+  const openDesks = () => {
+    for (const d of game.market.desks)
+      if (!game.market.isDeskOpen(d) && shows(`desk:${d}`, stageNow())) game.openDesk(d);
+  };
+
   const publish = () => {
+    openDesks();
     if (game.version === publishedVersion) return;
     // A step the page took itself (a test, a jump) is seen here: the open's pin and the close's night.
     ensureSchedule();
@@ -486,6 +496,8 @@ export function createStore(
     getReveal: () => reveal,
     setReveal(on) {
       reveal = on;
+      openDesks();
+      publish();
       try {
         if (on) storage?.setItem(REVEAL_KEY, '1');
         else storage?.removeItem(REVEAL_KEY);

@@ -93,6 +93,16 @@ function Position({ s }: { s: Snapshot }) {
           <dt>Open positions</dt>
           <dd className="num">{held.length}</dd>
         </div>
+        {s.margin && (
+          <div>
+            <dt>
+              <Term id="margin">Margin</Term> to keep
+            </dt>
+            <dd className={`num ${s.equity < s.margin.maintenance * 1.25 ? 'down' : ''}`}>
+              {money(s.margin.maintenance)}
+            </dd>
+          </div>
+        )}
       </dl>
       <p className="small">
         <span className="muted">Setup: </span>

@@ -1,6 +1,6 @@
 # The futures desk: part 4 of the trading roadmap
 
-State: 4a, 4b and 4c built 2026-11-08, on Opus (4c without the rival, moved to 4d); 4d and 4e to come. See
+State: 4a to 4d built 2026-11-08, on Opus; 4e (lessons, experiments, tuning) to come, after Chris plays the desk. See
 `plans/trading.md`, part 4, and the foundation in `plans/instruments.md`, `plans/sessions.md`, `plans/margin.md`.
 
 ## Context
@@ -69,3 +69,12 @@ Result for 4a and 4b, 2026-11-08: every figure of the held game equal, its finge
 content (`c08c8813`) and moved for the game's (`50fb0670`), which now carries the closed desk; PACE and the night
 harness's day identical to the figures from before part 1; the lead measured at 90 ms for the future against 736
 for HARBOR's index book; `npm run check` green, 451 tests.
+
+Result for 4d, 2026-11-08: the desk opens at stage 3 ('desk:futures' in the stage table, its three blocks with
+it), in free play and for a save from before the stages, and stays open in the save; the store opens it when it is
+made and whenever the stage or the switch says. Its rival, Prairie Partners (a rack at the Prairie Board,
+microwave, lead-lag), joins when it opens. The Market page shows each contract as "future on IDX, Fri wk 1 16:00"
+and, picked, its multiplier, expiry, basis in cents, carry and the margin a contract asks; the Overview's
+position shows the margin to keep while one is held; the day's report has a "By desk" table where the desk
+traded; nine glossary entries (future, basis, carry, margin, variation margin, margin call, expiry, roll,
+lead-lag). Looked at headless at 1280 and 375: no overflow, no console errors. `npm run check` green, 466 tests.

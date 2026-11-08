@@ -25,7 +25,7 @@ import {
   type Wire,
 } from './firm';
 import { tick } from './flow';
-import { STOCKS_DESK, deskOf, valueOf } from './instrument';
+import { STOCKS_DESK, deskOf, isDerived, valueOf } from './instrument';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
@@ -45,7 +45,7 @@ import {
 } from './strategy';
 import type { Setup } from './experiment';
 import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
-import { DEFAULT_RULES, type Content, type ExchangeRules, type RegimeSpec } from './types';
+import { DEFAULT_RULES, type Content, type ExchangeRules, type InstrumentSpec, type RegimeSpec } from './types';
 
 /** One tick of simulated time, in ms. A colocated firm is within a tick of its exchange; a home office is twenty
     away; a trading day is nearly twelve million. */
@@ -283,7 +283,20 @@ export interface Snapshot {
       depth: { bids: Level[]; asks: Level[] };
     }[];
     history: HistoryPoint[];
+    /** A contract priced from its underlying: what it is on, when it expires, its basis and what it asks. */
+    contract?: {
+      underlying: string;
+      expiry: number;
+      multiplier: number;
+      carry: number;
+      /** Fair value less the underlying's, in the underlying's cents: the carry to expiry. */
+      basis: number;
+      /** Cents a contract asks to open and to keep, at fair value. */
+      margin: { initial: number; maintenance: number } | null;
+    };
   }[];
+  /** The margin the firm's margined positions ask, cents, at their marks; absent while it holds none. */
+  margin?: { initial: number; maintenance: number };
   exchanges: { id: string; name: string; city: string; feePerShare: number }[];
   news: Published[];
   dark: { unlocked: boolean; offers: Tip[]; bought: Tip[]; fines: Fine[] };
@@ -334,6 +347,7 @@ export class Game {
   readonly news: News;
   readonly dark: DarkWeb;
   readonly firm: Firm;
+  /** The rivals: the stocks' from the start, and each open desk's, which joined when it opened. */
   readonly competitors: Firm[];
   readonly owned: Set<string>;
   private dayStartEquity: number;
@@ -373,7 +387,7 @@ export class Game {
       Firm.defaultBlocks(content.start.blocks),
     );
     this.firm.reactionMs = content.desk.reactionMs;
-    this.competitors = content.competitors.map((c) => Game.rival(content, c));
+    this.competitors = content.competitors.filter((c) => c.desk === undefined).map((c) => Game.rival(content, c));
     this.dayStartEquity = content.startingCash;
     this.weekStartEquity = content.startingCash;
     this.wasOpen = false;
@@ -671,6 +685,13 @@ export class Game {
   openDesk(desk: string): void {
     if (!this.market.desks.includes(desk)) throw new Error(`No desk ${desk}`);
     this.market.openDesk(desk);
+    // The desk's rivals join, after the others, in the content's order.
+    for (const c of this.content.competitors) {
+      if (c.desk !== desk || this.competitors.some((f) => f.id === `bot:${c.id}`)) continue;
+      const rival = Game.rival(this.content, c);
+      this.competitors.push(rival);
+      this.today.rivalsAtOpen[rival.id] = rival.equity(this.market, this.now);
+    }
     // The desk's blocks join the player's, off, after the stocks'.
     for (const id of DESK_BLOCKS[desk] ?? []) {
       if (this.firm.blocks.some((b) => b.id === id)) continue;
@@ -866,7 +887,9 @@ export class Game {
           depth: e.book(s.symbol).depth(5, firm.id),
         })),
         history: this.market.history.get(s.symbol) ?? [],
+        ...(isDerived(s) ? { contract: this.contractOf(s) } : {}),
       })),
+      ...this.marginNow(),
       exchanges: this.market.exchanges.map((e) => ({
         id: e.id,
         name: e.spec.name,
@@ -916,6 +939,33 @@ export class Game {
       ),
       days: this.days,
       log: this.log,
+    };
+  }
+
+  private contractOf(s: InstrumentSpec): NonNullable<Snapshot['stocks'][number]['contract']> {
+    const fair = this.market.fair.get(s.symbol) ?? s.startPrice;
+    const value = valueOf(this.market.scales.get(s.symbol) ?? 1, 1, fair);
+    return {
+      underlying: s.underlying!,
+      expiry: s.expiry!,
+      multiplier: s.multiplier ?? 1,
+      carry: s.carry!,
+      basis: fair - (this.market.fair.get(s.underlying!) ?? fair),
+      margin: s.margin ? { initial: value * s.margin.initial, maintenance: value * s.margin.maintenance } : null,
+    };
+  }
+
+  /** What the player's margined positions ask, at the marks; nothing while it holds none. */
+  private marginNow(): { margin?: { initial: number; maintenance: number } } {
+    const held = this.firm.marginedHeld();
+    if (held.length === 0) return {};
+    const marks = new Map<string, number>();
+    for (const s of held) marks.set(s, this.market.fair.get(s) ?? 0);
+    return {
+      margin: {
+        initial: this.firm.marginRequired('initial', marks),
+        maintenance: this.firm.marginRequired('maintenance', marks),
+      },
     };
   }
 
@@ -1054,9 +1104,11 @@ export class Game {
       return Firm.load(c, infrastructureFrom(content, spec));
     });
     // A rival added since the save was made joins as it starts, with the starting cash; the saved keep theirs.
-    const competitors = content.competitors.map(
-      (spec, i) => saved.find((f) => f.id === `bot:${spec.id}`) ?? g.competitors[i]!,
-    );
+    // A desk's rival is there if its desk is open, in the order it joined: after the stocks' rivals.
+    const open = new Set(s.desks ?? []);
+    const competitors = content.competitors
+      .filter((spec) => spec.desk === undefined || open.has(spec.desk))
+      .map((spec) => saved.find((f) => f.id === `bot:${spec.id}`) ?? Game.rival(content, spec));
     Object.assign(g, { competitors });
     g.owned.clear();
     for (const id of s.owned) g.owned.add(id);

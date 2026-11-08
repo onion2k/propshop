@@ -1081,12 +1081,16 @@ describe('stages', () => {
     expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
     expect(screen.queryByLabelText('Open the microscope')).toBeNull();
     goTo('Strategy');
+    // Stage 3 opens the futures desk too, and its blocks with it.
     expect(listedBlocks().sort()).toEqual([
+      'Basis arbitrage',
       'Cross-exchange arbitrage',
+      'Lead-lag',
       'Market maker',
       'Mean reversion',
       'Momentum',
       'News reaction',
+      'Roll',
       'Stale-quote sniper',
     ]);
     goTo('Reports');
@@ -1128,7 +1132,8 @@ describe('stages', () => {
     expect(screen.getAllByRole('tab')).toHaveLength(7);
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    expect(listedBlocks()).toHaveLength(10);
+    // The ten stock blocks and, everything shown, the futures desk's three.
+    expect(listedBlocks()).toHaveLength(13);
     // A reload.
     cleanup();
     const again = createStore(CONTENT, storage, 36);
@@ -1155,7 +1160,7 @@ describe('stages', () => {
     expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    expect(listedBlocks()).toHaveLength(10);
+    expect(listedBlocks()).toHaveLength(13);
   });
 
   it('criterion 8: the first week lists lessons by stage, and names the stages not open yet', () => {
@@ -1375,4 +1380,31 @@ describe('Overview', () => {
     expect(document.querySelector('.pnl-chart')).toBeNull();
     expect(screen.getByText('By block')).toBeInTheDocument();
   }, 60_000);
+});
+
+describe('the futures desk on the page', () => {
+  it('shows the index future beside the stocks once everything is shown, with its expiry, basis and margin', () => {
+    const store = createStore(CONTENT, null, 50);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    render(<App store={store} />);
+    goTo('Market');
+    const rows = screen.getAllByText(/^future on IDX, Fri wk \d+ 16:00$/);
+    expect(rows).toHaveLength(2);
+    const near = store.game.market.live('IXF')[0]!;
+    fireEvent.click(screen.getByText(near));
+    const line = document.querySelector('.contract-line')!;
+    expect(line.textContent).toMatch(/basis \d+\.\d¢ over the index \(carry 3\.5% a year to expiry\)/);
+    expect(line.textContent).toMatch(/margin \$[\d.,]+k? a contract to open, \$[\d.,]+k? to keep/);
+    expect(store.game.competitors.map((c) => c.name)).toContain('Prairie Partners');
+  });
+
+  it('keeps the desk closed, its rows and its rival out, before its stage', () => {
+    const store = createStore(CONTENT, null, 51);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Market');
+    expect(screen.queryByText(/^future on IDX/)).toBeNull();
+    expect(store.game.competitors.map((c) => c.name)).not.toContain('Prairie Partners');
+  });
 });

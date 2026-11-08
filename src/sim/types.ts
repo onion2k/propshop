@@ -180,6 +180,8 @@ export interface CompetitorSpec {
   maxLatency?: number;
   /** The blocks it runs, with parameters over the block's defaults; arbitrage at its edge where absent. */
   blocks?: { id: string; params?: Record<string, number> }[];
+  /** A desk's rival joins the game when that desk opens; absent, from the start. */
+  desk?: string;
 }
 
 /** The character of a trading day: multipliers on the market's own behaviour. */

@@ -43,7 +43,8 @@ export type Feature =
   | 'tab:news'
   | 'tab:dark'
   | 'tab:lab'
-  | `block:${string}`;
+  | `block:${string}`
+  | `desk:${string}`;
 
 /** The first stage each feature is shown at. */
 const FEATURE_STAGE: Record<string, StageId> = {
@@ -65,6 +66,12 @@ const FEATURE_STAGE: Record<string, StageId> = {
   'block:indexArb': 5,
   'block:anticipate': 5,
   'block:script': 5,
+  // The futures desk opens with the stage after "A better seat": the lead is a latency lesson, and a better seat
+  // is where it starts to pay. Its blocks with it.
+  'desk:futures': 3,
+  'block:basisArb': 3,
+  'block:leadLag': 3,
+  'block:roll': 3,
 };
 
 /** An unknown block is held to the last stage rather than shown early. */
