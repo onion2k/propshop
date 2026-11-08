@@ -1,6 +1,6 @@
 # The futures desk: part 4 of the trading roadmap
 
-State: 4a and 4b built 2026-11-08, on Opus; 4c to 4e to come, each built and checked in turn. See
+State: 4a, 4b and 4c built 2026-11-08, on Opus (4c without the rival, moved to 4d); 4d and 4e to come. See
 `plans/trading.md`, part 4, and the foundation in `plans/instruments.md`, `plans/sessions.md`, `plans/margin.md`.
 
 ## Context
@@ -36,8 +36,13 @@ expiry in years)`, worked out each tick and drawing nothing, so it converges on 
   behind the futures desk, which stays closed: nothing changes for a player yet.
 - **4c. Blocks and upgrades.** Basis arbitrage (the future against the index's book), lead-lag (the stocks on the
   future's move), roll (out of the near contract before expiry); fibre and microwave to the Prairie Board and a
-  rack there; the rivals who trade it.
-- **4d. The page.** The desk opens at the stage after "A better seat" and in free play; the Market page shows the
+  rack there. Built: the three blocks, each pure on a `contracts` record in the view (underlying, expiry, carry,
+  multiplier); a firm is given them, off, when the desk opens (`DESK_BLOCKS`); the rack at the Prairie Board, a
+  location offered once the desk is open. Lead-lag lives on levels, not history: the future's mid carried back
+  to today against the index's touch, so it needs no state. The existing networks are the links (a network is
+  the firm's to every venue). A rival who trades the desk moves to 4d: a new firm steps in the stocks' game too,
+  and its row would show in the rivals' figures while the desk is closed.
+- **4d. The page, and the desk's rival.** The desk opens at the stage after "A better seat" and in free play; the Market page shows the
   future beside the stocks with its expiry, basis and margin; the Overview's position and day report by desk; the
   glossary (future, basis, carry, margin, variation margin, margin call, expiry, roll, lead-lag).
 - **4e. Lessons, experiments and tuning.** The desk's lessons; experiments "the lead" (fibre against microwave

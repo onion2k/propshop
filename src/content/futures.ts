@@ -5,7 +5,22 @@
 // and the stocks follow. That lead is the desk's lesson. See plans/desk-futures.md.
 import { MS_PER_HOUR, MS_PER_WEEK, daily, type ContractSeriesSpec, type ExchangeSpec } from '../sim';
 
+import type { LocationSpec } from '../sim';
+
 export const FUTURES_DESK = 'futures';
+
+/** A rack at the Prairie Board: the future first, and the stock exchanges as far as the plains are wide. */
+export const COLO_PRAIRIE: LocationSpec = {
+  id: 'colo-prairie',
+  name: 'Rack at the Prairie Board',
+  price: 80 * 100_000,
+  desk: FUTURES_DESK,
+  distance: { HARBOR: 18, LAKESIDE: 9, PACIFIC: 14, PRAIRIE: 0.1 },
+  explain:
+    'A rack beside the futures crowd: the future reaches your decision almost as it prints, so you know where ' +
+    'the index is going before the stock exchanges do. Your orders for the stocks still cross the plains, so ' +
+    'what you buy next is the fastest line to them.',
+};
 
 /** 18:00 to 17:00, Sunday evening to Friday, an hour's break each day: nearly round the clock. */
 export const PRAIRIE: ExchangeSpec = {

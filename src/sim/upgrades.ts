@@ -43,6 +43,7 @@ export function catalogue(
   firm: Firm,
   owned: ReadonlySet<string>,
   venues?: readonly string[],
+  openDesks?: readonly string[],
 ): UpgradeOffer[] {
   const out: UpgradeOffer[] = [];
   const add = (kind: UpgradeKind, specs: Infrastructure[UpgradeKind][]) => {
@@ -65,7 +66,10 @@ export function catalogue(
       });
     }
   };
-  add('location', content.locations);
+  add(
+    'location',
+    content.locations.filter((l) => l.desk === undefined || openDesks === undefined || openDesks.includes(l.desk)),
+  );
   add('network', content.networks);
   add('computer', content.computers);
   return out;

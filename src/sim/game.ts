@@ -33,6 +33,7 @@ import { Random, deriveStreams, loadStreams, saveStreams, type SavedStreams, typ
 import { driftPerMs, driftSign, regimeFor } from './regime';
 import {
   BLOCKS,
+  DESK_BLOCKS,
   SCRIPT_ID,
   blockById,
   paramsFrom,
@@ -670,6 +671,11 @@ export class Game {
   openDesk(desk: string): void {
     if (!this.market.desks.includes(desk)) throw new Error(`No desk ${desk}`);
     this.market.openDesk(desk);
+    // The desk's blocks join the player's, off, after the stocks'.
+    for (const id of DESK_BLOCKS[desk] ?? []) {
+      if (this.firm.blocks.some((b) => b.id === id)) continue;
+      this.firm.blocks.push({ id, enabled: false, params: paramsFrom(blockById(id).spec) });
+    }
     this.version++;
   }
 
@@ -906,6 +912,7 @@ export class Game {
         firm,
         this.owned,
         this.market.exchanges.map((e) => e.id),
+        this.market.desks.filter((d) => this.market.isDeskOpen(d)),
       ),
       days: this.days,
       log: this.log,
@@ -1033,7 +1040,12 @@ export class Game {
     const firm = Firm.load(s.firm, infrastructureFrom(content, s.firmInfra));
     // A save from before a block existed has no setting for it: the default stands in, off. The rivals keep
     // their own single block as saved.
-    firm.blocks = Firm.defaultBlocks().map((d) => firm.blocks.find((b) => b.id === d.id) ?? d);
+    // A desk's blocks, saved once the desk opened, follow the stocks' in the order they were saved.
+    const savedBlocks = firm.blocks;
+    firm.blocks = [
+      ...Firm.defaultBlocks().map((d) => savedBlocks.find((b) => b.id === d.id) ?? d),
+      ...savedBlocks.filter((b) => !Firm.defaultBlocks().some((d) => d.id === b.id)),
+    ];
     firm.reactionMs = content.desk.reactionMs;
     Object.assign(g, { firm });
     const saved = s.competitors.map((c) => {

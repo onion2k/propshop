@@ -1,12 +1,15 @@
 // The blocks the game ships, by id. A scripted block would register here too.
 import { anticipate } from './anticipate';
 import { arbitrage } from './arbitrage';
+import { basisArb } from './basisArb';
 import { indexArb } from './indexArb';
+import { leadLag } from './leadLag';
 import { marketMaker } from './marketMaker';
 import { meanReversion } from './meanReversion';
 import { momentum } from './momentum';
 import { newsReaction } from './newsReaction';
 import { pairs } from './pairs';
+import { roll } from './roll';
 import { sniper } from './sniper';
 import { EXAMPLE_SOURCE, SCRIPT_ID, scriptBlock } from './script';
 import type { StrategyBlock } from './types';
@@ -22,7 +25,14 @@ export const BLOCKS: readonly StrategyBlock[] = [
   newsReaction,
   anticipate,
   scriptBlock(EXAMPLE_SOURCE),
+  // The futures desk's: a firm has them once the desk is open (`DESK_BLOCKS`).
+  basisArb,
+  leadLag,
+  roll,
 ];
+
+/** The blocks of each desk but the stocks, which a firm is given, off, when the desk opens. */
+export const DESK_BLOCKS: Readonly<Record<string, readonly string[]>> = { futures: ['basisArb', 'leadLag', 'roll'] };
 
 export function blockById(id: string): StrategyBlock {
   const b = BLOCKS.find((x) => x.spec.id === id);

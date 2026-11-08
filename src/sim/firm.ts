@@ -5,13 +5,14 @@
 import { MS_PER_SECOND } from './clock';
 import type { Exchange, SubmitResult } from './exchange';
 import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
-import { NO_SCALES, valueOf } from './instrument';
+import { NO_SCALES, isDerived, valueOf } from './instrument';
 import type { Market } from './market';
 import type { Quote, Side, Trade } from './orderbook';
 import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
 import {
   flattenTo,
   type BeatenBy,
+  type ContractView,
   type Fill,
   type HandIntent,
   type Intent,
@@ -604,9 +605,17 @@ export class Firm {
     for (const [block, bySymbol] of this.blockPositions) blockPositions[block] = Object.fromEntries(bySymbol);
     const sectors: Record<string, string> = {};
     const constituents: Record<string, readonly string[]> = {};
+    const contracts: Record<string, ContractView> = {};
     for (const s of market.stocks) {
       sectors[s.symbol] = s.sector;
       if (s.constituents) constituents[s.symbol] = s.constituents;
+      if (isDerived(s))
+        contracts[s.symbol] = {
+          underlying: s.underlying!,
+          expiry: s.expiry!,
+          carry: s.carry!,
+          multiplier: s.multiplier ?? 1,
+        };
     }
     return {
       now,
@@ -615,6 +624,7 @@ export class Firm {
       constituents,
       exchanges: market.exchanges.map((e) => e.id),
       quotes,
+      contracts,
       get tape() {
         return (tape ??= buildTape());
       },

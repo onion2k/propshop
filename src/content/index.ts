@@ -2,7 +2,7 @@
 import type { Content } from '../sim';
 import { DESK } from './desk';
 import { EXCHANGES } from './exchanges';
-import { IXF, PRAIRIE, PRAIRIE_DISTANCE } from './futures';
+import { COLO_PRAIRIE, IXF, PRAIRIE, PRAIRIE_DISTANCE } from './futures';
 import { NEWS } from './news';
 import { REGIMES } from './regimes';
 import { FACTORS, STOCKS } from './stocks';
@@ -14,7 +14,10 @@ export const CONTENT: Content = {
   exchanges: [...EXCHANGES, PRAIRIE],
   series: [IXF],
   news: NEWS,
-  locations: LOCATIONS.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: PRAIRIE_DISTANCE[l.id] ?? 20 } })),
+  locations: [
+    ...LOCATIONS.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: PRAIRIE_DISTANCE[l.id] ?? 20 } })),
+    COLO_PRAIRIE,
+  ],
   networks: NETWORKS,
   computers: COMPUTERS,
   competitors: COMPETITORS,

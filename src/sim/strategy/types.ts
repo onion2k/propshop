@@ -150,6 +150,39 @@ export interface MarketView {
   recentFills: readonly Fill[];
   /** Headlines published recently, newest last. */
   news: readonly Headline[];
+  /** Each listed contract priced from an underlying: what it is on, when it expires, its carry and multiplier. */
+  contracts?: Readonly<Record<string, ContractView>>;
+}
+
+/** A listed contract as a block sees it. */
+export interface ContractView {
+  underlying: string;
+  /** Simulated ms. */
+  expiry: number;
+  /** A year, a share: the contract's fair price is the underlying's times `1 + carry × years to expiry`. */
+  carry: number;
+  /** Units of the underlying in one contract. */
+  multiplier: number;
+}
+
+/** A year of carry, ms. */
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+/** What a contract's price is worth in units of its underlying now: its price over this. */
+export function carryFactor(c: ContractView, now: number): number {
+  return 1 + (c.carry * Math.max(0, c.expiry - now)) / YEAR_MS;
+}
+
+/**
+ * The watched contracts on watched underlyings, soonest expiry first; those within `guardMs` of expiry left out,
+ * so a block trading the basis does not open a position into the last minutes.
+ */
+export function contractsByExpiry(view: MarketView, guardMs = 0): [string, ContractView][] {
+  return Object.entries(view.contracts ?? {})
+    .filter(
+      ([s, c]) => view.symbols.includes(s) && view.symbols.includes(c.underlying) && c.expiry - view.now > guardMs,
+    )
+    .sort((a, b) => a[1].expiry - b[1].expiry);
 }
 
 export type Intent =

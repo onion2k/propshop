@@ -100,6 +100,8 @@ export interface LocationSpec {
   id: string;
   name: string;
   price: number;
+  /** A desk's location (a rack at its venue) is offered only once that desk is open; absent, always. */
+  desk?: string;
   /** One-way distance an order travels to each exchange, in ms of light through fibre. */
   distance: Record<string, number>;
   /**
