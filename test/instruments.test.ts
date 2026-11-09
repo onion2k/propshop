@@ -21,6 +21,12 @@ function busyGame(content = CONTENT): Game {
   return g;
 }
 
+const BLOCKS_ON = ['momentum', 'basisArb', 'leadLag', 'carry', 'triangle'];
+const EXPECTED_DESKS_OPEN: unknown[] = [
+  [1, '87d3edc1', 445, 445, [97, 0, 69, 0, 79]],
+  [2, 'ea81a08b', 261, 299, [74, 0, 88, 0, 137]],
+];
+
 describe('instruments, folded in from stocks', () => {
   // Taken on 2026-11-08 at commit 074c5df, before instruments existed: a stock is an instrument with a multiplier
   // of one and a price in cents, so the same seed and setup must give the same game to the bit.
@@ -42,6 +48,29 @@ describe('instruments, folded in from stocks', () => {
     expect(g.fingerprint()).toBe('914a5ecf');
     const stocksOnly = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
     expect(busyGame(stocksOnly).fingerprint()).toBe('c08c8813');
+  }, 120_000);
+
+  // Taken on 2026-11-09 at commit f94384f, before the step-rate cuts of plans/desk-speed.md: both desks open, the
+  // player on a rack with a stocks block, a futures block and a currencies block, so the narrowed views are at work,
+  // and the rivals as content has them. Every cut to how a firm builds its view must leave these as they are.
+  it('leave a game with both desks open exactly as it was', () => {
+    const play = (seed: number): Game => {
+      const g = new Game(CONTENT, seed);
+      g.openDesk('futures');
+      g.openDesk('fx');
+      g.firm.infra = infrastructureFrom(CONTENT, { location: 'colo-harbor', network: 'microwave', computer: 'rack' });
+      const on = BLOCKS_ON;
+      for (const b of g.firm.blocks) b.enabled = on.includes(b.id);
+      g.skipToOpen();
+      g.stepTicks((10 * MS_PER_MINUTE) / TICK_MS);
+      return g;
+    };
+    const seen = [1, 2].map((seed) => {
+      const g = play(seed);
+      const byBlock = (id: string) => [...g.firm.orders.values()].filter((o) => o.block === id).length;
+      return [seed, g.fingerprint(), g.firm.stats.fillsReceived, g.firm.stats.ordersSent, BLOCKS_ON.map(byBlock)];
+    });
+    expect(seen).toEqual(EXPECTED_DESKS_OPEN);
   }, 120_000);
 
   /** A future on an index: fifty times the index, quoted in quarter points of a dollar. */

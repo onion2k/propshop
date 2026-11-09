@@ -12,7 +12,6 @@ import {
   NO_SCALES,
   deskOf,
   inHome,
-  isCarried,
   toHome,
   valueOf,
   type FxPair,
@@ -24,9 +23,6 @@ import { DESK_BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom
 import {
   flattenTo,
   type BeatenBy,
-  type ContractView,
-  type PairView,
-  type RolloverView,
   type Fill,
   type HandIntent,
   type Intent,
@@ -39,7 +35,7 @@ import {
   BEST,
   TAPE_VIEW,
 } from './strategy';
-import type { Headline, Infrastructure, MarginSpec } from './types';
+import type { Headline, Infrastructure, MarginSpec, StockSpec } from './types';
 
 /** The desk each desk's own block belongs to; a block not named is the stocks'. */
 const BLOCK_DESK: ReadonlyMap<string, string> = new Map(
@@ -47,16 +43,62 @@ const BLOCK_DESK: ReadonlyMap<string, string> = new Map(
 );
 
 /**
- * The view with fewer symbols, everything else the same: its tape and depth stay built on first read, and are the
- * view's own (they hold every watched symbol; a block trades only what `symbols` names).
+ * The view with fewer symbols, everything else the same: it stands on the view itself, so its tape and depth stay
+ * built on first read, and are the view's own (they hold every watched symbol; a block trades only what `symbols`
+ * names). The getters are closures, so they work whichever object they are read through.
  */
 function narrowed(view: MarketView, symbols: readonly string[]): MarketView {
-  const out = Object.create(
-    Object.getPrototypeOf(view) as object,
-    Object.getOwnPropertyDescriptors(view),
-  ) as MarketView;
+  const out = Object.create(view) as MarketView;
   Object.defineProperty(out, 'symbols', { value: symbols, enumerable: true, writable: true });
   return out;
+}
+
+/**
+ * What a firm works out from its watch list, kept while the watch list, the computer, its desks and the market's live
+ * instruments are as they were: what it watches, where each is listed, and what each desk's blocks may trade.
+ */
+interface ViewPlan {
+  market: Market;
+  stamp: number;
+  /** What the plan was made from, to tell whether it still stands. */
+  watch: readonly string[];
+  maxSymbols: number;
+  desks: readonly string[] | null;
+  symbols: readonly string[];
+  /** The watched instruments, in the market's order. */
+  watched: readonly StockSpec[];
+  /** For each live venue, in the market's order, the watched instruments it lists. */
+  listed: readonly (readonly StockSpec[])[];
+  /** For each watched instrument, the live venues that list it, in the market's order. */
+  listing: readonly (readonly Exchange[])[];
+  /** Whether any watched symbol belongs to a desk other than the stocks. */
+  others: boolean;
+  deskOfSymbol: ReadonlyMap<string, string>;
+  /** The symbols a desk's blocks may trade, once asked for. */
+  forDesk: Map<string, readonly string[]>;
+}
+
+/** The latencies a firm sees, kept while its infrastructure, the venues' bumps and the live venues are as they were. */
+interface LatencyTable {
+  market: Market;
+  stamp: number;
+  infra: Infrastructure;
+  location: Infrastructure['location'];
+  network: Infrastructure['network'];
+  computer: Infrastructure['computer'];
+  /** The bump of each live venue, in the market's order. */
+  bumps: number[];
+  latency: Record<string, number>;
+  /** The data latency of each live venue, in the market's order. */
+  data: number[];
+}
+
+/** Whether two lists hold the same strings in the same order. */
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 /** How many fills and how many finished orders a firm remembers. */
@@ -309,6 +351,22 @@ export class Firm {
   private ordersThisSecond = 0;
   private outbound = new DelayQueue<Outbound>();
   private inbound = new DelayQueue<Inbound>();
+  /**
+   * What the view keeps between decisions, each good until the thing it was made from changes. None of it is saved:
+   * a firm loaded from a save starts with none, and builds it as it first decides. Each is replaced, never changed
+   * in place, so a view already handed out keeps what it was given.
+   */
+  private plan: ViewPlan | null = null;
+  private latencies: LatencyTable | null = null;
+  /** The midpoint histories as a record, good while no symbol has been added to them. */
+  private midsSeen: { size: number; record: Record<string, readonly number[]> } | null = null;
+  /** The block positions and costs as records, good until a fill (or an expiry) moves them. */
+  private heldSeen: {
+    blockPositions: Record<string, Record<string, number>>;
+    blockCosts: Record<string, Record<string, number>>;
+  } | null = null;
+  /** The orders still live, in the orders' own order, good until an order's status changes or one is added. */
+  private openSeen: { size: number; list: OpenOrder[] } | null = null;
   /** Fills that arrived this tick, and orders that finished this tick, for the game's tallies. */
   tickFills: Fill[] = [];
   tickResolved: OpenOrder[] = [];
@@ -491,6 +549,7 @@ export class Firm {
           order.reason = msg.reason;
           break;
       }
+      if (order.status !== before) this.openSeen = null;
       if (
         order.status !== before &&
         (order.status === 'filled' ||
@@ -526,6 +585,7 @@ export class Firm {
       if (pos.qty === 0) pos.avgCost = 0;
     }
     this.positions.set(order.symbol, pos);
+    this.heldSeen = null;
     const mine = this.blockPositions.get(order.block) ?? new Map<string, number>();
     const had = mine.get(order.symbol) ?? 0;
     mine.set(order.symbol, had + signed);
@@ -635,20 +695,113 @@ export class Firm {
     );
     done.sort((a, b) => a.sentAt - b.sentAt);
     for (const o of done.slice(0, done.length - ORDER_LOG)) this.orders.delete(o.localId);
+    this.openSeen = null;
   }
 
-  private view(now: number, market: Market, news: readonly Headline[], include: readonly string[] = []): MarketView {
-    const quotes: Record<string, Record<string, SeenQuote>> = {};
+  /** What the firm watches and where it is listed, from the plan it kept if it still stands. */
+  private planFor(market: Market, include: readonly string[]): ViewPlan {
     const desks = this.desks;
+    const max = this.infra.computer.maxSymbols;
+    const kept = this.plan;
+    if (
+      include.length === 0 &&
+      kept &&
+      kept.market === market &&
+      kept.stamp === market.liveStamp &&
+      kept.maxSymbols === max &&
+      kept.desks === desks &&
+      sameList(kept.watch, this.watch)
+    )
+      return kept;
     const live = desks === null ? market.stocks : market.stocks.filter((s) => desks.includes(deskOf(s)));
     const watchedNow = this.watching(live.map((s) => s.symbol));
     const symbols =
       include.length === 0 ? watchedNow : [...watchedNow, ...include.filter((s) => !watchedNow.includes(s))];
     const watched = market.stocks.filter((s) => symbols.includes(s.symbol));
-    for (const e of market.exchanges) {
-      const seen = now - this.dataLatency(e.id);
+    const listed = market.exchanges.map((e) => watched.filter((s) => e.lists(s.symbol)));
+    const listing = watched.map((s) => market.exchanges.filter((e) => e.lists(s.symbol)));
+    // A block sees the stocks and its own desk (see `decide`): which symbols are another desk's.
+    const deskOfSymbol = new Map<string, string>();
+    let others = false;
+    if (!(desks?.length === 1 && desks[0] === STOCKS_DESK)) {
+      for (const s of market.stocks) {
+        const d = deskOf(s);
+        if (d === STOCKS_DESK) continue;
+        deskOfSymbol.set(s.symbol, d);
+        others ||= symbols.includes(s.symbol);
+      }
+    }
+    const plan: ViewPlan = {
+      market,
+      stamp: market.liveStamp,
+      watch: [...this.watch],
+      maxSymbols: max,
+      desks,
+      symbols,
+      watched,
+      listed,
+      listing,
+      others,
+      deskOfSymbol,
+      forDesk: new Map(),
+    };
+    if (include.length === 0) this.plan = plan;
+    return plan;
+  }
+
+  /** The latencies to each live venue, from the table the firm kept if its infrastructure and the bumps still stand. */
+  private latenciesFor(market: Market): LatencyTable {
+    const kept = this.latencies;
+    const venues = market.exchanges;
+    if (
+      kept &&
+      kept.market === market &&
+      kept.stamp === market.liveStamp &&
+      kept.infra === this.infra &&
+      kept.location === this.infra.location &&
+      kept.network === this.infra.network &&
+      kept.computer === this.infra.computer
+    ) {
+      let same = true;
+      for (let i = 0; i < venues.length; i++) if (kept.bumps[i] !== (this.bumps[venues[i]!.id] ?? 0)) same = false;
+      if (same) return kept;
+    }
+    const made: LatencyTable = {
+      market,
+      stamp: market.liveStamp,
+      infra: this.infra,
+      location: this.infra.location,
+      network: this.infra.network,
+      computer: this.infra.computer,
+      bumps: venues.map((e) => this.bumps[e.id] ?? 0),
+      latency: {},
+      data: venues.map((e) => this.dataLatency(e.id)),
+    };
+    for (const e of venues) made.latency[e.id] = this.latency(e.id);
+    this.latencies = made;
+    return made;
+  }
+
+  private view(now: number, market: Market, news: readonly Headline[], include: readonly string[] = []): MarketView {
+    return this.build(now, market, news, include).view;
+  }
+
+  private build(
+    now: number,
+    market: Market,
+    news: readonly Headline[],
+    include: readonly string[] = [],
+  ): { view: MarketView; plan: ViewPlan } {
+    const quotes: Record<string, Record<string, SeenQuote>> = {};
+    const plan = this.planFor(market, include);
+    const { symbols, watched, listed, listing } = plan;
+    const table = this.latenciesFor(market);
+    const venues = market.exchanges;
+    for (let i = 0; i < venues.length; i++) {
+      const e = venues[i]!;
+      const seen = now - table.data[i]!;
       const perSymbol: Record<string, SeenQuote> = {};
-      for (const s of watched) {
+      for (const s of listed[i]!) {
         const q = e.quoteAsOf(s.symbol, seen);
         if (q) perSymbol[s.symbol] = q;
       }
@@ -662,34 +815,36 @@ export class Firm {
     let depth: Record<string, Record<string, SeenDepth>> | undefined;
     const buildTape = () => {
       const out: Record<string, Record<string, readonly SeenPrint[]>> = {};
-      for (const e of market.exchanges) {
-        const seen = now - this.dataLatency(e.id);
+      for (let i = 0; i < venues.length; i++) {
+        const e = venues[i]!;
+        const seen = now - table.data[i]!;
         const perSymbol: Record<string, readonly SeenPrint[]> = {};
-        for (const s of watched) if (e.lists(s.symbol)) perSymbol[s.symbol] = e.tapeAsOf(s.symbol, seen, TAPE_VIEW);
+        for (const s of listed[i]!) perSymbol[s.symbol] = e.tapeAsOf(s.symbol, seen, TAPE_VIEW);
         out[e.id] = perSymbol;
       }
       return out;
     };
     const buildDepth = () => {
       const out: Record<string, Record<string, SeenDepth>> = {};
-      for (const e of market.exchanges) {
+      for (let i = 0; i < venues.length; i++) {
         const perSymbol: Record<string, SeenDepth> = {};
-        for (const s of watched) {
-          const q = quotes[e.id]?.[s.symbol];
+        for (const s of listed[i]!) {
+          const q = quotes[venues[i]!.id]?.[s.symbol];
           if (q) perSymbol[s.symbol] = depthOf(q);
         }
-        out[e.id] = perSymbol;
+        out[venues[i]!.id] = perSymbol;
       }
       return out;
     };
     const sample = now - this.midSampledAt >= MID_SAMPLE_EVERY;
     if (sample) this.midSampledAt = now;
-    for (const s of watched) {
+    for (let w = 0; w < watched.length; w++) {
+      const s = watched[w]!;
       let bestBid: number | null = null;
       let bestAsk: number | null = null;
       let bidOn: string | null = null;
       let askOn: string | null = null;
-      for (const e of market.exchanges) {
+      for (const e of listing[w]!) {
         const q = quotes[e.id]?.[s.symbol];
         if (!q) continue;
         if (q.bid !== null && (bestBid === null || q.bid > bestBid)) {
@@ -733,57 +888,41 @@ export class Firm {
         this.mids.set(s.symbol, log);
       }
     }
-    const mids: Record<string, readonly number[]> = {};
-    for (const [k, v] of this.mids) mids[k] = v;
-    const latency: Record<string, number> = {};
-    for (const e of market.exchanges) latency[e.id] = this.latency(e.id);
-    const blockPositions: Record<string, Record<string, number>> = {};
-    for (const [block, bySymbol] of this.blockPositions) blockPositions[block] = Object.fromEntries(bySymbol);
-    const blockCosts: Record<string, Record<string, number>> = {};
-    for (const [block, bySymbol] of this.blockCosts) blockCosts[block] = Object.fromEntries(bySymbol);
-    const sectors: Record<string, string> = {};
-    const constituents: Record<string, readonly string[]> = {};
-    const contracts: Record<string, ContractView> = {};
-    const pairs: Record<string, PairView> = {};
-    for (const s of market.stocks) {
-      sectors[s.symbol] = s.sector;
-      if (s.constituents) constituents[s.symbol] = s.constituents;
-      if (isCarried(s))
-        contracts[s.symbol] = {
-          underlying: s.underlying!,
-          expiry: s.expiry!,
-          carry: s.carry!,
-          multiplier: s.multiplier ?? 1,
-        };
-      const pair = market.fx.get(s.symbol);
-      if (pair) {
-        const scale = market.crossScale.get(s.symbol);
-        pairs[s.symbol] = {
-          base: pair.base,
-          quote: pair.quote,
-          units: pair.units,
-          scale: market.scales.get(s.symbol) ?? 1,
-          pointValue: inHome(pair.quote, market.scales.get(s.symbol) ?? 1, market.rates),
-          venues: market.venuesOf(s.symbol).map((e) => e.id),
-          ...(s.cross && scale !== undefined ? { cross: { legs: s.cross, scale } } : {}),
-        };
-      }
+    // What changes rarely is kept: the records are built again only when what they are made from has changed.
+    if (this.midsSeen?.size !== this.mids.size) {
+      const record: Record<string, readonly number[]> = {};
+      for (const [k, v] of this.mids) record[k] = v;
+      this.midsSeen = { size: this.mids.size, record };
     }
-    const roll = market.rollover;
-    const rollover: RolloverView | undefined =
-      roll && Object.keys(pairs).length > 0
-        ? { at: roll.at, spread: roll.spread, basis: roll.basis, rates: Object.fromEntries(market.yearly) }
-        : undefined;
-    return {
+    if (!this.heldSeen) {
+      const blockPositions: Record<string, Record<string, number>> = {};
+      for (const [block, bySymbol] of this.blockPositions) blockPositions[block] = Object.fromEntries(bySymbol);
+      const blockCosts: Record<string, Record<string, number>> = {};
+      for (const [block, bySymbol] of this.blockCosts) blockCosts[block] = Object.fromEntries(bySymbol);
+      this.heldSeen = { blockPositions, blockCosts };
+    }
+    if (this.openSeen?.size !== this.orders.size) this.openSeen = null;
+    if (!this.openSeen) {
+      this.openSeen = {
+        size: this.orders.size,
+        list: [...this.orders.values()].filter(
+          (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
+        ),
+      };
+    }
+    // What every firm sees alike is the market's, built once for the lot.
+    const common = market.sharedParts();
+    const pairParts = market.pairParts();
+    const view: MarketView = {
       now,
       symbols,
-      sectors,
-      constituents,
-      exchanges: market.exchanges.map((e) => e.id),
+      sectors: common.sectors,
+      constituents: common.constituents,
+      exchanges: common.exchangeIds,
       quotes,
-      contracts,
-      ...(Object.keys(pairs).length > 0 ? { pairs } : {}),
-      ...(rollover ? { rollover } : {}),
+      contracts: common.contracts,
+      ...(pairParts ? { pairs: pairParts.pairs } : {}),
+      ...(pairParts?.rollover ? { rollover: pairParts.rollover } : {}),
       get tape() {
         return (tape ??= buildTape());
       },
@@ -791,53 +930,47 @@ export class Firm {
         return (depth ??= buildDepth());
       },
       fees: this.feeTable,
-      latency,
-      mids,
+      latency: table.latency,
+      mids: this.midsSeen.record,
       positions,
-      blockPositions,
-      ...(this.blockCosts.size > 0 ? { blockCosts } : {}),
+      blockPositions: this.heldSeen.blockPositions,
+      ...(this.blockCosts.size > 0 ? { blockCosts: this.heldSeen.blockCosts } : {}),
       cash: this.cash,
-      openOrders: [...this.orders.values()].filter(
-        (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
-      ),
+      openOrders: this.openSeen.list,
       recentFills: this.fills,
       news,
     };
+    return { view, plan };
   }
 
   private decide(now: number, market: Market, news: readonly Headline[]): void {
-    const view = this.view(now, market, news);
+    const { view, plan } = this.build(now, market, news);
     // A block sees the stocks and its own desk: the stocks' blocks (and the script) the stocks alone, a desk's
     // blocks that desk and the stocks. With only the stocks in view every block sees the one view.
-    const deskOfSymbol = new Map<string, string>();
-    let others = false;
-    if (!(this.desks?.length === 1 && this.desks[0] === STOCKS_DESK)) {
-      for (const s of market.stocks) {
-        const d = deskOf(s);
-        if (d === STOCKS_DESK) continue;
-        deskOfSymbol.set(s.symbol, d);
-        others ||= view.symbols.includes(s.symbol);
-      }
-    }
     const byDesk = new Map<string, MarketView>();
     for (const setting of this.enabledBlocks()) {
       const block = blockFor(setting);
       let seen = view;
-      if (others) {
+      if (plan.others) {
         const desk = BLOCK_DESK.get(setting.id) ?? STOCKS_DESK;
-        seen =
-          byDesk.get(desk) ??
-          narrowed(
-            view,
-            view.symbols.filter((s) => {
-              const d = deskOfSymbol.get(s) ?? STOCKS_DESK;
-              return d === STOCKS_DESK || d === desk;
-            }),
-          );
+        seen = byDesk.get(desk) ?? narrowed(view, this.symbolsFor(plan, desk));
         byDesk.set(desk, seen);
       }
       for (const intent of block.decide(seen, setting.params)) this.send(intent, setting.id, now, seen);
     }
+  }
+
+  /** The watched symbols a desk's blocks may trade: the stocks' and the desk's own. */
+  private symbolsFor(plan: ViewPlan, desk: string): readonly string[] {
+    let list = plan.forDesk.get(desk);
+    if (!list) {
+      list = plan.symbols.filter((s) => {
+        const d = plan.deskOfSymbol.get(s) ?? STOCKS_DESK;
+        return d === STOCKS_DESK || d === desk;
+      });
+      plan.forDesk.set(desk, list);
+    }
+    return list;
   }
 
   /**
@@ -927,6 +1060,7 @@ export class Firm {
     const pos = this.positions.get(symbol);
     const qty = pos?.qty ?? 0;
     this.positions.delete(symbol);
+    this.heldSeen = null;
     for (const mine of this.blockPositions.values()) mine.delete(symbol);
     if (!delivery || qty === 0) return;
     const units = qty * delivery.units;
@@ -1004,6 +1138,7 @@ export class Firm {
       const o = this.orders.get(intent.localId);
       if (!o || o.status !== 'resting' || o.exchangeOrderId === null) return;
       o.status = 'cancelling';
+      this.openSeen = null;
       this.outbound.push(
         {
           kind: 'cancel',
@@ -1017,6 +1152,7 @@ export class Firm {
       return;
     }
     const localId = this.nextLocalId++;
+    this.openSeen = null;
     this.orders.set(localId, {
       localId,
       exchange: intent.exchange,
@@ -1042,6 +1178,7 @@ export class Firm {
     if (!sent) {
       const o = this.orders.get(localId)!;
       o.status = 'rejected';
+      this.openSeen = null;
       o.reason = REJECT_FLOOD;
       this.stats.ordersDropped++;
     }
@@ -1050,6 +1187,7 @@ export class Firm {
   /** An order refused before it left, kept in the log with its reason so the player can read why. */
   private recordRejected(intent: OrderIntent, block: string, now: number, reason: string): number {
     const localId = this.nextLocalId++;
+    this.openSeen = null;
     this.orders.set(localId, {
       localId,
       exchange: intent.exchange,
@@ -1342,6 +1480,7 @@ export class Firm {
           (o.status === 'resting' || o.status === 'cancelling')
         ) {
           o.status = 'cancelled';
+          this.openSeen = null;
         }
       }
     }

@@ -18,14 +18,9 @@ export function tick(
   const { closed, closedVenues } = market.step(now, dt, streams.world, streams.crowd, streams.desks);
   // The firms decide in the stocks' hours, and while an open desk's venue with hours of its own is open.
   const open = isMarketOpen(now) || market.exchanges.some((e) => e.session !== null && e.isOpen(now));
-  const bumps: Record<string, number> = {};
-  const taxes: Record<string, number> = {};
-  for (const e of market.exchanges) {
-    bumps[e.id] = e.rules.speedBumpMs;
-    taxes[e.id] = e.rules.taxPerShare;
-  }
+  const { bumps, taxes, fees } = venueTables(market);
   for (const f of firms) {
-    f.feeTable = fees(market);
+    f.feeTable = fees;
     f.bumps = bumps;
     f.taxes = taxes;
     f.scales = market.scales;
@@ -43,8 +38,53 @@ export function tick(
   return { closed: closed !== null, closedVenues };
 }
 
-function fees(market: Market): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const e of market.exchanges) out[e.id] = e.spec.feePerShare;
-  return out;
+/** What the firms are told of the venues each tick: speed bumps, taxes and fees. */
+interface VenueTables {
+  bumps: Record<string, number>;
+  taxes: Record<string, number>;
+  fees: Record<string, number>;
+  /** The values they were made from, by venue, to tell whether any has changed. */
+  ids: string[];
+  bump: number[];
+  tax: number[];
+  fee: number[];
+}
+
+const venueCache = new WeakMap<Market, VenueTables>();
+
+/**
+ * The same three tables for every firm, and the same objects tick after tick while no venue's id or rule changes, so
+ * a firm can tell by the object that its latencies have not moved. Rebuilt, new objects, when one has.
+ */
+function venueTables(market: Market): VenueTables {
+  const venues = market.exchanges;
+  const kept = venueCache.get(market);
+  if (
+    kept &&
+    kept.ids.length === venues.length &&
+    venues.every(
+      (e, i) =>
+        kept.ids[i] === e.id &&
+        kept.bump[i] === e.rules.speedBumpMs &&
+        kept.tax[i] === e.rules.taxPerShare &&
+        kept.fee[i] === e.spec.feePerShare,
+    )
+  )
+    return kept;
+  const made: VenueTables = {
+    bumps: {},
+    taxes: {},
+    fees: {},
+    ids: venues.map((e) => e.id),
+    bump: venues.map((e) => e.rules.speedBumpMs),
+    tax: venues.map((e) => e.rules.taxPerShare),
+    fee: venues.map((e) => e.spec.feePerShare),
+  };
+  for (const e of venues) {
+    made.bumps[e.id] = e.rules.speedBumpMs;
+    made.taxes[e.id] = e.rules.taxPerShare;
+    made.fees[e.id] = e.spec.feePerShare;
+  }
+  venueCache.set(market, made);
+  return made;
 }

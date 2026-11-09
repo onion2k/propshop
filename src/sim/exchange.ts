@@ -330,7 +330,8 @@ export class Exchange {
         continue;
       }
       s.quoteLog.push({ ...q, at: now, depth });
-      if (s.quoteLog.length > QUOTE_LOG_LENGTH) s.quoteLog.splice(0, s.quoteLog.length - QUOTE_LOG_LENGTH);
+      // One off the front at a time: the engine drops a single element from the front without moving the rest.
+      while (s.quoteLog.length > QUOTE_LOG_LENGTH) s.quoteLog.shift();
     }
   }
 

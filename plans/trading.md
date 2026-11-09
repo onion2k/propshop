@@ -1,7 +1,7 @@
 # From a high-frequency sim to a trading sim
 
 State: parts 1 to 5 built, 1 to 4 on 2026-11-08 and 5 on 2026-11-09; the futures desk's lead check unmet, by
-Chris's choice (part 4). Next: part 5½, the step rate with desks open, before the metals desk.
+Chris's choice (part 4). Next: Chris sets the floor and the gate for desks open (part 5½, built), then the metals desk.
 
 ## Context
 
@@ -234,6 +234,9 @@ its own. Part 1 must change nothing a player sees.
       futures desk open runs at about 65,000 ticks a second, the currencies about 55,000, both about 46,000,
       against the floor of 75,000 with none open (figures and profile in `docs/measured.md`). Chris chose to finish
       the currencies desk first. Check: the floor with every built desk open, and a gate that opens them.
+      Specified 2026-11-09 as exact cuts only, then decide; built the same day: with both desks open about 38,000
+      to 50,000 ticks a second (none 69,500 to 78,600, same machine and load), a game day at top speed about 450 s
+      against 285 with none, the game unchanged to the bit. The floor and the gate wait on Chris.
 - [ ] **6. Metals desk** (`plans/desk-metals.md`).
 - [ ] **7. Options desk** (`plans/desk-options.md`).
 - [ ] **8. The firm across desks** (`plans/firm-desks.md`).

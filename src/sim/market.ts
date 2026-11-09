@@ -11,6 +11,7 @@ import {
   STOCKS_DESK,
   currencyOf,
   deskOf,
+  inHome,
   isCarried,
   isCross,
   isDerived,
@@ -21,6 +22,7 @@ import {
   type Rate,
 } from './instrument';
 import type { Random } from './random';
+import type { ContractView, PairView, RolloverView } from './strategy';
 import type {
   ContractSeriesSpec,
   CurrencySpec,
@@ -82,6 +84,36 @@ export interface SavedMarket {
   rates?: Record<string, number>;
 }
 
+/** What every firm sees alike of the live instruments (`Market.sharedParts`). */
+export interface SharedParts {
+  stamp: number;
+  sectors: Readonly<Record<string, string>>;
+  constituents: Readonly<Record<string, readonly string[]>>;
+  contracts: Readonly<Record<string, ContractView>>;
+  exchangeIds: readonly string[];
+}
+
+/** A pair's parts that stay while the live instruments do. */
+interface FixedPair {
+  symbol: string;
+  base: string;
+  quote: string;
+  units: number;
+  scale: number;
+  venues: readonly string[];
+  cross?: { legs: readonly [string, string]; scale: number };
+}
+
+interface PairParts {
+  stamp: number;
+  fixed: FixedPair[];
+  /** The rates' mids the views were built at, in the rates' order. */
+  mids: number[];
+  built: { pairs: Readonly<Record<string, PairView>>; rollover: RolloverView | undefined } | null;
+  roll: RolloverSpec | null;
+  rolled?: { at: number; spread: number; basis: number } | null;
+}
+
 export class Market {
   /** Every instrument, of every desk, open or not: the content's, and the contracts listed now. */
   readonly instruments: StockSpec[];
@@ -132,6 +164,15 @@ export class Market {
   readonly crossScale = new Map<string, number>();
   /** When the currencies roll over and what the venues keep, handed in by the game; null with no currency. */
   rollover: RolloverSpec | null = null;
+  /**
+   * Counts the changes to what is live: a desk opened, a contract listed or delisted, a save loaded. Anything kept
+   * about the live instruments and venues (here and in the firms) is good while this is the number it was kept at.
+   */
+  liveStamp = 0;
+  /** What every firm sees alike of the live instruments, built when first asked after a change to them. Not saved. */
+  private shared: SharedParts | null = null;
+  /** The pairs as the firms see them, rebuilt when the live instruments or a rate move. Not saved. */
+  private pairCache: PairParts | null = null;
   /** The pairs the rates are read from, with their desks. */
   private readonly ratePairs: { currency: string; pair: string; desk: string }[] = [];
 
@@ -237,6 +278,102 @@ export class Market {
   private refreshLive(): void {
     this.stocks = this.instruments.filter((s) => this.openDesks.has(deskOf(s)));
     this.exchanges = this.venues.filter((e) => this.openDesks.has(e.desk));
+    this.liveStamp++;
+  }
+
+  /**
+   * What every firm sees alike of the live instruments: sectors, an index's constituents, the carried contracts and
+   * the venues' ids. One set of objects handed to every view, rebuilt only when the live instruments change; a
+   * block reads them and never writes (the view's types say so).
+   */
+  sharedParts(): SharedParts {
+    if (this.shared && this.shared.stamp === this.liveStamp) return this.shared;
+    const sectors: Record<string, string> = {};
+    const constituents: Record<string, readonly string[]> = {};
+    const contracts: Record<string, ContractView> = {};
+    for (const s of this.stocks) {
+      sectors[s.symbol] = s.sector;
+      if (s.constituents) constituents[s.symbol] = s.constituents;
+      if (isCarried(s))
+        contracts[s.symbol] = {
+          underlying: s.underlying!,
+          expiry: s.expiry!,
+          carry: s.carry!,
+          multiplier: s.multiplier ?? 1,
+        };
+    }
+    this.shared = {
+      stamp: this.liveStamp,
+      sectors,
+      constituents,
+      contracts,
+      exchangeIds: this.exchanges.map((e) => e.id),
+    };
+    return this.shared;
+  }
+
+  /**
+   * The live currency pairs as a block sees them, and the rollover, or null with no pair live. What a pair is
+   * stays as long as the live instruments do; what a point of it is worth at home moves with the rates, so the
+   * views are rebuilt (new objects, never changed in place) when a rate has moved, once, not once a firm.
+   */
+  pairParts(): { pairs: Readonly<Record<string, PairView>>; rollover: RolloverView | undefined } | null {
+    let parts = this.pairCache;
+    if (!parts || parts.stamp !== this.liveStamp) {
+      const fixed: FixedPair[] = [];
+      for (const s of this.stocks) {
+        const pair = this.fx.get(s.symbol);
+        if (!pair) continue;
+        const scale = this.crossScale.get(s.symbol);
+        fixed.push({
+          symbol: s.symbol,
+          quote: pair.quote,
+          base: pair.base,
+          units: pair.units,
+          scale: this.scales.get(s.symbol) ?? 1,
+          venues: this.venuesOf(s.symbol).map((e) => e.id),
+          ...(s.cross && scale !== undefined ? { cross: { legs: s.cross, scale } } : {}),
+        });
+      }
+      parts = this.pairCache = { stamp: this.liveStamp, fixed, mids: [], built: null, roll: null };
+    }
+    if (parts.fixed.length === 0) return null;
+    const roll = this.rollover;
+    let fresh = parts.built === null || parts.roll !== roll;
+    let i = 0;
+    for (const rate of this.rates.values()) {
+      if (parts.mids[i] !== rate.mid) fresh = true;
+      parts.mids[i++] = rate.mid;
+    }
+    if (
+      roll &&
+      parts.rolled &&
+      (parts.rolled.at !== roll.at || parts.rolled.spread !== roll.spread || parts.rolled.basis !== roll.basis)
+    )
+      fresh = true;
+    if (fresh) {
+      const pairs: Record<string, PairView> = {};
+      for (const f of parts.fixed) {
+        pairs[f.symbol] = {
+          base: f.base,
+          quote: f.quote,
+          units: f.units,
+          scale: f.scale,
+          pointValue: inHome(f.quote, f.scale, this.rates),
+          venues: f.venues,
+          ...(f.cross ? { cross: f.cross } : {}),
+        };
+      }
+      parts.roll = roll;
+      parts.rolled = roll ? { at: roll.at, spread: roll.spread, basis: roll.basis } : null;
+      parts.built = {
+        pairs,
+        rollover: roll
+          ? { at: roll.at, spread: roll.spread, basis: roll.basis, rates: Object.fromEntries(this.yearly) }
+          : undefined,
+      };
+    }
+    return parts.built;
   }
 
   /** The listed contracts of a series, in order of expiry. */
@@ -577,6 +714,7 @@ export class Market {
         v.map((p) => ({ ...p })),
       );
     this.lastSample = saved.lastSample;
+    this.liveStamp++;
     for (const [c, mid] of Object.entries(saved.rates ?? {})) {
       const rate = this.rates.get(c);
       if (rate) rate.mid = mid;

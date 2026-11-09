@@ -106,6 +106,23 @@ All headless with Playwright, borrowed from `~/projects/artshape-game-template`.
   deciding is 43% of a tick (building each rival's view of every watched symbol on every venue 14%, the blocks
   the rest), the exchanges' step 18% (the crowd 14%), the quote logs 12%, the stocks' drift 7%, the collector 7%.
   A skip to the open from Monday 16:10 takes 32 to 39 ms with the currencies closed and 114 to 115 with them open.
+- **With desks open, after the step-rate cuts** (`plans/desk-speed.md`, 2026-11-09). The bundle method: an esbuild
+  bundle of `Game` (`npx esbuild <entry> --bundle --platform=node --format=esm --loader:.webp=empty`), seed 12,
+  `skipToOpen`, 10 s warm-up, 4 minutes (120,000 ticks) timed, `node x.mjs futures,fx`, three runs each, nothing
+  else of mine running (the machine's own load about 1.6). Ticks a second, before then after, the two taken in
+  the same half hour: none open 69,500 then 78,100 to 79,300 (+13%); the futures desk 51,400 to 52,400 then 62,100
+  to 62,500 (+20%); the currencies desk 46,900 to 47,500 then 58,400 to 59,000 (+24%); both 37,600 to 38,000 then
+  49,500 to 50,500 (+32%). (The morning's figures under a load of 1.3, before: 74,400, 56,800, 51,300, 40,900.)
+  A game day at top speed with every desk open: scaled from the 52,000 ticks a second above (open market, none
+  open, about 72× and a day in about 300 s) by the ratio of the rates, it was about 590 s and is about 450 s; with
+  none open about 285 s. Profiled with both open after: the firms' deciding 40% of a tick (building a view 12%, the
+  blocks the rest), the exchanges' step 37% (the crowd 18%), the quote logs 11%, the stocks' drift 9%, the
+  collector 7%. What is left of the firms' share is the blocks' own reading (the depth and the tape 4% each) and
+  the crowd's draws, which cannot move without moving the game. The step-rate floor and the gate were not
+  touched. The cuts: the views' shared parts built once; a firm's plan, latencies, holdings and open orders kept
+  until they change; quotes asked only of the venues that list a symbol; `narrowed` by prototype; and the quote
+  log trimmed with `shift`, not `splice`. A cut tried and dropped: handing a venue the same quotes, tape and depth
+  record again when none of its books had moved (hit 65% of the time, no measurable gain).
 - The night's tests, headless Chrome on 2026-11-07, one 12-core machine: a night is 3 pinned windows by 7
   setups, 21 runs of five simulated minutes. Close to `done` with the sim stopped: 48 to 52 s over eight
   nights, and the same with the sim running at 10× or 300×. CDP's CPU throttle refuses a worker, so the page
