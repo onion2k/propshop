@@ -1,6 +1,6 @@
 # Playing and learning: the nine points, specified
 
-State: specified 2026-11-09 in plan mode and agreed; part A built 2026-11-09, part B next. Each part is built by the `builder`
+State: specified 2026-11-09 in plan mode and agreed; parts A and B built 2026-11-09, part C next. Each part is built by the `builder`
 agent, tests first, then checked and looked at headless, committed and pushed on its own before the next starts.
 What was seen in the look through the game, and the first ideas, are in this file's history (`2519aa1`).
 
@@ -163,3 +163,43 @@ a close); the dual-rack shop test (now reads the before and after for the venues
 Not checked: the look at 375 and 1280 wide (no browser here), layout shift in a real run, console errors in a browser.
 Decision for Chris: the "Test tonight" form lives in Comparisons, so it now waits for the first close, and a player
 cannot queue a change on day one for the first night's tests.
+
+## Result: part B
+
+Built 2026-11-09 by the builder. The sim tests (`test/rivals.test.ts`) were written first and failed on the missing
+`takenBy`, `against`, `MARKOUT_MS`; the pure and page tests for the words and rows were written after the working,
+and passed at once.
+
+- **Sim.** `Fill.against` (the other side's owner) and `Fill.resting` (the firm's order rested and the other side
+  crossed to take it; never at a fix), through `Firm.onTrade` and the inbound `fill` message (`firm.ts`, `strategy/types.ts`).
+  `Game` counts a resting fill against a named rival in `today.takenBy` and queues it in `today.markouts` (bound
+  `MAX_MARKOUTS` = 200; past it the count stays exact and the figure is left out), and marks it out against the fill
+  exchange's mid `MARKOUT_MS` (1000) later, cents the mid ran against the quote (negative where for it; an instrument's
+  scale by `valueOf`, a pair's quote currency by `toHome`). At the close what waits is marked then, or counts nought
+  with no two-sided book. `DayReport.takenBy?` is written at the close. The snapshot gains `takenToday` and, on
+  each competitor, `location` and `runs`. The crowd (`bg`) and the firm's own wash trades (`firm`) are never named.
+  `experiment.ts` does not measure a picked-off quote, so nothing was reused there. `beatenBy` is unchanged.
+- **Save.** `today` is saved whole, so the pending marks ride in it as an optional field; no version change; a save
+  without them loads (tested). A save mid-mark loads to the same future (tested, whole-save JSON equal).
+- **Words and page.** `RIVAL_DAY_WORDS`, `RIVAL_TERM` and `DAY_CAUSE_WORDS.rival` (`signals.ts`); glossary entry
+  `picked-off`; `rivalLines`, `rivalRows` and the `rival` kind of `dayCause` (`overview.ts`, a rival is a candidate only
+  for a day that lost and only where its marks cost something); a sentence a rival in the day report (`DaysPanel.tsx`);
+  a "Who they are" table in `RivalsPanel.tsx` (runs, sits at, took today, took this week), the latency grid kept.
+- **Held by.** `test/rivals.test.ts` (against and resting on fills, the tally equals the resting fills against rivals,
+  the crowd never named, same seed and day gives identical reports, save with marks pending loads to the same future,
+  save without the fields loads, the list stays within its bound), `test/overview.test.ts` "rivals as characters",
+  `test/ui.test.tsx` "Part B".
+- **Floors** (`npm run floors`, alone, 2026-11-09): 92,474 ticks/s with no desk open (floor 75,000); 40,714 with
+  futures, fx and metals open (floor 35,000); in the full check 86,618 and 37,931.
+  The log (and so a save and the pinned fingerprints) keeps a fill as it was: `against` and `resting` ride on the
+  tick's copy and on the in-flight fill message only.
+- **Not checked.** The look at 375 and 1280 wide (no browser here; the new table has five columns and has had no
+  phone look); console errors in a browser. The sign of the marks was not tuned: in a seed-10 morning with the market
+  maker on, every rival's total was negative (the price moved for the firm after the take), so the sentence says
+  "though the price did not run against you after" often; whether that teaches well is for Chris.
+
+Reviewed after the hand-back (2026-11-09): looked at headless at 1280 and 375 on a market-maker day from home (803
+quotes taken, about $3,318, on a day that lost $4,355); no overflow, no console errors. One fault found and put
+right: "Took this week" counted today twice after the close, since the day's tally is kept until the next open;
+`rivalRows` now adds today only while the market is open, with a test. Left as built: "Who they are" sits below the
+latency grid, not above it as the plan said.

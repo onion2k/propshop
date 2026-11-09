@@ -101,6 +101,23 @@ export const MAX_INTRADAY = 400;
 /** The most margins the day keeps for each rival that beat the firm (the count stays exact); the median reads these. */
 export const MAX_MARGINS_KEPT = 400;
 
+/** How long after a resting quote was taken by a rival the mid is read, to say what the quote was worth. */
+export const MARKOUT_MS = 1000;
+
+/** The most quotes waiting on their mark-out at once; past it the count stays exact and the figure is left out. */
+export const MAX_MARKOUTS = 200;
+
+/** A resting fill taken by a named rival, waiting for its mark-out. */
+interface Markout {
+  rival: string;
+  exchange: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  price: number;
+  size: number;
+  due: number;
+}
+
 export interface Tally {
   fills: number;
   realised: number;
@@ -130,6 +147,11 @@ export interface DayReport {
   regime?: string;
   /** Races lost to each named rival: how many, and the median ms its order was ahead. Missing in a report saved before it. */
   beatenBy?: Record<string, { count: number; medianMs: number }>;
+  /**
+   * Resting quotes each named rival took, and what they were worth: cents the price moved against the firm in the
+   * `MARKOUT_MS` after (negative where it moved for it). Missing in a report saved before it.
+   */
+  takenBy?: Record<string, { count: number; cents: number }>;
   /** Orders dropped for capacity that day. Missing in a report saved before it. */
   dropped?: number;
   /** By desk, where a desk other than the stocks traded that day; absent otherwise. */
@@ -205,6 +227,10 @@ interface Today {
   statsAtOpen: { ordersSent: number; cancelsSent: number; ordersDropped: number };
   /** By the rival's name; the rivals are the content's, so the keys are bounded by it. Margins by `MAX_MARGINS_KEPT`. */
   beatenBy?: Record<string, { count: number; marginsMs: number[] }>;
+  /** Quotes taken by each named rival today (the rivals are the content's, so the keys are bounded by it). */
+  takenBy?: Record<string, { count: number; cents: number }>;
+  /** Taken quotes waiting for their mark-out, oldest first; bounded by `MAX_MARKOUTS`. Absent in a save from before it. */
+  markouts?: Markout[];
   /** Fills of desks other than the stocks, by desk; absent until one trades. */
   byDesk?: Record<string, Tally>;
 }
@@ -386,7 +412,18 @@ export interface Snapshot {
   /** Each open desk's own headlines (the metals' supply news), newest first, each with its desk. */
   deskNews: (Published & { desk: string })[];
   dark: { unlocked: boolean; offers: Tip[]; bought: Tip[]; fines: Fine[] };
-  competitors: { id: string; name: string; latency: Record<string, number>; fills: number; pnl: number }[];
+  competitors: {
+    id: string;
+    name: string;
+    latency: Record<string, number>;
+    fills: number;
+    pnl: number;
+    /** Where it sits (its location's name) and the ids of the blocks it runs. */
+    location: string;
+    runs: string[];
+  }[];
+  /** Today's quotes taken off the firm by each named rival, so far (the figure fills in a second after each). */
+  takenToday: Record<string, { count: number; cents: number }>;
   /** For the microscope: every firm's messages on the wire, and each exchange's belief per symbol. */
   wire: Wire[];
   beliefs: Record<string, Record<string, number>>;
@@ -565,7 +602,9 @@ export class Game {
       const desk = deskOf(this.market.stock(f.symbol));
       if (desk !== STOCKS_DESK) tally((this.today.byDesk ??= {}), desk, f);
       this.today.fees += f.fee;
+      if (f.resting) this.noteTaken(f);
     }
+    if (this.today.markouts && this.today.markouts.length > 0) this.settleMarkouts(false);
     this.contracts(closedVenues);
     const roll = this.content.rollover;
     if (roll && this.market.fx.size > 0 && crossed(this.now, dt, roll.at)) this.rollover(roll);
@@ -775,6 +814,60 @@ export class Game {
     if (t.marginsMs.length < MAX_MARGINS_KEPT) t.marginsMs.push(Math.max(0, (o.arrivedAt ?? rival.at) - rival.at));
   }
 
+  /** A resting quote of the firm's that a named rival took: counted now, worth marked out `MARKOUT_MS` later. */
+  private noteTaken(f: {
+    against?: string;
+    at: number;
+    exchange: string;
+    symbol: string;
+    side: 'buy' | 'sell';
+    price: number;
+    size: number;
+  }): void {
+    const rival = this.competitors.find((c) => c.id === f.against);
+    if (!rival) return;
+    const by = (this.today.takenBy ??= {});
+    const t = (by[rival.name] ??= { count: 0, cents: 0 });
+    t.count++;
+    const list = (this.today.markouts ??= []);
+    if (list.length < MAX_MARKOUTS)
+      list.push({
+        rival: rival.name,
+        exchange: f.exchange,
+        symbol: f.symbol,
+        side: f.side,
+        price: f.price,
+        size: f.size,
+        due: f.at + MARKOUT_MS,
+      });
+  }
+
+  /** Quotes waiting for their mark-out, for the tests and the page's bound. */
+  markoutsPending(): number {
+    return this.today.markouts?.length ?? 0;
+  }
+
+  /** Marks out the quotes whose time has come (all of them, at the close): cents the mid moved against the firm. */
+  private settleMarkouts(all: boolean): void {
+    const list = this.today.markouts;
+    if (!list) return;
+    let n = 0;
+    while (n < list.length && (all || list[n]!.due <= this.now)) {
+      const m = list[n]!;
+      n++;
+      const ex = this.market.exchanges.find((e) => e.id === m.exchange);
+      const q = ex?.quote(m.symbol);
+      if (!q || q.bid === null || q.ask === null) continue;
+      const mid = (q.bid + q.ask) / 2;
+      const against = m.side === 'buy' ? m.price - mid : mid - m.price;
+      let cents = valueOf(this.market.scales.get(m.symbol) ?? 1, m.size, against);
+      const pair = this.market.fx.get(m.symbol);
+      if (pair && pair.quote !== HOME) cents = toHome(pair.quote, cents, this.market.rates);
+      this.today.takenBy![m.rival]!.cents += Math.round(cents);
+    }
+    list.splice(0, n);
+  }
+
   /** The regulator reads the day's order flow at the close. A pattern is a note and heat; the fines follow. */
   private regulate(): void {
     const sent = this.firm.stats.ordersSent - this.today.statsAtOpen.ordersSent;
@@ -796,6 +889,7 @@ export class Game {
 
   private onClose(): void {
     this.regulate();
+    this.settleMarkouts(true);
     const equity = this.firm.equity(this.market, this.now);
     const c = calendar(this.now);
     const pnl = equity - this.dayStartEquity;
@@ -829,6 +923,7 @@ export class Game {
           { count: t.count, medianMs: median(t.marginsMs) },
         ]),
       ),
+      takenBy: Object.fromEntries(Object.entries(this.today.takenBy ?? {}).map(([name, t]) => [name, { ...t }])),
       dropped: this.firm.stats.ordersDropped - this.today.statsAtOpen.ordersDropped,
       ...(this.today.byDesk ? { byDesk: this.byDesk() } : {}),
     });
@@ -1121,8 +1216,11 @@ export class Game {
           latency: l,
           fills: c.stats.fillsReceived,
           pnl: c.realised - c.feesPaid + c.unrealised(this.market, now),
+          location: c.infra.location.name,
+          runs: c.enabledBlocks().map((b) => b.id),
         };
       }),
+      takenToday: Object.fromEntries(Object.entries(this.today.takenBy ?? {}).map(([name, t]) => [name, { ...t }])),
       wire: [this.firm, ...this.competitors].flatMap((f) => f.inFlight()),
       beliefs: Object.fromEntries(
         this.market.exchanges.map((e) => [

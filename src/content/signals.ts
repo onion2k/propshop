@@ -376,8 +376,25 @@ export const DAY_CAUSE_WORDS = {
     gain ? `${name} earned ${amount}, the most of any block.` : `${name} lost ${amount}, the worst of any block.`,
   symbol: (symbol: string, amount: string, gain: boolean) =>
     gain ? `${symbol} earned ${amount}, the most of any stock.` : `${symbol} lost ${amount}, the worst of any stock.`,
+  rival: (name: string, amount: string) =>
+    `${name} took quotes off you worth ${amount}: the price ran against them a second after.`,
   quiet: 'Nothing traded and nothing was charged: a quiet day.',
 } as const;
+
+/** The day report's sentence about one rival: what it took off the firm's resting quotes and the races it won. */
+export const RIVAL_DAY_WORDS = {
+  /** `worth` is the mark-out in cents already worded (a dollar figure), or null where the price did not run against the firm. */
+  taken: (name: string, count: number, worth: string | null) =>
+    `${name} took ${count} ${count === 1 ? 'quote' : 'quotes'} off you` +
+    (worth ? `, worth ${worth}` : ', though the price did not run against you after'),
+  beaten: (count: number, medianMs: string) =>
+    `beat you to ${count} ${count === 1 ? 'order' : 'orders'} by a median ${medianMs}`,
+  /** What the quote's worth is read against, for the line under the sentences. */
+  note: 'A quote’s worth is how far the mid moved against it in the second after it was taken.',
+} as const;
+
+/** The glossary entry the rivals' sentences link to. */
+export const RIVAL_TERM = 'picked-off';
 
 /** The glossary entry the day's cause links to. */
 export const DAY_CAUSE_TERM = 'day-cause';

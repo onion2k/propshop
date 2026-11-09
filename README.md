@@ -70,6 +70,8 @@ http://localhost:5181.
 - **Rivals who are faster than you.** Four firms run the same arbitrage
   from better seats. The fastest sits in two exchange buildings on a
   microwave line and earns about ten thousand a day.
+  The day report names what each took off you: the resting quotes it hit, what
+  they were worth a second later, and the races it won.
 - **Days with a character.** Calm, trending, choppy or news-heavy, drawn
   from the seed, named in the top bar and kept in the day report. The block
   that worked yesterday is the wrong one today.

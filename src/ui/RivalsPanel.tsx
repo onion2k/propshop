@@ -4,6 +4,7 @@
 import type { Snapshot } from '../sim';
 import { moneyShort, ms } from './format';
 import { Term } from './Glossary';
+import { rivalRows } from './overview';
 
 export function RivalsPanel({ s }: { s: Snapshot }) {
   const rows = [
@@ -49,6 +50,38 @@ export function RivalsPanel({ s }: { s: Snapshot }) {
           ))}
         </tbody>
       </table>
+      <h3>Who they are</h3>
+      <table className="rival-cards">
+        <thead>
+          <tr>
+            <th>Rival</th>
+            <th>Runs</th>
+            <th>Sits at</th>
+            <th className="num">Took today</th>
+            <th className="num">Took this week</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rivalRows(s).map((r) => (
+            <tr key={r.id}>
+              <td>{r.name}</td>
+              <td>{r.runs.join(', ')}</td>
+              <td>{r.location}</td>
+              <td className="num">{taken(r.today)}</td>
+              <td className="num">{taken(r.week)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">
+        <Term id="picked-off">Quotes taken off you</Term> are your resting quotes a named rival hit, with how far the
+        price ran against them a second later.
+      </p>
     </div>
   );
+}
+
+function taken(t: { count: number; cents: number }): string {
+  if (t.count === 0) return 'none';
+  return `${t.count} ${t.count === 1 ? 'quote' : 'quotes'}, ${moneyShort(Math.round(t.cents), true)}`;
 }

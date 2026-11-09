@@ -100,6 +100,10 @@ export interface Fill {
   fee: number;
   /** Realised P&L this fill closed out, cents, before fees. */
   realised: number;
+  /** The owner on the other side ('bg' is the crowd, 'bot:<id>' a rival). Absent in a save from before it. */
+  against?: string;
+  /** The firm's order was resting and the other side crossed the spread to take it; never at a fix. */
+  resting?: true;
 }
 
 /**

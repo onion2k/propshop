@@ -6,6 +6,8 @@ import {
   DAY_CAUSE_TERM,
   DAY_CAUSE_WORDS,
   OVERVIEW_COMING_WORDS,
+  RIVAL_DAY_WORDS,
+  RIVAL_TERM,
   shows,
   type StageId,
 } from '../content';
@@ -449,7 +451,7 @@ export function blockVerdict(r: BlockRecord): { kind: BlockVerdictKind; text: st
 }
 
 export interface DayCause {
-  kind: 'fees' | 'fines' | 'rollover' | 'storage' | 'block' | 'symbol' | 'quiet';
+  kind: 'fees' | 'fines' | 'rollover' | 'storage' | 'block' | 'symbol' | 'rival' | 'quiet';
   /** Cents, signed: what it did to the day. */
   amount: number;
   text: string;
@@ -479,6 +481,10 @@ export function dayCause(d: DayReport): DayCause {
   if (block) add('block', block[1], (a) => DAY_CAUSE_WORDS.block(blockName(block[0]), a, gain));
   const symbol = pick(d.bySymbol);
   if (symbol) add('symbol', symbol[1], (a) => DAY_CAUSE_WORDS.symbol(symbol[0], a, gain));
+  // What rivals took off resting quotes is a mark-out, not a charge: it can only explain a day that lost.
+  const taken = Object.entries(d.takenBy ?? {}).sort((a, b) => b[1].cents - a[1].cents)[0];
+  const takenTotal = sum(Object.values(d.takenBy ?? {}).map((t) => t.cents));
+  if (taken && !gain && takenTotal > 0) add('rival', -takenTotal, (a) => DAY_CAUSE_WORDS.rival(taken[0], a));
   let best: (typeof candidates)[number] | undefined;
   for (const c of candidates) if (!best || Math.abs(c.amount) > Math.abs(best.amount)) best = c;
   if (!best) return { kind: 'quiet', amount: 0, text: DAY_CAUSE_WORDS.quiet, term: null };
@@ -539,4 +545,66 @@ export function shopLatency(
       .map((e) => `${e} ${ms(o.latency[e]!)}`)
       .join(', '),
   };
+}
+
+/** One rival's day, in a sentence: the quotes it took off the firm and the races it won. */
+export interface RivalLine {
+  name: string;
+  text: string;
+  term: string;
+}
+
+/** A sentence a rival that took a quote or won a race that day, the one with more taken first; none for a quiet day. */
+export function rivalLines(d: Pick<DayReport, 'takenBy' | 'beatenBy'>): RivalLine[] {
+  const names = new Set([...Object.keys(d.takenBy ?? {}), ...Object.keys(d.beatenBy ?? {})]);
+  const lines: (RivalLine & { weight: number })[] = [];
+  for (const name of names) {
+    const taken = d.takenBy?.[name];
+    const beaten = d.beatenBy?.[name];
+    if (!(taken?.count || beaten?.count)) continue;
+    const parts: string[] = [];
+    if (taken?.count) parts.push(RIVAL_DAY_WORDS.taken(name, taken.count, taken.cents > 0 ? money(taken.cents) : null));
+    if (beaten?.count) {
+      const b = RIVAL_DAY_WORDS.beaten(beaten.count, ms(beaten.medianMs));
+      parts.push(taken?.count ? `and ${b}` : `${name} ${b}`);
+    }
+    lines.push({
+      name,
+      text: `${parts.join(', ')}.`,
+      term: RIVAL_TERM,
+      weight: (taken?.count ?? 0) + (beaten?.count ?? 0),
+    });
+  }
+  return lines.sort((a, b) => b.weight - a.weight).map(({ weight: _w, ...l }) => l);
+}
+
+export interface RivalRow {
+  id: string;
+  name: string;
+  location: string;
+  /** The names of the blocks it runs. */
+  runs: string[];
+  today: { count: number; cents: number };
+  /** This week's closed days, and today while it is still open (after the close today is one of them). */
+  week: { count: number; cents: number };
+}
+
+/** Each rival with what it runs, where it sits, and what it took off the firm's quotes today and this week. */
+export function rivalRows(s: Pick<Snapshot, 'competitors' | 'takenToday' | 'days' | 'calendar'>): RivalRow[] {
+  const week = s.days.filter((d) => d.week === s.calendar.week);
+  // The day's tally is kept until the next open, so once the day has closed it is already in `days`.
+  const live = s.calendar.open;
+  return s.competitors.map((c) => {
+    const today = s.takenToday[c.name] ?? { count: 0, cents: 0 };
+    const open = live ? today : { count: 0, cents: 0 };
+    const mine = week.map((d) => d.takenBy?.[c.name]).filter((t): t is { count: number; cents: number } => !!t);
+    return {
+      id: c.id,
+      name: c.name,
+      location: c.location,
+      runs: c.runs.map(blockName),
+      today: { ...today },
+      week: { count: open.count + sum(mine.map((t) => t.count)), cents: open.cents + sum(mine.map((t) => t.cents)) },
+    };
+  });
 }

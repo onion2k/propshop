@@ -209,7 +209,18 @@ type Inbound =
       arrivedAt: number;
       beatenBy: BeatenBy[];
     }
-  | { kind: 'fill'; localId: number; price: number; size: number; at: number; taker: boolean }
+  | {
+      kind: 'fill';
+      localId: number;
+      price: number;
+      size: number;
+      at: number;
+      taker: boolean;
+      /** The other side's owner. Absent in a save from before it. */
+      against?: string;
+      /** Made at a fix, where nobody crossed the spread. */
+      fix?: true;
+    }
   | { kind: 'cancelled'; localId: number }
   | { kind: 'cancelRefused'; localId: number; reason: string }
   | { kind: 'rejected'; localId: number; reason: string }
@@ -529,7 +540,7 @@ export class Firm {
             order.status = msg.resting ? 'resting' : msg.remaining === 0 ? 'filled' : 'cancelled';
           break;
         case 'fill':
-          this.book(order, msg.price, msg.size, msg.at, msg.taker);
+          this.book(order, msg.price, msg.size, msg.at, msg.taker, msg.against, msg.fix === true);
           if (order.filled >= order.size) order.status = 'filled';
           break;
         case 'cancelled':
@@ -563,7 +574,15 @@ export class Firm {
     this.trimOrders();
   }
 
-  private book(order: OpenOrder, price: number, size: number, at: number, taker: boolean): void {
+  private book(
+    order: OpenOrder,
+    price: number,
+    size: number,
+    at: number,
+    taker: boolean,
+    against?: string,
+    fix = false,
+  ): void {
     order.filled += size;
     // Maker-taker: the order that crossed the spread pays the exchange; the one that was resting does not. A
     // transaction tax, where the exchange runs one, is paid by both.
@@ -620,8 +639,12 @@ export class Firm {
       fee,
       realised,
     };
+    // The log (and so a save) keeps the fill as it always was; the tick's copy says who was on the other side, and
+    // whether this was a resting order taken (the other side crossed the spread; never at a fix).
     this.fills.push(fill);
-    this.tickFills.push(fill);
+    this.tickFills.push(
+      against === undefined ? fill : { ...fill, against, ...(!taker && !fix ? { resting: true as const } : {}) },
+    );
     if (this.fills.length > FILL_LOG) this.fills.splice(0, this.fills.length - FILL_LOG);
   }
 
@@ -1437,6 +1460,8 @@ export class Firm {
         at: now,
         // At a fix nobody crossed the spread: no fill there is a taker's, so none pays the taker fee.
         taker: !trade.fix && trade.aggressor === mine,
+        against: mine === 'buy' ? trade.seller : trade.buyer,
+        ...(trade.fix ? { fix: true as const } : {}),
       },
       now + this.latency(exchange.id),
     );

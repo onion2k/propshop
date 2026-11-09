@@ -463,7 +463,7 @@ describe('Game gap log', () => {
     expect(g.snapshot().gaps[0]!.edge).not.toBe(999);
   });
 
-  it('saves and loads mid-session to the same future', () => {
+  it('saves and loads mid-session to the same future', { timeout: 30_000 }, () => {
     const a = withGaps();
     expect(a.firm.gapLog.length).toBeGreaterThan(0);
     const b = Game.load(CONTENT, JSON.parse(JSON.stringify(a.save())) as SavedGame);

@@ -312,6 +312,19 @@ export const GLOSSARY: GlossaryEntry[] = [
       'pays the spread for nothing.',
   },
   {
+    id: 'picked-off',
+    term: 'Taken off you (mark-out)',
+    short: 'A resting quote of yours that a named rival hit, and how far the price ran against it a second later.',
+    long:
+      'A quote that rests in the book can be hit by anyone faster who knows the price has moved. When a rival ' +
+      'takes it, the game counts it, and a second later reads the mid: if you sold and the mid is now higher, or ' +
+      'bought and it is lower, the quote was worth that much to the rival and cost you the same. That is the ' +
+      'mark-out. A lost race is a different thing: the order that arrived first fills and yours finds it gone, ' +
+      'and no honest money figure belongs to it, so it is counted and timed, not priced. The crowd is not a ' +
+      'rival and is never named. The remedies are the same as for adverse selection: speed, fresher data, ' +
+      'stepping away on news.',
+  },
+  {
     id: 'day-cause',
     term: 'Why a day made or lost money',
     short: 'The one thing that most of a day’s result came from: a charge, a block or a stock.',

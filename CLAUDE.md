@@ -65,6 +65,17 @@ measure; they hold nothing.
   player's own test and the main-thread runner. The store pins the live game three times a day (the open, a
   minute before the day's largest scheduled headline, 14:30; `MAX_DAY_PINS`) in memory only, and at the close
   hands the pins to the runner. The browser keeps `propshop.tests.v1`, the last `MAX_NIGHTS` nights' results.
+- **Rivals as characters:** `Fill.against` is the other side's owner (from `Trade.buyer`/`seller`, through
+  `Firm.onTrade`), and `Fill.resting` marks a fill of a resting order that the other side crossed to take (never at a
+  fix). In `Game.step`, a resting fill against a named rival (the crowd, `bg`, and the firm's own `firm` are not) is
+  counted in `today.takenBy` and queued in `today.markouts` (bounded by `MAX_MARKOUTS`), and marked out against the
+  exchange's mid `MARKOUT_MS` (1 s) later (at the close, whatever waits is marked then, or counts nought where the book
+  is empty); the `DayReport.takenBy` is `{ count, cents }` a rival, cents being how far the mid ran against the quote
+  (negative where for it). `today` is saved whole, so pending marks are saved with it, as optional fields, no version
+  change. Nothing draws from any stream. The words are `RIVAL_DAY_WORDS` in `signals.ts`, working in `rivalLines`
+  and `rivalRows` (`overview.ts`), the page in `DaysPanel.tsx` and `RivalsPanel.tsx`; `dayCause` has `rival`. Tests:
+  `test/rivals.test.ts`, `test/overview.test.ts`, `test/ui.test.tsx` "Part B". `experiment.ts` does not measure a
+  picked-off quote, so nothing was reused.
 - `src/sim/experiment.ts` runs an experiment: `startOf` builds the starting save, `Run` runs a window from it
   under a setup and measures it, `Prepare` pins a save before each chosen moment, `replayAt` gives the game at
   one. A save is about 7 MB (the exchanges' quote logs), so a run keeps its start and at most `MAX_PINNED`
@@ -196,6 +207,8 @@ The figures behind each line are in `docs/measured.md`, with their dates.
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked
   at headless by hand, at 375 and 1280 wide.
+- **The mark-out:** one second after a taken quote, against the exchange's mid; a draft, held by the replay and save
+  tests, not by a figure for what a rival's take is worth.
 - **The experiments' answers:** `test/experiments.test.ts` holds what each briefing promises (the headline in the
   window, every change measurable, the answers not all alike), not which answer each change gets.
 - **What the Overview teaches:** the signals' thresholds and words are drafts, and the verdict band

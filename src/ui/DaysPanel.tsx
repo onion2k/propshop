@@ -5,7 +5,7 @@ import { DESK_NAMES, REGIMES } from '../content';
 import type { DayReport, Snapshot, Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
-import { blockName, dayCause, dayVerdict } from './overview';
+import { blockName, dayCause, dayVerdict, rivalLines } from './overview';
 
 function net(t: Tally): number {
   return t.realised - t.fees;
@@ -135,6 +135,15 @@ function Report({ d }: { d: DayReport }) {
         </>
       )}
       <h3>Rivals</h3>
+      {rivalLines(d).length > 0 && (
+        <ul className="small rival-lines">
+          {rivalLines(d).map((l) => (
+            <li key={l.name}>
+              {l.text} <Term id={l.term}>Read more</Term>
+            </li>
+          ))}
+        </ul>
+      )}
       <table>
         <tbody>
           {[{ name: 'You', pnl: d.pnl, you: true }, ...d.rivals.map((r) => ({ ...r, you: false }))]

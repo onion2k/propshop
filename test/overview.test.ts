@@ -10,6 +10,8 @@ import {
   comingLine,
   dayCause,
   ordersToday,
+  rivalLines,
+  rivalRows,
   overviewShown,
   racesVenues,
   shopLatency,
@@ -461,5 +463,74 @@ describe('the Market page by desk and the shop by venue', () => {
     // The offer in use has no before.
     const inUse = { ...offer, inUse: true } as UpgradeOffer;
     expect(shopLatency(inUse, s).traded).toBe('HARBOR 600µs, LAKESIDE 4.4ms');
+  });
+});
+
+describe('rivals as characters', () => {
+  it('writes a sentence a rival: quotes taken with their worth, and races beaten with the median', () => {
+    const lines = rivalLines({
+      takenBy: { 'Harbor Quant': { count: 14, cents: 31_000 }, 'Midtown Capital': { count: 2, cents: -500 } },
+      beatenBy: { 'Harbor Quant': { count: 22, medianMs: 0.4 }, 'Bayview Systems': { count: 3, medianMs: 2 } },
+    });
+    expect(lines.map((l) => l.name)).toEqual(['Harbor Quant', 'Bayview Systems', 'Midtown Capital']);
+    expect(lines[0]!.text).toBe(
+      'Harbor Quant took 14 quotes off you, worth $310.00, and beat you to 22 orders by a median 400µs.',
+    );
+    expect(lines[1]!.text).toBe('Bayview Systems beat you to 3 orders by a median 2ms.');
+    expect(lines[2]!.text).toContain('2 quotes off you, though the price did not run against you');
+    for (const l of lines) expect(glossary(l.term), l.term).toBeDefined();
+    expect(rivalLines({})).toEqual([]);
+    expect(rivalLines({ takenBy: {}, beatenBy: {} })).toEqual([]);
+  });
+
+  it('adds a rival to the candidates for a day that lost, and only then', () => {
+    const lost = day(1, { pnl: -9000, fees: 100, takenBy: { 'Harbor Quant': { count: 9, cents: 8000 } } });
+    const c = dayCause(lost);
+    expect(c.kind).toBe('rival');
+    expect(c.text).toContain('Harbor Quant');
+    expect(c.text).toContain('$80.00');
+    expect(c.amount).toBe(-8000);
+    // Smaller than the fees: the fees win.
+    expect(dayCause(day(1, { pnl: -900, fees: 700, takenBy: { X: { count: 1, cents: 100 } } })).kind).toBe('fees');
+    // A day that earned is never explained by a loss; a taken quote that cost nothing is no cause.
+    expect(dayCause(day(1, { pnl: 5000, fees: 100, takenBy: { X: { count: 1, cents: 4000 } } })).kind).not.toBe(
+      'rival',
+    );
+    expect(dayCause(day(1, { pnl: -5000, fees: 100, takenBy: { X: { count: 1, cents: -4000 } } })).kind).not.toBe(
+      'rival',
+    );
+  });
+
+  it('rows each rival with what it runs, where it sits, and what it took today and this week', () => {
+    const rows = rivalRows({
+      competitors: [
+        { id: 'bot:a', name: 'Harbor Quant', latency: {}, fills: 0, pnl: 0, location: 'Colo', runs: ['arbitrage'] },
+        { id: 'bot:b', name: 'Midtown Capital', latency: {}, fills: 0, pnl: 0, location: 'City', runs: ['anticipate'] },
+      ],
+      takenToday: { 'Harbor Quant': { count: 2, cents: 100 } },
+      calendar: { week: 2, open: true } as Snapshot['calendar'],
+      days: [
+        day(1, { week: 1, takenBy: { 'Harbor Quant': { count: 50, cents: 9999 } } }),
+        day(8, { week: 2, takenBy: { 'Harbor Quant': { count: 3, cents: 200 } } }),
+      ],
+    });
+    expect(rows[0]).toMatchObject({ name: 'Harbor Quant', location: 'Colo', today: { count: 2, cents: 100 } });
+    expect(rows[0]!.runs).toEqual(['Cross-exchange arbitrage']);
+    expect(rows[0]!.week).toEqual({ count: 5, cents: 300 });
+    expect(rows[1]!.today).toEqual({ count: 0, cents: 0 });
+    expect(rows[1]!.week).toEqual({ count: 0, cents: 0 });
+  });
+
+  it('counts today once after the close, when the day is already among the kept days', () => {
+    const rows = rivalRows({
+      competitors: [
+        { id: 'bot:a', name: 'Harbor Quant', latency: {}, fills: 0, pnl: 0, location: 'Colo', runs: ['arbitrage'] },
+      ],
+      takenToday: { 'Harbor Quant': { count: 3, cents: 200 } },
+      calendar: { week: 2, open: false } as Snapshot['calendar'],
+      days: [day(8, { week: 2, takenBy: { 'Harbor Quant': { count: 3, cents: 200 } } })],
+    });
+    expect(rows[0]!.today).toEqual({ count: 3, cents: 200 });
+    expect(rows[0]!.week).toEqual({ count: 3, cents: 200 });
   });
 });

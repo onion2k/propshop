@@ -2280,6 +2280,72 @@ describe('Part A: learning, on the page', () => {
   });
 });
 
+describe('Part B: rivals as characters, on the page', () => {
+  const report = (n: number, extra: Partial<DayReport> = {}): DayReport => ({
+    day: n,
+    weekday: 'Mon',
+    week: 1,
+    pnl: -3000,
+    equityAtClose: 0,
+    byBlock: {},
+    bySymbol: {},
+    races: { won: 0, beaten: 0, missed: 0 },
+    fees: 100,
+    fines: 0,
+    headlines: [],
+    latency: {},
+    rivals: [],
+    ...extra,
+  });
+  const storeWith = (seed: number, d: DayReport) => {
+    const store = createStore(CONTENT, null, seed);
+    store.setTutorial({ state: 'done' });
+    store.setReveal(true);
+    act(() => {
+      store.game.days.push(d);
+      store.game.version++;
+      store.publish();
+    });
+    return store;
+  };
+
+  it('writes a sentence a rival in the day report, linked to its glossary entry, and the cause names a rival', () => {
+    const store = storeWith(
+      151,
+      report(1, {
+        takenBy: { 'Harbor Quant': { count: 14, cents: 31_000 } },
+        beatenBy: { 'Harbor Quant': { count: 22, medianMs: 0.4 } },
+        pnl: -40_000,
+      }),
+    );
+    render(<App store={store} />);
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+    expect(
+      screen.getByText(
+        /Harbor Quant took 14 quotes off you, worth \$310.00, and beat you to 22 orders by a median 400µs\./,
+      ),
+    ).toBeInTheDocument();
+    expect(document.querySelector('.day-cause')!.textContent).toMatch(
+      /Harbor Quant took quotes off you worth \$310.00/,
+    );
+  });
+
+  it('shows each rival on the Rivals tab with what it runs, where it sits and what it took', () => {
+    const store = storeWith(152, report(1, { takenBy: { 'Harbor Quant': { count: 3, cents: 700 } } }));
+    render(<App store={store} />);
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: 'Rivals' }));
+    const table = document.querySelector('.rival-cards') as HTMLElement;
+    const rows = within(table).getAllByRole('row');
+    expect(rows).toHaveLength(1 + store.game.competitors.length);
+    const harbor = within(table).getByText('Harbor Quant').closest('tr')!;
+    expect(harbor).toHaveTextContent('Cross-exchange arbitrage');
+    expect(harbor).toHaveTextContent('3 quotes');
+    expect(within(table).queryByText('the crowd')).toBeNull();
+  });
+});
+
 function tabLabel(tab: string): string {
   return {
     week: 'First week',

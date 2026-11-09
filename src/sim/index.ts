@@ -10,6 +10,8 @@ export {
   STUFFING_CANCEL_SHARE,
   FLOOD_DROPPED,
   MAX_INTRADAY,
+  MARKOUT_MS,
+  MAX_MARKOUTS,
 } from './game';
 export type {
   GameEvent,
