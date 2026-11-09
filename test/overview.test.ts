@@ -1,9 +1,20 @@
 import { SAME_CENTS } from '../src/content/experiments';
-import type { DayReport } from '../src/sim';
+import { glossary } from '../src/content';
+import type { DayReport, Snapshot, UpgradeOffer } from '../src/sim';
 import type { Night, StoredMeasures } from '../src/ui/nights';
 import {
   SESSION_MINUTES,
   blockDays,
+  blockRecord,
+  blockVerdict,
+  comingLine,
+  dayCause,
+  ordersToday,
+  overviewShown,
+  racesVenues,
+  shopLatency,
+  shownBalances,
+  tradedVenues,
   compare,
   feeShares,
   latestWithRuns,
@@ -258,5 +269,197 @@ describe('trends', () => {
     expect(mom.cells.calm).toEqual({ avg: (200 + 50) / 2, days: 2 });
     expect(mom.cells.trending).toEqual({ avg: -120, days: 1 });
     expect(r.rows.find((x) => x.block === 'marketMaker')!.cells.trending).toBeUndefined();
+  });
+});
+
+describe('an Overview that grows', () => {
+  it('shows Position and Today always, and the rest as the game earns them', () => {
+    expect(overviewShown([], [], 0)).toEqual({ trends: false, comparisons: false, signals: false });
+    expect(overviewShown([day(1)], [], 0)).toEqual({ trends: true, comparisons: true, signals: false });
+    // A stored night alone is enough, e.g. one kept from before.
+    expect(overviewShown([], [night(1, { baseline: [0, 0, 0] })], 0)).toEqual({
+      trends: true,
+      comparisons: true,
+      signals: false,
+    });
+    expect(overviewShown([day(1)], [], 2).signals).toBe(true);
+    // Signals can show before a close only if the game raised one.
+    expect(overviewShown([], [], 1).signals).toBe(true);
+  });
+
+  it('says in a line what will come and when, and nothing once everything is shown', () => {
+    const none = comingLine(overviewShown([], [], 0))!;
+    expect(none).toMatch(/first close/);
+    expect(none).toMatch(/Trends/);
+    expect(none).toMatch(/Comparisons/);
+    expect(none).toMatch(/Signals/);
+    const closed = comingLine(overviewShown([day(1)], [], 0))!;
+    expect(closed).not.toMatch(/first close/);
+    expect(closed).toMatch(/Signals/);
+    expect(comingLine(overviewShown([day(1)], [], 1))).toBeNull();
+  });
+});
+
+describe('a block record and why', () => {
+  const t = (realised: number, fees: number, fills = 5) => ({ fills, realised, fees });
+  const days = [
+    day(1, { byBlock: { a: t(500, 100), b: t(100, 300), c: t(-200, 50), d: t(0, 0, 0) } }),
+    day(2, { byBlock: { a: t(300, 100) } }),
+    day(3, {}),
+  ];
+
+  it('counts days traded, gross, fees and net over the days kept', () => {
+    expect(blockRecord(days, 'a')).toEqual({ days: 2, fills: 10, gross: 800, fees: 200, net: 600 });
+    expect(blockRecord(days, 'b')).toEqual({ days: 1, fills: 5, gross: 100, fees: 300, net: -200 });
+    // A block that only appears with no fills has not traded.
+    expect(blockRecord(days, 'd')).toEqual({ days: 0, fills: 0, gross: 0, fees: 0, net: 0 });
+    expect(blockRecord(days, 'nope').days).toBe(0);
+  });
+
+  it('reads has not traded, earns, fees take it, and the signal itself loses', () => {
+    expect(blockVerdict(blockRecord(days, 'nope')).kind).toBe('none');
+    expect(blockVerdict(blockRecord(days, 'a')).kind).toBe('earns');
+    expect(blockVerdict(blockRecord(days, 'b')).kind).toBe('fees');
+    expect(blockVerdict(blockRecord(days, 'c')).kind).toBe('loses');
+  });
+
+  it('gives each verdict words and a term the glossary has', () => {
+    for (const id of ['nope', 'a', 'b', 'c']) {
+      const v = blockVerdict(blockRecord(days, id));
+      expect(v.text.length).toBeGreaterThan(20);
+      if (v.term) expect(glossary(v.term), v.term).toBeDefined();
+    }
+    expect(blockVerdict(blockRecord(days, 'b')).term).toBe('maker-taker');
+    expect(blockVerdict(blockRecord(days, 'c')).term).toBe('adverse-selection');
+  });
+});
+
+describe('why a day lost or earned', () => {
+  const t = (realised: number, fees: number, fills = 5) => ({ fills, realised, fees });
+
+  it('names the largest loss of a day that lost, with its figure', () => {
+    const fees = dayCause(
+      day(1, { pnl: -900, fees: 700, fines: 100, byBlock: { momentum: t(-200, 100) }, bySymbol: {} }),
+    );
+    expect(fees.kind).toBe('fees');
+    expect(fees.amount).toBe(-700);
+    expect(fees.text).toContain('$7.00');
+    const fine = dayCause(day(1, { pnl: -1500, fees: 100, fines: 1200 }));
+    expect(fine.kind).toBe('fines');
+    expect(fine.text).toContain('$12.00');
+    const roll = dayCause(day(1, { pnl: -5000, fees: 10, rollover: -4000, storage: -300 }));
+    expect(roll.kind).toBe('rollover');
+    const store = dayCause(day(1, { pnl: -5000, fees: 10, storage: -4000, rollover: 50 }));
+    expect(store.kind).toBe('storage');
+    const block = dayCause(day(1, { pnl: -5000, fees: 10, byBlock: { momentum: t(-4000, 100), arbitrage: t(10, 5) } }));
+    expect(block.kind).toBe('block');
+    expect(block.text).toContain('Momentum');
+    expect(block.amount).toBe(-4100);
+    const sym = dayCause(
+      day(1, {
+        pnl: -5000,
+        fees: 10,
+        bySymbol: { QNT: t(-4000, 100), ABC: t(10, 5) },
+        byBlock: { momentum: t(-500, 10) },
+      }),
+    );
+    expect(sym.kind).toBe('symbol');
+    expect(sym.text).toContain('QNT');
+  });
+
+  it('names the largest gain of a day that earned', () => {
+    const c = dayCause(day(1, { pnl: 3000, fees: 50, byBlock: { momentum: t(3200, 100), arbitrage: t(10, 5) } }));
+    expect(c.kind).toBe('block');
+    expect(c.amount).toBe(3100);
+    expect(c.text).toMatch(/earned/);
+    const carry = dayCause(day(1, { pnl: 9000, fees: 50, rollover: 9000, byBlock: {} }));
+    expect(carry.kind).toBe('rollover');
+  });
+
+  it('says a quiet day when nothing traded and nothing was charged', () => {
+    const c = dayCause(day(1));
+    expect(c.kind).toBe('quiet');
+    expect(c.text).toMatch(/nothing/i);
+    expect(c.term).toBeNull();
+  });
+
+  it('links a term the glossary has', () => {
+    const c = dayCause(day(1, { pnl: -10, fees: 10 }));
+    expect(c.term).not.toBeNull();
+    expect(glossary(c.term!)).toBeDefined();
+  });
+});
+
+describe('the Market page by desk and the shop by venue', () => {
+  const ex = (id: string, desk = 'stocks') => ({ id, desk }) as Snapshot['exchanges'][number];
+  const stock = (symbol: string, desk: string, venues: string[], watched = true) =>
+    ({ symbol, desk, watched, exchanges: venues.map((id) => ({ id })) }) as unknown as Snapshot['stocks'][number];
+  const order = (exchange: string, sentAt: number) => ({ exchange, sentAt }) as Snapshot['orders'][number];
+  const DAY = 86_400_000;
+  /** Day 3, 10:00. */
+  const NOW = 3 * DAY + 10 * 3_600_000;
+  const base = (over: Partial<Snapshot> = {}) =>
+    ({
+      now: NOW,
+      calendar: { day: 3, timeOfDay: 10 * 3_600_000 },
+      exchanges: [ex('HARBOR'), ex('LAKESIDE'), ex('EASTHOLM', 'fx'), ex('PRAIRIE', 'futures')],
+      stocks: [
+        stock('AAA', 'stocks', ['HARBOR', 'LAKESIDE']),
+        stock('EURUSD', 'fx', ['EASTHOLM'], false),
+        stock('IXF', 'futures', ['PRAIRIE'], false),
+      ],
+      orders: [],
+      latency: { HARBOR: 12, LAKESIDE: 12, EASTHOLM: 40 },
+      balances: [],
+      days: [],
+      ...over,
+    }) as unknown as Snapshot;
+
+  it("takes today's orders only", () => {
+    const s = base({ orders: [order('HARBOR', NOW - 1000), order('EASTHOLM', 2 * DAY + 1000)] });
+    expect(ordersToday(s).map((o) => o.exchange)).toEqual(['HARBOR']);
+  });
+
+  it("always lists the stocks' venues, and another desk's once it has had an order today", () => {
+    expect(racesVenues(base()).map((e) => e.id)).toEqual(['HARBOR', 'LAKESIDE']);
+    const yesterday = base({ orders: [order('EASTHOLM', 2 * DAY + 1000)] });
+    expect(racesVenues(yesterday).map((e) => e.id)).toEqual(['HARBOR', 'LAKESIDE']);
+    const today = base({ orders: [order('EASTHOLM', NOW - 1000)] });
+    expect(racesVenues(today).map((e) => e.id)).toEqual(['HARBOR', 'LAKESIDE', 'EASTHOLM']);
+  });
+
+  it('shows a currency once it is non-zero or a day report has fills on the currencies desk', () => {
+    const bal = (currency: string, amount: number) => ({ currency, name: currency, amount, minor: 100, dollars: 0 });
+    const s = base({ balances: [bal('EUR', 0), bal('JPY', 0)] });
+    expect(shownBalances(s)).toEqual([]);
+    expect(shownBalances({ ...s, balances: [bal('EUR', 5), bal('JPY', 0)] }).map((b) => b.currency)).toEqual(['EUR']);
+    const traded = { ...s, days: [day(1, { byDesk: { fx: { fills: 2, realised: 0, fees: 0 } } })] };
+    expect(shownBalances(traded).map((b) => b.currency)).toEqual(['EUR', 'JPY']);
+    // Fills on another desk do not count.
+    const other = { ...s, days: [day(1, { byDesk: { futures: { fills: 2, realised: 0, fees: 0 } } })] };
+    expect(shownBalances(other)).toEqual([]);
+  });
+
+  it('trades the venues of watched instruments and of the orders sent today', () => {
+    expect(tradedVenues(base())).toEqual(['HARBOR', 'LAKESIDE']);
+    const s = base({ orders: [order('EASTHOLM', NOW - 1000)] });
+    expect(tradedVenues(s)).toEqual(['HARBOR', 'LAKESIDE', 'EASTHOLM']);
+  });
+
+  it('writes an offer as before and after for the venues traded, and folds the rest', () => {
+    const offer = {
+      latency: { HARBOR: 0.6, LAKESIDE: 4.4, EASTHOLM: 30 },
+      dataLatency: { HARBOR: 0.6, LAKESIDE: 4.4, EASTHOLM: 30 },
+    } as unknown as UpgradeOffer;
+    const s = base({ latency: { HARBOR: 12, LAKESIDE: 12, EASTHOLM: 40 } });
+    const out = shopLatency(offer, s);
+    expect(out.traded).toBe('HARBOR 12ms → 600µs, LAKESIDE 12ms → 4.4ms');
+    expect(out.rest).toBe('EASTHOLM 30ms');
+    // Data that lags the orders is said.
+    const lag = { ...offer, dataLatency: { ...offer.dataLatency, LAKESIDE: 9 } } as UpgradeOffer;
+    expect(shopLatency(lag, s).traded).toContain('LAKESIDE 12ms → 4.4ms, data 9ms');
+    // The offer in use has no before.
+    const inUse = { ...offer, inUse: true } as UpgradeOffer;
+    expect(shopLatency(inUse, s).traded).toBe('HARBOR 600µs, LAKESIDE 4.4ms');
   });
 });

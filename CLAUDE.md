@@ -47,6 +47,16 @@ measure; they hold nothing.
   `ExperimentPage.tsx` runs an experiment's two runs itself, under the same frame budget as the store.
   The free-play save is kept packed (`src/ui/savefile.ts`: gzip and base64 behind `gz:`, packed in
   `src/save.worker.ts`) and unpacked before the store is made; a plain JSON save still reads.
+- The **Overview** grows: Position and Today from the first minute, Trends and Comparisons from the first close (a
+  day kept or a stored night), Signals when one is raised, one muted line saying what is to come (`overviewShown`,
+  `comingLine` in `src/ui/overview.ts`). The same pure file holds `blockRecord` / `blockVerdict` (a block card's
+  record and why), `dayCause` (what lost or made a day: Days tab and the yesterday sentence), `racesVenues`,
+  `shownBalances` and `shopLatency`; their words are in `src/content/signals.ts`. A lesson's optional `go` (a `Place`:
+  page, Reports tab, `data-tut` target; `GO_TARGETS` lists the targets) is what "Take me there" does, through
+  `GoContext` (`src/ui/Go.ts`) held by `App`. The snapshot's stocks and exchanges carry their `desk`; the watchlist is
+  one `tbody` a desk when more than one is open, the races table lists a non-stock venue only after an order there
+  today, a currency balance shows once non-zero or after a day with fills on the currencies desk, and the shop shows
+  latency for the venues traded (watched, or ordered today) with the rest in a `details`.
 - The **Overview** is the page the game opens on (`src/ui/OverviewPanel.tsx`, its sections and charts beside it;
   the Market page is one tab along). `src/ui/overview.ts` works out its verdicts, records, payback and trends,
   pure; `src/content/signals.ts` is the signals (thresholds and words together) from the day reports. The night's
@@ -182,7 +192,7 @@ The figures behind each line are in `docs/measured.md`, with their dates.
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
   cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 38,800 to 39,000 ticks a
   second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 35,000.
-- **Layout shift:** held by hand. What changes as the market runs keeps its room (fixed P&L columns, the
+- **Layout shift:** held by hand. A section, desk heading, venue row or balance appearing is appended below what is there; a block card's record line has fixed height. What changes as the market runs keeps its room (fixed P&L columns, the
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked
   at headless by hand, at 375 and 1280 wide.

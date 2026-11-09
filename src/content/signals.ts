@@ -333,3 +333,58 @@ function paramOf(block: string, key: string | undefined): { key: string; name: s
   if (!key) return null;
   return BLOCKS.find((b) => b.spec.id === block)?.spec.params.find((p) => p.key === key) ?? null;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// The words the Overview, the block cards and the day reports read their working in. The thresholds are in
+// overview.ts (a record's sign); the words are drafts for the author to edit, and each concept is linked.
+
+/** What a block's record over the days kept says, by kind: the sentence and the glossary entry to read more. */
+export const BLOCK_VERDICT_WORDS: Readonly<
+  Record<'none' | 'earns' | 'fees' | 'loses', { text: string; term: string | null }>
+> = {
+  none: {
+    text: 'Has not traded in the days kept, so there is nothing to read yet. A block that stays quiet usually has a rule that never fires.',
+    term: null,
+  },
+  earns: {
+    text: 'Earns after fees: its trades make more than they cost. Look at how many days that rests on before trusting it.',
+    term: 'attribution',
+  },
+  fees: {
+    text: 'The signal earns but the fees take it: the trades make money before fees and lose it after. Trade less often, or for more each time.',
+    term: 'maker-taker',
+  },
+  loses: {
+    text: 'The signal itself loses, before any fee: the spread and adverse selection cost more than the idea earns.',
+    term: 'adverse-selection',
+  },
+};
+
+/** The sentences of "why did I lose money today": a loss names what took it, a gain what made it. */
+export const DAY_CAUSE_WORDS = {
+  fees: (amount: string) => `Fees took ${amount}: the exchanges' charge on every fill, win or lose.`,
+  fines: (amount: string) => `Fines took ${amount}: the regulator's charge for how the orders were sent.`,
+  rollover: (amount: string, gain: boolean) =>
+    gain
+      ? `Rollover earned ${amount}: the interest on the currencies held at 17:00.`
+      : `Rollover cost ${amount}: the interest paid on the currencies held at 17:00.`,
+  storage: (amount: string, gain: boolean) =>
+    gain
+      ? `Storage and the lease earned ${amount} on the metal held at 17:00.`
+      : `Storage and the lease cost ${amount} on the metal held at 17:00.`,
+  block: (name: string, amount: string, gain: boolean) =>
+    gain ? `${name} earned ${amount}, the most of any block.` : `${name} lost ${amount}, the worst of any block.`,
+  symbol: (symbol: string, amount: string, gain: boolean) =>
+    gain ? `${symbol} earned ${amount}, the most of any stock.` : `${symbol} lost ${amount}, the worst of any stock.`,
+  quiet: 'Nothing traded and nothing was charged: a quiet day.',
+} as const;
+
+/** The glossary entry the day's cause links to. */
+export const DAY_CAUSE_TERM = 'day-cause';
+
+/** What the Overview says is still to come, and when: until the first close, and until a signal is raised. */
+export const OVERVIEW_COMING_WORDS = {
+  first:
+    'After the first close, Trends and Comparisons appear below, with the days charted and last night’s tests. Signals follow once the reports show something worth a look.',
+  signals: 'Signals appear below once the reports show something worth a look, after a few closes.',
+} as const;

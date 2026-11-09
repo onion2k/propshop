@@ -57,11 +57,11 @@ export const CONTENT: Content = {
 };
 
 export { GLOSSARY, glossary } from './glossary';
-export { LESSONS, lesson } from './lessons';
+export { LESSONS, lesson, GO_PAGES, GO_TABS, GO_TARGETS } from './lessons';
 export { REGIMES } from './regimes';
 export { TUTORIAL, tutorialStep, introSteps } from './tutorial';
 export * from './stages';
 export * from './signals';
 export type { TutorialStep, TutorialPage } from './tutorial';
-export type { Lesson } from './lessons';
+export type { Lesson, Place } from './lessons';
 export type { GlossaryEntry } from './glossary';

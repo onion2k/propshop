@@ -3,6 +3,7 @@
 import type { Snapshot, UpgradeKind, UpgradeOffer } from '../sim';
 import { moneyShort, ms } from './format';
 import { Term } from './Glossary';
+import { shopLatency } from './overview';
 import type { Store } from './store';
 
 const KINDS: { kind: UpgradeKind; title: string; term: string }[] = [
@@ -42,25 +43,23 @@ export function ShopPanel({ s, store }: { s: Snapshot; store: Store }) {
   );
 }
 
-/** "HARBOR 0.6ms, LAKESIDE 4.4ms", or where data lags orders, "LAKESIDE orders 0.6ms, data 4.4ms". */
-export function latencies(orders: Record<string, number>, data: Record<string, number>): string {
-  return Object.entries(orders)
-    .map(([e, l]) => {
-      const d = data[e] ?? l;
-      return d === l ? `${e} ${ms(l)}` : `${e} orders ${ms(l)}, data ${ms(d)}`;
-    })
-    .join(', ');
-}
-
 function Offer({ o, s, store }: { o: UpgradeOffer; s: Snapshot; store: Store }) {
-  const extra =
+  const computer =
     o.kind === 'computer' && 'maxBlocks' in o.spec
       ? `${o.spec.maxBlocks} blocks, every ${o.spec.decisionEveryMs}ms, ${o.spec.ordersPerSecond} orders/s`
-      : latencies(o.latency, o.dataLatency);
+      : null;
+  // The venues the firm trades, before and after; the others folded away.
+  const lat = computer === null ? shopLatency(o, s) : null;
   return (
     <li className={`offer ${o.inUse ? 'in-use' : ''}`}>
       <div>
-        <strong>{o.spec.name}</strong> <span className="muted small">{extra}</span>
+        <strong>{o.spec.name}</strong> <span className="muted small offer-traded">{computer ?? lat?.traded}</span>
+        {lat && lat.rest && (
+          <details className="offer-rest small muted">
+            <summary>Other venues</summary>
+            {lat.rest}
+          </details>
+        )}
         <p className="small">{o.spec.explain}</p>
       </div>
       <button type="button" disabled={o.inUse || !o.affordable} onClick={() => store.buyUpgrade(o.kind, o.spec.id)}>

@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { CONTENT, DESK_NAMES, glossary } from '../src/content';
-import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
+import { CONTENT, DESK_NAMES, LESSONS, glossary, type Lesson } from '../src/content';
+import { TICK_MS, type DayReport, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
 import { DeskPanel } from '../src/ui/DeskPanel';
 import { NewsPanel } from '../src/ui/NewsPanel';
 import { App } from '../src/ui/App';
+import { FirstWeekPanel } from '../src/ui/FirstWeekPanel';
+import { GoContext } from '../src/ui/Go';
 import { Cover } from '../src/ui/Cover';
 import { Root } from '../src/ui/Root';
 import { ExperimentPage } from '../src/ui/ExperimentPage';
@@ -315,9 +317,9 @@ describe('App', () => {
     render(<App store={store} />);
     goTo('Strategy');
     const dual = screen.getByText('Racks at HARBOR and LAKESIDE').parentElement?.textContent ?? '';
-    // Over the consumer line the firm starts on: twelve of overhead, and seven more of link for the data.
-    expect(dual).toMatch(/LAKESIDE orders 12.1ms, data 19ms/);
-    expect(dual).toMatch(/HARBOR 12.1ms/);
+    // Before and after, for the venues the firm trades: the data crosses the link seven ms later than the orders.
+    expect(dual).toMatch(/LAKESIDE 36ms → 12.1ms, data 19ms/);
+    expect(dual).toMatch(/HARBOR 44ms → 12.1ms/);
   });
 
   it('names the kind of day from the open', () => {
@@ -1352,35 +1354,63 @@ describe('Overview', () => {
   };
   const BIG = 50_000;
 
-  it('opens a fresh game on the Overview, every section with its reading line, a note and what will appear', () => {
+  it('opens a fresh game on the Overview: Position and Today with their reading lines and notes, and the rest to come', () => {
     const store = createStore(CONTENT, null, 41);
     store.setTutorial({ state: 'done' });
     render(<App store={store} />);
     expect(screen.getByRole('button', { name: /^Overview/ })).toHaveAttribute('aria-current', 'page');
-    for (const h of ['Position', 'Today so far', 'Trends', 'Signals', 'Comparisons'])
+    for (const h of ['Position', 'Today so far'])
       expect(screen.getByRole('heading', { name: h, level: 2 })).toBeInTheDocument();
-    expect(document.querySelectorAll('.ov-section')).toHaveLength(5);
-    expect(document.querySelectorAll('.ov-section .ov-how')).toHaveLength(5);
-    expect(document.querySelectorAll('.ov-section details.ov-note')).toHaveLength(5);
+    for (const h of ['Trends', 'Signals', 'Comparisons'])
+      expect(screen.queryByRole('heading', { name: h, level: 2 })).toBeNull();
+    expect(document.querySelectorAll('.ov-section')).toHaveLength(2);
+    expect(document.querySelectorAll('.ov-section .ov-how')).toHaveLength(2);
+    expect(document.querySelectorAll('.ov-section details.ov-note')).toHaveLength(2);
     expect(screen.getByText(/No day has closed yet. After the first close/)).toBeInTheDocument();
     expect(screen.getByText(/The market is closed. From the open, a point a minute/)).toBeInTheDocument();
-    expect(screen.getByText(/Nothing yet. After each close a day is added/)).toBeInTheDocument();
-    expect(screen.getByText(/Appears once a block has traded/)).toBeInTheDocument();
-    expect(screen.getByText(/Nothing to look at yet/)).toBeInTheDocument();
-    expect(screen.getByText('No night tested yet.')).toBeInTheDocument();
-    expect(screen.getByText(/Nothing yet. At the first close the game runs/)).toBeInTheDocument();
-    expect(screen.getByText(/Once a change has been tested on more than one night/)).toBeInTheDocument();
-    expect(screen.getByText('Nothing queued.')).toBeInTheDocument();
     // The notes link the glossary, and a click opens the entry.
-    expect(document.querySelectorAll('.ov-section .term').length).toBeGreaterThan(4);
+    expect(document.querySelectorAll('.ov-section .term').length).toBeGreaterThan(1);
     expect(screen.getByText('Setup:').parentElement?.textContent).toMatch(/Momentum/);
     // Stage 1 hides the races and the rivals.
     expect(screen.queryByText('Races won')).toBeNull();
     expect(screen.queryByText('Strategies you did not run')).toBeNull();
   });
 
+  it("after the first close every section but Signals is there, each with its empty sub-parts' sentences", () => {
+    const store = createStore(CONTENT, null, 41);
+    store.setTutorial({ state: 'done' });
+    store.game.days.push({
+      day: 1,
+      weekday: 'Mon',
+      week: 1,
+      pnl: 0,
+      equityAtClose: 0,
+      byBlock: {},
+      bySymbol: {},
+      races: { won: 0, beaten: 0, missed: 0 },
+      fees: 0,
+      fines: 0,
+      headlines: [],
+      latency: {},
+      rivals: [],
+    });
+    store.game.version++;
+    store.publish();
+    render(<App store={store} />);
+    for (const h of ['Position', 'Today so far', 'Trends', 'Comparisons'])
+      expect(screen.getByRole('heading', { name: h, level: 2 })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Signals', level: 2 })).toBeNull();
+    expect(document.querySelectorAll('.ov-section details.ov-note')).toHaveLength(4);
+    expect(screen.getByText(/Appears once a block has traded/)).toBeInTheDocument();
+    expect(screen.getByText(/Tests of Tue, week 1: nothing ran/)).toBeInTheDocument();
+    expect(screen.getByText('The last night ran nothing. See why above.')).toBeInTheDocument();
+    expect(screen.getByText(/Once a change has been tested on more than one night/)).toBeInTheDocument();
+    expect(screen.getByText('Nothing queued.')).toBeInTheDocument();
+  });
+
   it('shows the races and the rivals once the stage shows them', () => {
-    const store = createStore(CONTENT, null, 42);
+    // Sections beyond Position and Today wait for a close: a stored night is one.
+    const store = createStore(CONTENT, seeded([night(1, { baseline: [0, 0, 0] })]), 42);
     store.setTutorial({ state: 'done' });
     store.setReveal(true);
     render(<App store={store} />);
@@ -1466,7 +1496,7 @@ describe('Overview', () => {
   });
 
   it("queues the player's own change from the form, and clears it", () => {
-    const store = createStore(CONTENT, null, 45);
+    const store = createStore(CONTENT, seeded([night(1, { baseline: [0, 0, 0] })]), 45);
     store.setTutorial({ state: 'done' });
     render(<App store={store} />);
     const queue = screen.getByRole('button', { name: 'Test tonight' });
@@ -2002,3 +2032,262 @@ describe('the metals desk in the glossary', () => {
     expect(glossary('delivery')!.long).toMatch(/storage/);
   });
 });
+
+describe('Part A: learning, on the page', () => {
+  const report = (n: number, extra: Partial<DayReport> = {}): DayReport => ({
+    day: n,
+    weekday: 'Mon',
+    week: 1,
+    pnl: 0,
+    equityAtClose: 0,
+    byBlock: {},
+    bySymbol: {},
+    races: { won: 0, beaten: 0, missed: 0 },
+    fees: 0,
+    fines: 0,
+    headlines: [],
+    latency: {},
+    rivals: [],
+    ...extra,
+  });
+  /** A closed day written straight into the game, so the page reads a report without a day being played. */
+  function withDay(store: ReturnType<typeof createStore>, d: DayReport) {
+    act(() => {
+      store.game.days.push(d);
+      store.game.version++;
+      store.publish();
+    });
+  }
+  const sections = () => [...document.querySelectorAll('.ov-section h2')].map((h) => h.textContent);
+  const freeStore = (seed: number) => {
+    const store = createStore(CONTENT, null, seed);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    return store;
+  };
+
+  it('1: the Overview opens on Position and Today, with a line on what comes, and grows at the first close', () => {
+    const store = createStore(CONTENT, null, 141);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(sections()).toEqual(['Position', 'Today so far']);
+    expect(document.querySelector('.ov-coming')!.textContent).toMatch(/first close/);
+    withDay(store, report(1, { pnl: 500 }));
+    expect(sections()).toEqual(['Position', 'Today so far', 'Trends', 'Comparisons']);
+    expect(document.querySelector('.ov-coming')!.textContent).toMatch(/Signals/);
+    expect(document.querySelector('.ov-coming')!.textContent).not.toMatch(/first close/);
+  });
+
+  it('1: Free play opens the same way', () => {
+    const store = freeStore(142);
+    render(<App store={store} />);
+    expect(sections()).toEqual(['Position', 'Today so far']);
+  });
+
+  it('2: the current lesson has a Take me there button that goes to its page and outlines its target', () => {
+    const storage = memory();
+    storage.setItem(PROGRESS_KEY, JSON.stringify({ home: 1 }));
+    const store = createStore(CONTENT, storage, 143);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Reports');
+    const buttons = screen.getAllByRole('button', { name: 'Take me there' });
+    // Only the current lesson has one.
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]!);
+    expect(screen.getByRole('button', { name: /^Strategy/ })).toHaveAttribute('aria-current', 'page');
+    expect(document.querySelector('[data-tut="shop"]')!.classList.contains('tut-target')).toBe(true);
+  });
+
+  it('2: a lesson of a tab opens that tab', () => {
+    const storage = memory();
+    storage.setItem(STAGES_KEY, JSON.stringify({ seen: 3 }));
+    const done = ['home', 'seat', 'gap', 'race', 'cost', 'maker'];
+    storage.setItem(PROGRESS_KEY, JSON.stringify(Object.fromEntries(done.map((l) => [l, 1]))));
+    const store = createStore(CONTENT, storage, 144);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Strategy');
+    fireEvent.click(screen.getByRole('button', { name: /^First week/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Take me there' }));
+    expect(screen.getByRole('tab', { name: /^News/ })).toHaveAttribute('aria-selected', 'true');
+    expect(document.querySelector('[data-tut="tabs"]')!.classList.contains('tut-target')).toBe(true);
+  });
+
+  it('2: no button where the lesson goes to a page that is not shown, and the go it is given where it is', () => {
+    const progress = { home: 1 };
+    const go = vi.fn();
+    const store = createStore(CONTENT, null, 145);
+    const lesson: Lesson = LESSONS.find((l) => l.id === 'seat')!;
+    const { unmount } = render(
+      <GoContext.Provider value={{ go, can: () => false }}>
+        <FirstWeekPanel progress={progress} store={store} />
+      </GoContext.Provider>,
+    );
+    expect(screen.queryByRole('button', { name: 'Take me there' })).toBeNull();
+    unmount();
+    render(
+      <GoContext.Provider value={{ go, can: () => true }}>
+        <FirstWeekPanel progress={progress} store={store} />
+      </GoContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Take me there' }));
+    expect(go).toHaveBeenCalledWith(lesson.go);
+  });
+
+  it('2: every lesson goes to a target that is on its page, with everything shown', () => {
+    const store = freeStore(146);
+    act(() => {
+      store.skipToOpen();
+      store.publish();
+    });
+    render(<App store={store} />);
+    const names = new Map([
+      ['overview', 'Overview'],
+      ['market', 'Market'],
+      ['desk', 'Desk'],
+      ['strategy', 'Strategy'],
+      ['reports', 'Reports'],
+    ] as const);
+    for (const l of LESSONS) {
+      const nav = document.querySelector('nav.pages')!;
+      fireEvent.click(
+        within(nav as HTMLElement).getByRole('button', { name: new RegExp(`^${names.get(l.go!.page)}`) }),
+      );
+      if (l.go!.tab) fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${tabLabel(l.go!.tab)}`) }));
+      if (l.go!.target) expect(document.querySelector(`[data-tut="${l.go!.target}"]`), l.id).not.toBeNull();
+    }
+  }, 60_000);
+
+  it("3: a block's card says no record yet before the first close, then days, net, fees and why", () => {
+    const store = createStore(CONTENT, null, 147);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Strategy');
+    const rec = () => document.querySelector('.block.running .block-record')!.textContent;
+    expect(rec()).toMatch(/No record yet/);
+    withDay(store, report(1, { byBlock: { momentum: { fills: 6, realised: 100, fees: 400 } } }));
+    expect(rec()).toMatch(/1 day traded/);
+    expect(rec()).toContain('-$3.00');
+    expect(rec()).toContain('$4.00');
+    expect(rec()).toMatch(/fees take/i);
+  });
+
+  it('3: a block that has not traded says so after a close', () => {
+    const store = createStore(CONTENT, null, 148);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Strategy');
+    withDay(store, report(1));
+    expect(document.querySelector('.block.running .block-record')!.textContent).toMatch(/not traded/);
+  });
+
+  it('4: each day opens on why it lost or earned, and the Overview joins it to yesterday', () => {
+    const store = createStore(CONTENT, null, 149);
+    store.setTutorial({ state: 'done' });
+    withDay(store, report(1, { pnl: -900, fees: 700 }));
+    render(<App store={store} />);
+    expect(screen.getByText(/Yesterday \(Mon, week 1\)/).parentElement!.textContent).toMatch(/Fees took \$7\.00/);
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /Days/ }));
+    expect(document.querySelector('.report .day-cause')!.textContent).toMatch(/Fees took \$7\.00/);
+    expect(document.querySelector('.report')!.firstElementChild!.classList.contains('day-cause')).toBe(true);
+  });
+
+  it('5: with one desk the watchlist is one table body, with several one a desk under a heading', () => {
+    const one = createStore(CONTENT, null, 150);
+    one.setTutorial({ state: 'done' });
+    const { unmount } = render(<App store={one} />);
+    goTo('Market');
+    expect(document.querySelectorAll('.watchlist tbody')).toHaveLength(1);
+    expect(document.querySelector('.watchlist .desk-row')).toBeNull();
+    unmount();
+    const store = freeStore(151);
+    render(<App store={store} />);
+    goTo('Market');
+    const bodies = [...document.querySelectorAll('.watchlist tbody')];
+    expect(bodies).toHaveLength(4);
+    expect(bodies.map((b) => b.querySelector('.desk-row')?.textContent)).toEqual([
+      DESK_NAMES.stocks,
+      DESK_NAMES.futures,
+      DESK_NAMES.fx,
+      DESK_NAMES.metals,
+    ]);
+    // The pair sits under Currencies.
+    expect(bodies[2]!.textContent).toContain('EURUSD');
+    expect(bodies[0]!.textContent).not.toContain('EURUSD');
+  });
+
+  it("5: the races table lists the stocks' venues, and another desk's once it has had an order today", () => {
+    const store = freeStore(152);
+    act(() => {
+      store.skipToOpen();
+      store.publish();
+    });
+    render(<App store={store} />);
+    goTo('Market');
+    const venues = () =>
+      [...document.querySelectorAll('.scorecard tbody tr')].map((r) => r.firstElementChild!.textContent.trim());
+    expect(venues()).toEqual(
+      store
+        .getSnapshot()
+        .exchanges.filter((e) => e.desk === 'stocks')
+        .map((e) => e.id),
+    );
+    expect(venues()).not.toContain('PRAIRIE');
+  });
+
+  it('6: a currency shows once it is non-zero, in the Overview and the firm panel, and not before', () => {
+    const store = freeStore(153);
+    render(<App store={store} />);
+    expect(document.querySelector('.ov-balances')).toBeNull();
+    goTo('Market');
+    expect(document.querySelector('.firm .balances')).toBeNull();
+    act(() => {
+      store.game.firm.balances.set('EUR', 100_000);
+      store.game.version++;
+      store.publish();
+    });
+    expect(document.querySelector('.firm .balances')!.textContent).toContain('EUR');
+    expect(document.querySelector('.firm .balances')!.textContent).not.toContain('JPY');
+    goTo('Overview');
+    expect(document.querySelector('.ov-balances')!.textContent).toContain('EUR');
+  });
+
+  it('6: a day report with fills on the currencies desk shows every currency', () => {
+    const store = freeStore(154);
+    withDay(store, report(1, { byDesk: { fx: { fills: 3, realised: 0, fees: 0 } } }));
+    render(<App store={store} />);
+    const text = document.querySelector('.ov-balances')!.textContent;
+    expect(text).toContain('EUR');
+    expect(text).toContain('JPY');
+  });
+
+  it('7: the shop writes before and after for the venues traded, and folds the rest into a details', () => {
+    const store = createStore(CONTENT, null, 155);
+    store.setTutorial({ state: 'done' });
+    const { unmount } = render(<App store={store} />);
+    goTo('Strategy');
+    const li = screen.getByText('Colocation at HARBOR').closest('li')!;
+    expect(li.querySelector('.offer-traded')!.textContent).toMatch(/HARBOR \S+ → \S+/);
+    unmount();
+    const free = freeStore(156);
+    render(<App store={free} />);
+    goTo('Strategy');
+    const offer = screen.getByText('Colocation at HARBOR').closest('li')!;
+    expect(offer.querySelector('.offer-traded')!.textContent).not.toContain('PRAIRIE');
+    expect(offer.querySelector('details.offer-rest')!.textContent).toContain('PRAIRIE');
+  });
+});
+
+function tabLabel(tab: string): string {
+  return {
+    week: 'First week',
+    days: 'Days',
+    news: 'News',
+    dark: 'Dark web',
+    rivals: 'Rivals',
+    lab: 'Lab',
+    learn: 'Learn',
+  }[tab]!;
+}

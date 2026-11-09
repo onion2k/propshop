@@ -15,14 +15,18 @@ import {
   blockDays,
   blockName,
   blockShown,
+  comingLine,
   compare,
+  dayCause,
   dayVerdict,
   feeShares,
   latestWithRuns,
   nearest,
+  overviewShown,
   raceShares,
   regimeTable,
   setupLine,
+  shownBalances,
   weekPnl,
 } from './overview';
 
@@ -35,13 +39,18 @@ export function OverviewPanel({ s, store }: { s: Snapshot; store: Store }) {
   const stage = useSyncExternalStore(store.subscribe, store.getStage, store.getStage);
   const tests = useSyncExternalStore(store.subscribe, store.getTests, store.getTests);
   const sigs = readSignals(s.days, s, { shown: (f) => shows(f, stage) });
+  // Position and Today from the first minute; the rest as the game has something to put in them. A section that
+  // appears is appended below what is there, so nothing already on the page moves.
+  const shown = overviewShown(s.days, tests.nights, sigs.length);
+  const coming = comingLine(shown);
   return (
     <main className="layout single overview">
       <Position s={s} />
       <Today s={s} stage={stage} />
-      <Trends s={s} stage={stage} />
-      <SignalsSection sigs={sigs} tests={tests} />
-      <Comparisons s={s} store={store} tests={tests} stage={stage} sigs={sigs} />
+      {coming && <p className="ov-coming muted small">{coming}</p>}
+      {shown.trends && <Trends s={s} stage={stage} />}
+      {shown.signals && <SignalsSection sigs={sigs} tests={tests} />}
+      {shown.comparisons && <Comparisons s={s} store={store} tests={tests} stage={stage} sigs={sigs} />}
     </main>
   );
 }
@@ -51,6 +60,8 @@ function Position({ s }: { s: Snapshot }) {
   const today = s.open ? s.dayPnl : 0;
   const week = weekPnl(s.days, s.calendar.week, today);
   const held = s.positions.filter((p) => p.qty !== 0);
+  const balances = shownBalances(s);
+  const cause = last ? dayCause(last) : null;
   return (
     <Section
       id="ov-position"
@@ -104,10 +115,10 @@ function Position({ s }: { s: Snapshot }) {
           </div>
         )}
       </dl>
-      {s.balances.length > 0 && (
-        // A row a currency from the moment the desk opens, held or not, so the section does not grow as it trades.
+      {balances.length > 0 && (
+        // A row a currency once it holds something or the desk has traded; appended below the stats, a one-off.
         <dl className="ov-stats ov-balances">
-          {s.balances.map((b) => (
+          {balances.map((b) => (
             <div key={b.currency}>
               <dt>
                 {b.name} <Term id="home-currency">in dollars</Term>
@@ -131,6 +142,18 @@ function Position({ s }: { s: Snapshot }) {
             </span>
             <span className={`num ${upDown(last.pnl)}`}>{signedMoney(last.pnl)}</span>, {dayVerdict(last)}
             {last.regime ? `, a ${REGIMES.find((r) => r.id === last.regime)?.name.toLowerCase() ?? last.regime}` : ''}.
+            {cause && (
+              <>
+                {' '}
+                {cause.text}
+                {cause.term && (
+                  <>
+                    {' '}
+                    <Term id={cause.term}>Read more</Term>
+                  </>
+                )}
+              </>
+            )}
           </>
         ) : (
           <span className="muted">

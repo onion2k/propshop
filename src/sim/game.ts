@@ -311,6 +311,8 @@ export interface Snapshot {
   stocks: {
     symbol: string;
     name: string;
+    /** The desk it trades on: `stocks` or another desk's id. */
+    desk: string;
     sector: string;
     /** An index over these, or null for a stock. */
     constituents: string[] | null;
@@ -371,6 +373,8 @@ export interface Snapshot {
   exchanges: {
     id: string;
     name: string;
+    /** The desk it belongs to: `stocks` or another desk's id. */
+    desk: string;
     city: string;
     feePerShare: number;
     dealer: boolean;
@@ -1064,6 +1068,7 @@ export class Game {
       stocks: this.market.stocks.map((s) => ({
         symbol: s.symbol,
         name: s.name,
+        desk: deskOf(s),
         sector: s.sector,
         constituents: s.constituents ? [...s.constituents] : null,
         watched: watching.includes(s.symbol),
@@ -1088,6 +1093,7 @@ export class Game {
       exchanges: this.market.exchanges.map((e) => ({
         id: e.id,
         name: e.spec.name,
+        desk: deskOf(e.spec),
         city: e.spec.city,
         feePerShare: e.spec.feePerShare,
         dealer: e.spec.lastLook !== undefined,

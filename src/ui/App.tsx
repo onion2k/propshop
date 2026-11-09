@@ -3,14 +3,15 @@
 // the risk limits and the shop; Reports is the first week, the days, the news, the dark web, the rivals and the
 // glossary. All state lives in the store; this file arranges it.
 
-import { useCallback, useState, useSyncExternalStore } from 'react';
-import { LESSONS, lessonStage, shows, type Feature, type TutorialPage } from '../content';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { LESSONS, lessonStage, shows, type Feature, type Place, type TutorialPage } from '../content';
 import { DarkWebPanel } from './DarkWebPanel';
 import { DaysPanel } from './DaysPanel';
 import { DeskPanel } from './DeskPanel';
 import { FirmPanel } from './FirmPanel';
 import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
 import { LabPanel } from './LabPanel';
+import { GoContext } from './Go';
 import { LearnContext, LearnPanel } from './Glossary';
 import { MarketPanel } from './MarketPanel';
 import { OverviewPanel } from './OverviewPanel';
@@ -33,7 +34,7 @@ const PAGES: { id: Page; label: string; feature?: Feature }[] = [
   { id: 'reports', label: 'Reports' },
 ];
 
-type Tab = 'week' | 'days' | 'news' | 'dark' | 'rivals' | 'lab' | 'learn';
+type Tab = NonNullable<Place['tab']>;
 const TABS: { id: Tab; label: string; feature?: Feature }[] = [
   { id: 'week', label: 'First week' },
   { id: 'days', label: 'Days' },
@@ -77,6 +78,30 @@ export function App({ store }: { store: Store }) {
     setTab(t);
     if (t === 'days') setDaysSeen(s.days.length);
   };
+  // "Take me there": the page, the tab and the outlined element of a lesson's place; the outline fades after a while.
+  const [spot, setSpot] = useState<{ target: string; n: number } | null>(null);
+  const goPlace = (place: Place) => {
+    setPage(place.page);
+    if (place.tab) openTab(place.tab);
+    setSpot(place.target ? { target: place.target, n: (spot?.n ?? 0) + 1 } : null);
+  };
+  const canGo = (place: Place) =>
+    pages.some((p) => p.id === place.page) && (!place.tab || tabs.some((t) => t.id === place.tab));
+  useEffect(() => {
+    if (!spot) return;
+    const target = document.querySelector(`[data-tut="${spot.target}"]`);
+    target?.classList.add('tut-target');
+    // A test's DOM has no scrolling; a browser's does.
+    const scroll = (target as { scrollIntoView?: (o: ScrollIntoViewOptions) => void } | null)?.scrollIntoView;
+    if (typeof scroll === 'function') scroll.call(target, { block: 'nearest' });
+    return () => target?.classList.remove('tut-target');
+    // The page and tab are dependencies because the element exists only once they have rendered.
+  }, [spot, page, wantTab]);
+  useEffect(() => {
+    if (!spot) return;
+    const timer = setTimeout(() => setSpot(null), 4000);
+    return () => clearTimeout(timer);
+  }, [spot]);
   const learn = {
     selected: term,
     open: (id: string) => {
@@ -93,113 +118,117 @@ export function App({ store }: { store: Store }) {
   const fresh = tutorial.state === 'fresh' && lessonsLeft(progress) === LESSONS.length && s.fills.length === 0;
   return (
     <LearnContext.Provider value={learn}>
-      <TopBar s={s} store={store} micro={micro} onMicro={openMicro} microscope={shows('microscope', stage)} />
-      {fresh && <Welcome store={store} />}
-      {tutorial.state === 'at' && <TutorialCard s={s} store={store} tutorial={tutorial} page={page} setPage={goPage} />}
-      {intro !== null && tutorial.state !== 'at' && !fresh && (
-        <StageIntro s={s} store={store} stage={intro} page={page} setPage={goPage} />
-      )}
-      <nav className="pages" aria-label="Pages" data-tut="pages">
-        {pages.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={page === p.id ? 'on' : ''}
-            aria-current={page === p.id ? 'page' : undefined}
-            onClick={() => setPage(p.id)}
-          >
-            {p.label}
-            {p.id === 'reports' && reportsBadge > 0 && (
-              <span className={`badge ${newDays || tips ? '' : 'quiet'}`}>{reportsBadge}</span>
-            )}
-          </button>
-        ))}
-        {current && page !== 'reports' && (
-          <button type="button" className="link hint" onClick={() => openTab('week')}>
-            First week: {current.title}
-          </button>
+      <GoContext.Provider value={{ go: goPlace, can: canGo }}>
+        <TopBar s={s} store={store} micro={micro} onMicro={openMicro} microscope={shows('microscope', stage)} />
+        {fresh && <Welcome store={store} />}
+        {tutorial.state === 'at' && (
+          <TutorialCard s={s} store={store} tutorial={tutorial} page={page} setPage={goPage} />
         )}
-      </nav>
-      {page === 'overview' && <OverviewPanel s={s} store={store} />}
-      {page === 'market' && (
-        <main className="layout">
-          <div className="column">
-            {micro && shows('microscope', stage) && (
-              <Microscope
-                s={s}
-                onStep={store.stepTicks}
-                symbol={picked ?? s.stocks.find((st) => st.watched)?.symbol ?? s.stocks[0]?.symbol ?? ''}
-                onClose={() => setMicro(false)}
-              />
-            )}
-            <MarketPanel s={s} store={store} picked={picked} onPick={setPicked} gaps={shows('gaps', stage)} />
-          </div>
-          <div className="column">
-            <FirmPanel s={s} races={shows('races', stage)} />
-          </div>
-        </main>
-      )}
-      {page === 'desk' && (
-        <main className="layout single">
-          <DeskPanel s={s} store={store} />
-        </main>
-      )}
-      {page === 'strategy' && (
-        <main className="layout">
-          <div className="column">
-            <StrategyPanel s={s} store={store} stage={stage} />
-          </div>
-          <div className="column">
-            <RiskPanel s={s} store={store} />
-            <section className="panel" data-tut="shop">
-              <h2>Shop</h2>
-              <ShopPanel s={s} store={store} />
-            </section>
-          </div>
-        </main>
-      )}
-      {page === 'reports' && (
-        <main className="layout single">
-          <section className="panel tabs" data-tut="tabs">
-            <nav role="tablist">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === t.id}
-                  className={tab === t.id ? 'on' : ''}
-                  onClick={() => openTab(t.id)}
-                >
-                  {t.label}
-                  {t.id === 'dark' && tips > 0 && <span className="badge">{tips}</span>}
-                  {t.id === 'days' && newDays && <span className="badge">new</span>}
-                  {t.id === 'week' && left > 0 && <span className="badge quiet">{left}</span>}
-                </button>
-              ))}
-            </nav>
-            <div className="tab-body" role="tabpanel">
-              {tab === 'week' && <FirstWeekPanel progress={progress} store={store} stage={stage} reveal={reveal} />}
-              {tab === 'days' && <DaysPanel s={s} />}
-              {tab === 'news' && <NewsPanel s={s} />}
-              {tab === 'dark' && <DarkWebPanel s={s} store={store} />}
-              {tab === 'rivals' && <RivalsPanel s={s} />}
-              {tab === 'lab' && <LabPanel s={s} store={store} />}
-              {tab === 'learn' && <LearnPanel />}
+        {intro !== null && tutorial.state !== 'at' && !fresh && (
+          <StageIntro s={s} store={store} stage={intro} page={page} setPage={goPage} />
+        )}
+        <nav className="pages" aria-label="Pages" data-tut="pages">
+          {pages.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={page === p.id ? 'on' : ''}
+              aria-current={page === p.id ? 'page' : undefined}
+              onClick={() => setPage(p.id)}
+            >
+              {p.label}
+              {p.id === 'reports' && reportsBadge > 0 && (
+                <span className={`badge ${newDays || tips ? '' : 'quiet'}`}>{reportsBadge}</span>
+              )}
+            </button>
+          ))}
+          {current && page !== 'reports' && (
+            <button type="button" className="link hint" onClick={() => openTab('week')}>
+              First week: {current.title}
+            </button>
+          )}
+        </nav>
+        {page === 'overview' && <OverviewPanel s={s} store={store} />}
+        {page === 'market' && (
+          <main className="layout">
+            <div className="column">
+              {micro && shows('microscope', stage) && (
+                <Microscope
+                  s={s}
+                  onStep={store.stepTicks}
+                  symbol={picked ?? s.stocks.find((st) => st.watched)?.symbol ?? s.stocks[0]?.symbol ?? ''}
+                  onClose={() => setMicro(false)}
+                />
+              )}
+              <MarketPanel s={s} store={store} picked={picked} onPick={setPicked} gaps={shows('gaps', stage)} />
             </div>
-          </section>
-        </main>
-      )}
-      <footer className="muted small">
-        Saved in this browser every few seconds.{' '}
-        <button
-          type="button"
-          className="link"
-          onClick={() => window.confirm('Start a new game? This one is lost.') && store.reset(Date.now() >>> 0)}
-        >
-          Start again
-        </button>
-      </footer>
+            <div className="column">
+              <FirmPanel s={s} races={shows('races', stage)} />
+            </div>
+          </main>
+        )}
+        {page === 'desk' && (
+          <main className="layout single">
+            <DeskPanel s={s} store={store} />
+          </main>
+        )}
+        {page === 'strategy' && (
+          <main className="layout">
+            <div className="column">
+              <StrategyPanel s={s} store={store} stage={stage} />
+            </div>
+            <div className="column">
+              <RiskPanel s={s} store={store} />
+              <section className="panel" data-tut="shop">
+                <h2>Shop</h2>
+                <ShopPanel s={s} store={store} />
+              </section>
+            </div>
+          </main>
+        )}
+        {page === 'reports' && (
+          <main className="layout single">
+            <section className="panel tabs" data-tut="tabs">
+              <nav role="tablist">
+                {tabs.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t.id}
+                    className={tab === t.id ? 'on' : ''}
+                    onClick={() => openTab(t.id)}
+                  >
+                    {t.label}
+                    {t.id === 'dark' && tips > 0 && <span className="badge">{tips}</span>}
+                    {t.id === 'days' && newDays && <span className="badge">new</span>}
+                    {t.id === 'week' && left > 0 && <span className="badge quiet">{left}</span>}
+                  </button>
+                ))}
+              </nav>
+              <div className="tab-body" role="tabpanel">
+                {tab === 'week' && <FirstWeekPanel progress={progress} store={store} stage={stage} reveal={reveal} />}
+                {tab === 'days' && <DaysPanel s={s} />}
+                {tab === 'news' && <NewsPanel s={s} />}
+                {tab === 'dark' && <DarkWebPanel s={s} store={store} />}
+                {tab === 'rivals' && <RivalsPanel s={s} />}
+                {tab === 'lab' && <LabPanel s={s} store={store} />}
+                {tab === 'learn' && <LearnPanel />}
+              </div>
+            </section>
+          </main>
+        )}
+        <footer className="muted small">
+          Saved in this browser every few seconds.{' '}
+          <button
+            type="button"
+            className="link"
+            onClick={() => window.confirm('Start a new game? This one is lost.') && store.reset(Date.now() >>> 0)}
+          >
+            Start again
+          </button>
+        </footer>
+      </GoContext.Provider>
     </LearnContext.Provider>
   );
 }

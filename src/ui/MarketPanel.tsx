@@ -3,6 +3,7 @@
 // computer says how many that may be.
 
 import { useState } from 'react';
+import { DESK_NAMES } from '../content';
 import { TICK_MS, type Level, type Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
 import { expiryLabel, money, moneyShort, pointsInCents, price, priceDelta, shares } from './format';
@@ -33,6 +34,12 @@ export function MarketPanel({
   const topBid = seenBids.length ? Math.max(...seenBids) : null;
   const topAsk = seenAsks.length ? Math.min(...seenAsks) : null;
   const full = s.watching.count >= s.watching.max;
+  // With more than one desk open the watchlist is one block a desk, under a heading; with one, as it always was.
+  const present = new Set(s.stocks.map((st) => st.desk));
+  const desks = [
+    ...Object.keys(DESK_NAMES).filter((d) => present.has(d)),
+    ...[...present].filter((d) => !(d in DESK_NAMES)),
+  ];
   return (
     <section className="panel market">
       <h2>
@@ -64,44 +71,55 @@ export function MarketPanel({
             <th className="num">Day</th>
           </tr>
         </thead>
-        <tbody>
-          {s.stocks.map((st) => (
-            <tr
-              key={st.symbol}
-              className={`${st.symbol === selected?.symbol ? 'picked' : ''} ${st.watched ? '' : 'unwatched'}`}
-              onClick={() => onPick(st.symbol)}
-            >
-              <td onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={st.watched}
-                  disabled={!st.watched && full}
-                  onChange={(e) => store.setWatch(st.symbol, e.target.checked)}
-                  aria-label={`Watch ${st.symbol}`}
-                />
-              </td>
-              <td>
-                <strong>{st.symbol}</strong> <span className="muted small col-name">{st.name}</span>
-              </td>
-              <td className="muted col-sector">
-                {st.contract
-                  ? `future on ${st.contract.underlying}, ${expiryLabel(st.contract.expiry)}`
-                  : st.pair
-                    ? pairLabel(st.pair, st.name)
-                    : st.metal
-                      ? `spot, ${st.metal.ounces} oz a lot`
-                      : st.constituents
-                        ? `index of ${st.constituents.length}`
-                        : st.sector}
-              </td>
-              <td className="num bid">{price(st.bid, st.decimals)}</td>
-              <td className="num ask">{price(st.ask, st.decimals)}</td>
-              <td className={`num ${st.dayChange === null ? 'muted' : st.dayChange >= 0 ? 'up' : 'down'}`}>
-                {st.dayChange === null ? '—' : priceDelta(st.dayChange, st.decimals)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
+        {desks.map((desk) => (
+          <tbody key={desk}>
+            {desks.length > 1 && (
+              <tr className="desk-row">
+                <th colSpan={6} scope="colgroup">
+                  {DESK_NAMES[desk] ?? desk}
+                </th>
+              </tr>
+            )}
+            {s.stocks
+              .filter((st) => st.desk === desk)
+              .map((st) => (
+                <tr
+                  key={st.symbol}
+                  className={`${st.symbol === selected?.symbol ? 'picked' : ''} ${st.watched ? '' : 'unwatched'}`}
+                  onClick={() => onPick(st.symbol)}
+                >
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={st.watched}
+                      disabled={!st.watched && full}
+                      onChange={(e) => store.setWatch(st.symbol, e.target.checked)}
+                      aria-label={`Watch ${st.symbol}`}
+                    />
+                  </td>
+                  <td>
+                    <strong>{st.symbol}</strong> <span className="muted small col-name">{st.name}</span>
+                  </td>
+                  <td className="muted col-sector">
+                    {st.contract
+                      ? `future on ${st.contract.underlying}, ${expiryLabel(st.contract.expiry)}`
+                      : st.pair
+                        ? pairLabel(st.pair, st.name)
+                        : st.metal
+                          ? `spot, ${st.metal.ounces} oz a lot`
+                          : st.constituents
+                            ? `index of ${st.constituents.length}`
+                            : st.sector}
+                  </td>
+                  <td className="num bid">{price(st.bid, st.decimals)}</td>
+                  <td className="num ask">{price(st.ask, st.decimals)}</td>
+                  <td className={`num ${st.dayChange === null ? 'muted' : st.dayChange >= 0 ? 'up' : 'down'}`}>
+                    {st.dayChange === null ? '—' : priceDelta(st.dayChange, st.decimals)}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        ))}
       </table>
       {selected && (
         <div className="stock" data-symbol={selected.symbol}>

@@ -312,6 +312,17 @@ export const GLOSSARY: GlossaryEntry[] = [
       'pays the spread for nothing.',
   },
   {
+    id: 'day-cause',
+    term: 'Why a day made or lost money',
+    short: 'The one thing that most of a day’s result came from: a charge, a block or a stock.',
+    long:
+      'A day’s P&L is the sum of many things, and the one that moved it most is the place to look first. The ' +
+      'candidates are the fees the exchanges charge on every fill, the fines the regulator adds, the rollover on ' +
+      'currencies and the storage and lease on metal held at 17:00, the worst or best block, and the worst or best ' +
+      'stock. The game names the biggest, with its figure. It is a pointer, not a diagnosis: a block that lost the ' +
+      'most may only have traded the most, so read its record over several days before changing it.',
+  },
+  {
     id: 'insider',
     term: 'Insider trading',
     short: 'Trading on material information the public does not have. Illegal.',

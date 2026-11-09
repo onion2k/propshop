@@ -5,7 +5,7 @@ import { DESK_NAMES, REGIMES } from '../content';
 import type { DayReport, Snapshot, Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
-import { blockName, dayVerdict } from './overview';
+import { blockName, dayCause, dayVerdict } from './overview';
 
 function net(t: Tally): number {
   return t.realised - t.fees;
@@ -47,8 +47,19 @@ export function DaysPanel({ s }: { s: Snapshot }) {
 function Report({ d }: { d: DayReport }) {
   const races = d.races.won + d.races.beaten + d.races.missed;
   const desks = deskRows(d);
+  const cause = dayCause(d);
   return (
     <div className="report">
+      <p className="day-cause">
+        <strong>{d.pnl >= 0 ? 'What made the day: ' : 'What lost the day: '}</strong>
+        {cause.text}
+        {cause.term && (
+          <>
+            {' '}
+            <Term id={cause.term}>Read more</Term>
+          </>
+        )}
+      </p>
       <div className="report-grid">
         <div>
           <h3>By block</h3>

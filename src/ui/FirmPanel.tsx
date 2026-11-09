@@ -5,6 +5,7 @@ import { formatTime, type OrderStory, type Snapshot } from '../sim';
 import { exchangeColour } from './Chart';
 import { balance, money, ms, price, shares } from './format';
 import { Term } from './Glossary';
+import { racesVenues, shownBalances } from './overview';
 import { Race } from './Race';
 
 const LEGEND = [
@@ -48,7 +49,7 @@ function Scorecard({ s }: { s: Snapshot }) {
           </tr>
         </thead>
         <tbody>
-          {s.exchanges.map((e) => {
+          {racesVenues(s).map((e) => {
             const mine = races.filter((o) => o.exchange === e.id);
             const won = mine.filter((o) => o.filled >= o.size).length;
             const beaten = mine.filter((o) => o.filled < o.size && o.beatenBy.length > 0).length;
@@ -96,7 +97,7 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
         <PnlStat label="Fines" value={money(-s.finesPaid)} tone={s.finesPaid > 0 ? -1 : 0} />
         <PnlStat label="Net" value={money(net, true)} tone={net} />
       </div>
-      {s.balances.length > 0 && <Balances s={s} />}
+      {shownBalances(s).length > 0 && <Balances s={s} />}
       <h3>Positions</h3>
       {/* Room for a laptop's four positions is kept, flat or not, so nothing under it moves as they open. */}
       <div className="positions-box">
@@ -199,7 +200,7 @@ export function Balances({ s }: { s: Snapshot }) {
       </h3>
       <table>
         <tbody>
-          {s.balances.map((b) => (
+          {shownBalances(s).map((b) => (
             <tr key={b.currency}>
               <td>{b.name}</td>
               <td className="num">{balance(b.amount, b.minor, b.currency)}</td>

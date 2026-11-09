@@ -4,6 +4,8 @@
 import { shows, type StageId } from '../content';
 import { BLOCKS, SCRIPT_ID, type Snapshot } from '../sim';
 import { Term } from './Glossary';
+import { blockRecord, blockVerdict } from './overview';
+import { money } from './format';
 import { ScriptEditor } from './ScriptEditor';
 import type { Store } from './store';
 
@@ -65,6 +67,7 @@ export function StrategyPanel({ s, store, stage = 5 }: { s: Snapshot; store: Sto
               {setting.enabled && !running && <span className="down"> · no capacity</span>}
             </summary>
             <p className="explain">{b.spec.explain}</p>
+            <BlockRecord s={s} id={b.spec.id} />
             {b.spec.id === SCRIPT_ID && <ScriptEditor s={s} setting={setting} store={store} />}
             {b.spec.params.map((p) =>
               p.choices ? (
@@ -106,5 +109,39 @@ export function StrategyPanel({ s, store, stage = 5 }: { s: Snapshot; store: Sto
         );
       })}
     </section>
+  );
+}
+
+/**
+ * A block's record over the days kept and one line on why: a line of fixed height, so a close does not move the
+ * card. Before the first close it says there is no record yet.
+ */
+function BlockRecord({ s, id }: { s: Snapshot; id: string }) {
+  if (s.days.length === 0)
+    return <p className="block-record muted small">No record yet: it appears after the first close.</p>;
+  const r = blockRecord(s.days, id);
+  const v = blockVerdict(r);
+  return (
+    <p className="block-record small">
+      {r.days > 0 && (
+        <>
+          <span className="num">
+            {r.days} day{r.days === 1 ? '' : 's'} traded
+          </span>
+          {' · net '}
+          <span className={`num ${r.net > 0 ? 'up' : r.net < 0 ? 'down' : ''}`}>{money(r.net, true)}</span>
+          {' · fees '}
+          <span className="num">{money(r.fees)}</span>
+          {' · '}
+        </>
+      )}
+      <span className="muted">{v.text}</span>
+      {v.term && (
+        <>
+          {' '}
+          <Term id={v.term}>Read more</Term>
+        </>
+      )}
+    </p>
   );
 }

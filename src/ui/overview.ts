@@ -1,9 +1,25 @@
 // What the Overview page works out from the reports and the nights' tests: verdicts, records, payback, trends.
 // Pure, no React and no state; the page only presents it. Money in cents.
 
-import { shows, type StageId } from '../content';
+import {
+  BLOCK_VERDICT_WORDS,
+  DAY_CAUSE_TERM,
+  DAY_CAUSE_WORDS,
+  OVERVIEW_COMING_WORDS,
+  shows,
+  type StageId,
+} from '../content';
 import { answerOf, type Answer } from '../content/experiments';
-import { BLOCKS, paramChangeLabel, type DayReport, type Measures, type Snapshot } from '../sim';
+import {
+  BLOCKS,
+  STOCKS_DESK,
+  paramChangeLabel,
+  type DayReport,
+  type Measures,
+  type Snapshot,
+  type UpgradeOffer,
+} from '../sim';
+import { money, ms } from './format';
 import type { Change, Night, StoredMeasures } from './nights';
 
 /** The length of a full session in minutes: a payback scales the tested minutes up to it. */
@@ -370,4 +386,157 @@ const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 /** A day number (days since the game began) as "Mon, week 1". */
 export function dayName(day: number): string {
   return `${WEEKDAY_NAMES[((day % 7) + 7) % 7]}, week ${Math.floor(day / 7) + 1}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Part A of play-and-learn: what the Overview shows and when, a block's record, why a day went as it did, which
+// venues and currencies are worth a row, and the shop's latency for the venues the firm trades.
+
+export interface OverviewShown {
+  trends: boolean;
+  comparisons: boolean;
+  signals: boolean;
+}
+
+/** The Overview's sections beyond Position and Today: Trends and Comparisons from the first close, Signals when one is raised. */
+export function overviewShown(
+  days: readonly DayReport[],
+  nights: readonly Night[],
+  signalCount: number,
+): OverviewShown {
+  const closed = days.length > 0 || nights.length > 0;
+  return { trends: closed, comparisons: closed, signals: signalCount > 0 };
+}
+
+/** One muted line on what is still to come and when; null once every section is shown. */
+export function comingLine(shown: OverviewShown): string | null {
+  if (!shown.trends) return OVERVIEW_COMING_WORDS.first;
+  if (!shown.signals) return OVERVIEW_COMING_WORDS.signals;
+  return null;
+}
+
+export interface BlockRecord {
+  /** Days kept on which the block filled. */
+  days: number;
+  fills: number;
+  /** Realised before fees, and fees, and the net of the two, cents, over the days kept. */
+  gross: number;
+  fees: number;
+  net: number;
+}
+
+/** A block's record over the days kept (the sim keeps 60). */
+export function blockRecord(days: readonly DayReport[], id: string): BlockRecord {
+  const r: BlockRecord = { days: 0, fills: 0, gross: 0, fees: 0, net: 0 };
+  for (const d of days) {
+    const t = d.byBlock[id];
+    if (!t || t.fills === 0) continue;
+    r.days += 1;
+    r.fills += t.fills;
+    r.gross += t.realised;
+    r.fees += t.fees;
+  }
+  r.net = r.gross - r.fees;
+  return r;
+}
+
+export type BlockVerdictKind = 'none' | 'earns' | 'fees' | 'loses';
+
+/** Has not traded; earns; the signal earns but the fees take it (gross above nought, net below); the signal itself loses (gross below nought). */
+export function blockVerdict(r: BlockRecord): { kind: BlockVerdictKind; text: string; term: string | null } {
+  const kind: BlockVerdictKind = r.fills === 0 ? 'none' : r.gross < 0 ? 'loses' : r.net < 0 ? 'fees' : 'earns';
+  return { kind, ...BLOCK_VERDICT_WORDS[kind] };
+}
+
+export interface DayCause {
+  kind: 'fees' | 'fines' | 'rollover' | 'storage' | 'block' | 'symbol' | 'quiet';
+  /** Cents, signed: what it did to the day. */
+  amount: number;
+  text: string;
+  term: string | null;
+}
+
+/**
+ * Of fees, fines, rollover, storage, the worst block's net and the worst stock's net, the largest loss, for a day
+ * that lost; for a day that earned, the largest gain among the ones that can gain. A tie goes to the first listed.
+ */
+export function dayCause(d: DayReport): DayCause {
+  const gain = d.pnl >= 0;
+  const candidates: { kind: DayCause['kind']; amount: number; text: (a: string) => string }[] = [];
+  const add = (kind: DayCause['kind'], amount: number, text: (a: string) => string) => {
+    if (gain ? amount > 0 : amount < 0) candidates.push({ kind, amount, text });
+  };
+  add('fees', -d.fees, DAY_CAUSE_WORDS.fees);
+  add('fines', -d.fines, DAY_CAUSE_WORDS.fines);
+  if (d.rollover !== undefined) add('rollover', d.rollover, (a) => DAY_CAUSE_WORDS.rollover(a, gain));
+  if (d.storage !== undefined) add('storage', d.storage, (a) => DAY_CAUSE_WORDS.storage(a, gain));
+  const pick = (tallies: Record<string, { realised: number; fees: number }>) => {
+    const rows = Object.entries(tallies).map(([id, t]) => [id, net(t)] as const);
+    if (rows.length === 0) return null;
+    return rows.reduce((a, b) => (gain ? (b[1] > a[1] ? b : a) : b[1] < a[1] ? b : a));
+  };
+  const block = pick(d.byBlock);
+  if (block) add('block', block[1], (a) => DAY_CAUSE_WORDS.block(blockName(block[0]), a, gain));
+  const symbol = pick(d.bySymbol);
+  if (symbol) add('symbol', symbol[1], (a) => DAY_CAUSE_WORDS.symbol(symbol[0], a, gain));
+  let best: (typeof candidates)[number] | undefined;
+  for (const c of candidates) if (!best || Math.abs(c.amount) > Math.abs(best.amount)) best = c;
+  if (!best) return { kind: 'quiet', amount: 0, text: DAY_CAUSE_WORDS.quiet, term: null };
+  return { kind: best.kind, amount: best.amount, text: best.text(money(Math.abs(best.amount))), term: DAY_CAUSE_TERM };
+}
+
+/** The orders sent since midnight of the game's day: the snapshot keeps the last few, of this day and the last. */
+export function ordersToday(s: Pick<Snapshot, 'now' | 'calendar' | 'orders'>): Snapshot['orders'] {
+  const start = s.now - s.calendar.timeOfDay;
+  return s.orders.filter((o) => o.sentAt >= start);
+}
+
+/** The races table's venues: the stocks' always, another desk's once an order has gone to it today. */
+export function racesVenues(s: Pick<Snapshot, 'now' | 'calendar' | 'orders' | 'exchanges'>): Snapshot['exchanges'] {
+  const used = new Set(ordersToday(s).map((o) => o.exchange));
+  return s.exchanges.filter((e) => e.desk === STOCKS_DESK || used.has(e.id));
+}
+
+/** A currency is worth a row once it is non-zero, or once a day report has fills on the currencies desk. */
+export function shownBalances(s: Pick<Snapshot, 'balances' | 'days'>): Snapshot['balances'] {
+  const traded = s.days.some((d) => (d.byDesk?.fx?.fills ?? 0) > 0);
+  return s.balances.filter((b) => traded || b.amount !== 0);
+}
+
+/** The venues the firm trades: those of the instruments it watches and those of today's orders, in the order met. */
+export function tradedVenues(s: Pick<Snapshot, 'now' | 'calendar' | 'orders' | 'stocks'>): string[] {
+  const out: string[] = [];
+  const add = (id: string) => void (out.includes(id) || out.push(id));
+  for (const st of s.stocks) if (st.watched) for (const e of st.exchanges) add(e.id);
+  for (const o of ordersToday(s)) add(o.exchange);
+  return out;
+}
+
+/**
+ * An offer's latency to the venues the firm trades, "HARBOR 12ms → 600µs" (the offer in use has no before; data that
+ * lags the orders is said), and the rest of the venues, for a fold.
+ */
+export function shopLatency(
+  o: Pick<UpgradeOffer, 'latency' | 'dataLatency'> & { inUse?: boolean },
+  s: Pick<Snapshot, 'now' | 'calendar' | 'orders' | 'stocks' | 'latency'>,
+): { traded: string; rest: string } {
+  const traded = tradedVenues(s);
+  const ids = Object.keys(o.latency);
+  // A firm that trades none of them (no instrument watched) is shown them all rather than none.
+  const mine = ids.filter((e) => traded.includes(e));
+  const first = mine.length > 0 ? mine : ids;
+  const line = (e: string) => {
+    const next = o.latency[e]!;
+    const data = o.dataLatency[e] ?? next;
+    const before = s.latency[e];
+    const head = o.inUse || before === undefined ? `${e} ${ms(next)}` : `${e} ${ms(before)} → ${ms(next)}`;
+    return data === next ? head : `${head}, data ${ms(data)}`;
+  };
+  return {
+    traded: first.map(line).join(', '),
+    rest: ids
+      .filter((e) => !first.includes(e))
+      .map((e) => `${e} ${ms(o.latency[e]!)}`)
+      .join(', '),
+  };
 }

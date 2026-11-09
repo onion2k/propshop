@@ -13,7 +13,9 @@ import {
   type Lesson,
   type StageId,
 } from '../content';
+import { useContext } from 'react';
 import { formatTime } from '../sim';
+import { GoContext } from './Go';
 import { Term } from './Glossary';
 import type { Progress, Store } from './store';
 
@@ -125,6 +127,7 @@ function LessonItem({
   number: Map<string, number>;
 }) {
   const doneAt = progress[l.id];
+  const { go, can } = useContext(GoContext);
   const state = doneAt !== undefined ? 'done' : l === current ? 'current' : 'later';
   return (
     <li className={`lesson ${state}`}>
@@ -138,6 +141,13 @@ function LessonItem({
       {state !== 'later' && (
         <div className="lesson-body">
           <p>{l.task}</p>
+          {state === 'current' && l.go && can(l.go) && (
+            <p>
+              <button type="button" className="on" onClick={() => go(l.go!)}>
+                Take me there
+              </button>
+            </p>
+          )}
           <p className="muted small">Watch for: {l.watch}</p>
           {state === 'done' && <p className="lesson-text">{l.lesson}</p>}
           <p className="small muted">

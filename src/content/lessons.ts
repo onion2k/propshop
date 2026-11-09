@@ -4,6 +4,34 @@
 
 import type { Snapshot } from '../sim';
 
+/** The pages a lesson can take the player to: the pages of the app. */
+export const GO_PAGES = ['overview', 'market', 'desk', 'strategy', 'reports'] as const;
+/** The tabs of the Reports page. */
+export const GO_TABS = ['week', 'days', 'news', 'dark', 'rivals', 'lab', 'learn'] as const;
+/** The `data-tut` names a lesson may point at: each is on the page its lesson names (a test holds it). */
+export const GO_TARGETS = [
+  'pages',
+  'shop',
+  'tabs',
+  'desk-ticket',
+  'speed',
+  'firm',
+  'watchlist',
+  'quotes',
+  'gaps',
+  'overview',
+  'risk',
+  'strategy',
+] as const;
+
+/** Where a lesson's "Take me there" goes: a page, a tab of Reports, and the element to outline. */
+export interface Place {
+  page: (typeof GO_PAGES)[number];
+  tab?: (typeof GO_TABS)[number];
+  /** A `data-tut` name from `GO_TARGETS`. */
+  target?: (typeof GO_TARGETS)[number];
+}
+
 export interface Lesson {
   id: string;
   title: string;
@@ -14,6 +42,8 @@ export interface Lesson {
   /** Glossary ids worth reading alongside. */
   terms: string[];
   done: (s: Snapshot) => boolean;
+  /** Where to take the player to do it; every lesson has one. */
+  go?: Place;
   /** Shown once done: what just happened, and why it matters. */
   lesson: string;
 }
@@ -29,6 +59,7 @@ function netOf(fills: { realised: number; fee: number }[]) {
 export const LESSONS: Lesson[] = [
   {
     id: 'home',
+    go: { page: 'market', target: 'speed' },
     title: 'Find what earns from home',
     task: 'Momentum is on. The laptop runs one block at a time. Skip to the open, set the speed to 10×, and give it a few minutes.',
     watch: 'Momentum fills that close out with a realised gain, especially after a headline lands.',
@@ -44,6 +75,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'seat',
+    go: { page: 'strategy', target: 'shop' },
     title: 'Buy a better seat',
     task: 'Open the Shop. Compare the latency to each exchange before and after each office and network. Buy one.',
     watch: 'The data delay in the market panel’s heading, before and after. Every exchange gets nearer.',
@@ -56,6 +88,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'gap',
+    go: { page: 'market', target: 'gaps' },
     title: 'See two exchanges disagree',
     task: 'With the market open and the speed at 10×, watch the bid and ask on the HARBOR and LAKESIDE rows of any stock. The gap line under the rows shows one when it comes.',
     watch: 'A moment when one exchange’s ask is below the other’s bid. It lasts a fraction of a second.',
@@ -69,6 +102,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'race',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'Lose a race',
     task: 'Switch momentum off and arbitrage on; the laptop runs one block. Let a few minutes of trading pass, then read the Orders list in your firm panel.',
     watch: 'An order marked Missed, with a rival’s name and how many milliseconds before you they arrived.',
@@ -81,6 +115,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'cost',
+    go: { page: 'market', target: 'firm' },
     title: 'Count what being slow costs',
     task: 'Keep arbitrage running until the Orders list has twenty finished races in it. Count the beaten against the won.',
     watch: 'Which exchange the beaten ones were on. PACIFIC is down the road; the other two are across the country.',
@@ -98,6 +133,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'maker',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'Get picked off as a market maker',
     task: 'Switch whatever is running off and the market maker on, with its half spread at two cents. Let it fill ten times.',
     watch: 'Fills that arrive just as the price moves through your quote, and the name on the race under them.',
@@ -111,6 +147,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'noise',
+    go: { page: 'reports', tab: 'news', target: 'tabs' },
     title: 'Tell news from noise',
     task: 'Open the News tab and wait for a few headlines to settle. Any block can run meanwhile.',
     watch: 'Headlines marked with what they moved, and ones that moved nothing.',
@@ -126,6 +163,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'hand',
+    go: { page: 'desk', target: 'desk-ticket' },
     title: 'Trade by hand',
     task: 'Open the Desk. Send a 5,000-share market buy on Best, then step or run the clock until it has been sent and heard back.',
     watch:
@@ -145,6 +183,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'used',
+    go: { page: 'desk', target: 'desk-ticket' },
     title: 'See your order used',
     task: 'On the Desk, rest a 5,000-share limit bid a cent under the best bid and leave it for a few seconds, running the clock.',
     watch:
@@ -167,6 +206,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'week',
+    go: { page: 'overview', target: 'speed' },
     title: 'Reach the second week',
     task: 'Play through to Friday’s close and over the weekend. Use skip to open for the evenings.',
     watch: 'The day P&L at each close, and whether a message arrives on the Dark web tab.',
@@ -183,6 +223,7 @@ export const LESSONS: Lesson[] = [
 LESSONS.push(
   {
     id: 'basis',
+    go: { page: 'market', target: 'watchlist' },
     title: 'See the future lead the index',
     task: 'The futures desk is open. On the Market page watch IDX and the near IXF contract, and pick the contract.',
     watch:
@@ -201,6 +242,7 @@ LESSONS.push(
   },
   {
     id: 'overnight',
+    go: { page: 'desk', target: 'desk-ticket' },
     title: 'Trade a future through a close',
     task: 'From the Desk page, buy one IXF contract, and play on through the day’s close.',
     watch:
@@ -215,6 +257,7 @@ LESSONS.push(
   },
   {
     id: 'lead',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'Ride the lead',
     task:
       'Turn lead-lag on and watch IDX and the near IXF contract. From home it sees the future too late; try it ' +
@@ -237,6 +280,7 @@ LESSONS.push(
 LESSONS.push(
   {
     id: 'pips',
+    go: { page: 'market', target: 'watchlist' },
     title: 'Count in pips',
     task:
       'The currencies desk is open. Put EURUSD, the euro in dollars, on your watchlist; from the Desk page buy ten ' +
@@ -254,6 +298,7 @@ LESSONS.push(
   },
   {
     id: 'triangle',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'Close a triangle',
     task:
       'Put EURUSD, USDJPY and EURJPY on your watchlist and turn on triangular arbitrage. From home it sees the cross ' +
@@ -278,6 +323,7 @@ LESSONS.push(
   },
   {
     id: 'refused',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'Be refused',
     task:
       'Set the triangle’s venue to the dealer, which charges no fee, and run it from the rack in Eastholm until the ' +
@@ -293,6 +339,7 @@ LESSONS.push(
   },
   {
     id: 'rollover',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'Earn the rollover',
     task:
       'Turn carry on and let it hold its pair through 17:00, when the currencies roll to the next day. Wednesday ' +
@@ -323,6 +370,7 @@ const FIX_TOLD_WITHIN = 2000;
 LESSONS.push(
   {
     id: 'curve',
+    go: { page: 'market', target: 'watchlist' },
     title: 'Read the curve',
     task:
       'The metals desk is open. Put XAU, gold, and its near GC future on your watchlist; a laptop watches four ' +
@@ -340,6 +388,7 @@ LESSONS.push(
   },
   {
     id: 'flip',
+    go: { page: 'reports', tab: 'news', target: 'tabs' },
     title: 'Watch it flip',
     task:
       'Keep gold or silver and one of its futures on your watchlist, with the curve open, and play on until a supply ' +
@@ -357,6 +406,7 @@ LESSONS.push(
   },
   {
     id: 'delivery',
+    go: { page: 'desk', target: 'desk-ticket' },
     title: 'Take delivery',
     task:
       'Buy one GC contract, the week’s, from the Desk page, and hold it through Friday’s expiry at 13:30, then on to ' +
@@ -374,6 +424,7 @@ LESSONS.push(
   },
   {
     id: 'fix',
+    go: { page: 'desk', target: 'desk-ticket' },
     title: 'Trade the fix',
     task:
       'Put XAU on your watchlist. At 09:59:30 Thamesford stops trading for the 10:00 fix; while the call runs, rest ' +
@@ -404,6 +455,7 @@ LESSONS.push(
   },
   {
     id: 'miner',
+    go: { page: 'strategy', target: 'strategy' },
     title: 'The miner and the metal',
     task:
       'Put RDG, Ridgeline Mining, and XAU on your watchlist and turn on pairs across desks, set to the miner ' +

@@ -1,4 +1,4 @@
-import { CONTENT, LESSONS, REGIMES } from '../src/content';
+import { CONTENT, GO_PAGES, GO_TABS, GO_TARGETS, LESSONS, REGIMES } from '../src/content';
 import {
   Game,
   MS_PER_DAY,
@@ -365,5 +365,20 @@ describe('lessons', () => {
         expect(L('delivery').done(s)).toBe(true);
       },
     );
+  });
+});
+
+describe('lessons take you there', () => {
+  it('each names a real page, and a tab and target that exist', () => {
+    for (const l of LESSONS) {
+      expect(l.go, l.id).toBeDefined();
+      expect(GO_PAGES, l.id).toContain(l.go!.page);
+      if (l.go!.tab !== undefined) {
+        expect(GO_TABS, l.id).toContain(l.go!.tab);
+        // A tab is a tab of the Reports page.
+        expect(l.go!.page, l.id).toBe('reports');
+      }
+      if (l.go!.target !== undefined) expect(GO_TARGETS, l.id).toContain(l.go!.target);
+    }
   });
 });
