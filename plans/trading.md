@@ -1,7 +1,7 @@
 # From a high-frequency sim to a trading sim
 
 State: parts 1 to 4 built 2026-11-08; the futures desk's lead check unmet, by Chris's choice (part 4). Next: Chris
-plays the futures desk, then the currencies desk's own plan, `plans/desk-fx.md`, made on `opus` in plan mode.
+plays the futures desk; the currencies desk's plan, `plans/desk-fx.md`, is agreed and waits to be built on `sonnet`.
 
 ## Context
 
@@ -225,7 +225,8 @@ its own. Part 1 must change nothing a player sees.
       the PACE harness says the lead is worth the microwave. The second is not met: a rack and microwave beat home
       by about 780 a day against microwave's 120,000, and Chris chose to leave the stocks' books as they are
       (2026-11-08). "The roll" is dropped as an experiment; its block and lesson teach it.
-- [ ] **5. Currencies desk** (`plans/desk-fx.md`).
+- [ ] **5. Currencies desk** (`plans/desk-fx.md`, specified 2026-11-09): balances by currency, a dealer with last
+      look, the desk at stage 4. Check: the desk's plan's own.
 - [ ] **6. Metals desk** (`plans/desk-metals.md`).
 - [ ] **7. Options desk** (`plans/desk-options.md`).
 - [ ] **8. The firm across desks** (`plans/firm-desks.md`).
