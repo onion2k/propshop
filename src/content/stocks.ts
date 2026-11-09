@@ -1,5 +1,6 @@
-// The stocks: twelve across four sectors, and an index over them. A beta says how much of the market's move a
-// stock takes; the sector's own move it takes whole. The index has no wander of its own.
+// The stocks: thirteen across five sectors, and an index over twelve of them. A beta says how much of the market's
+// move a stock takes; the sector's own move it takes whole. The index has no wander of its own. Each sector named
+// here has a factor of its own (FACTORS), drawn from `world`.
 import type { StockSpec } from '../sim';
 
 export const STOCKS: StockSpec[] = [
@@ -127,7 +128,20 @@ export const STOCKS: StockSpec[] = [
     jumpsPerSecond: 0.08,
     jumpSize: 1.2,
   },
-  // The index: the average price of the twelve.
+  // Mining: one gold miner, which moves with the market a little and with its sector's factor whole. Not in the
+  // index. The metals desk's gold reads the Mining factor (plans/desk-metals.md), so the miner and the metal move
+  // together. Added on 2026-11-09, which moved what `world` draws for every seed.
+  {
+    symbol: 'RDG',
+    name: 'Ridgeline Mining',
+    sector: 'mining',
+    beta: 0.7,
+    startPrice: 4500,
+    hourlyVol: 16,
+    jumpsPerSecond: 0.12,
+    jumpSize: 1.5,
+  },
+  // The index: the average price of the twelve before the miner.
   {
     symbol: 'IDX',
     name: 'Coast 12 Index',
@@ -141,7 +155,9 @@ export const STOCKS: StockSpec[] = [
 ];
 
 /**
- * One standard deviation an hour, basis points: the market moves a little together, each sector more. A stock's
- * own wander comes back to its anchor with a half-life of about ten minutes: a liquidity shock, not a repricing.
+ * One standard deviation an hour, basis points: the market moves a little together, each sector more. The sectors
+ * are the stocks' own, read from the list above (technology, utilities, energy, finance and mining), each a factor
+ * at `sectorHourlyBps`. A stock's own wander comes back to its anchor with a half-life of about ten minutes: a
+ * liquidity shock, not a repricing.
  */
 export const FACTORS = { marketHourlyBps: 20, sectorHourlyBps: 35, ownReversionPerHour: 4 };

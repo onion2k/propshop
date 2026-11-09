@@ -12,7 +12,8 @@ on 2026-11-08 from commit `d20c8e3`; the figures went to `docs/measured.md`.
 
     npm run dev          the game at http://localhost:5181
     npm run check        formatting, types, lint, unit tests (~15 s)
-    npm test             unit tests alone (Vitest, test/)
+    npm test             unit tests alone (Vitest, test/), without the step-rate floors
+    npm run floors       the step-rate floors, alone (test/speed.test.ts)
     npm run format       prettier, writing
     PACE=1 npx vitest run test/pace.test.ts
                          what each setup earns a day, headless, one seed: the economy's tuning harness
@@ -28,8 +29,9 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
 `npm run check` is the only gate, and there is no pre-commit hook: run it by hand before a commit. It holds
 formatting (Prettier), types (`tsc`, both configs), lint (ESLint, which also keeps `src/sim` free of React, the
 DOM and `src/content`) and the unit tests. No gate keeps a baseline: the performance floors are two tests in
-`test/game.test.ts`, `steps fast enough for the top speed` (no desk open, 75,000 ticks a second) and `steps fast
-enough with every built desk open` (40,000), which fail under load (see `docs/measured.md`). The harnesses above
+`test/speed.test.ts`, `steps fast enough for the top speed` (no desk open, 75,000 ticks a second) and `steps fast
+enough with every built desk open` (35,000). The check runs them alone after the rest (`npm run floors`; `npm test`
+skips them), since beside the other files they fail under load (see `docs/measured.md`). The harnesses above
 measure; they hold nothing.
 
 ## Layout
@@ -69,6 +71,11 @@ measure; they hold nothing.
   USD/JPY and their cross EUR/JPY (derived, like the index future), a book (EASTHOLM) and a dealer with last look
   (ASHFORD), the rack there and rollover's rates. Its blocks are `triangle` and `carry`; it opens at stage 4. A
   block sees the stocks and its own desk only; the stocks' blocks and the script see the stocks.
+- `src/content/metals.ts` is the metals desk (`plans/desk-metals.md`): spot gold and silver on Sundar (nights) and
+  Thamesford (days, with the fix at 05:30 and 10:00), weekly futures `GC` and `SI` on Hudson, delivered into spot,
+  the lease rates that move their carry, storage, supply news on `world:metals`, the racks at Thamesford and
+  Hudson. Gold reads the stocks' Mining factor (the miner `RDG`) and draws nothing for it. Its blocks are `curve`,
+  `fixArb` and `crossPairs`, its rival Aldgate Metals; it opens at stage 5.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
@@ -132,6 +139,12 @@ For anything new, check what it does:
   last mid (held over the weekend). Rollover lands at 17:00 each weekday (three days on Wednesday) and counts in
   that day's P&L. The dealer holds a taker order 5 ms and refuses it if its price moved against it. A save without
   balances has none.
+- **metals:** a venue with `auctions` stops continuous matching for `CALL_MS` before each fix: an IOC is refused,
+  the crowd rests, an indicative is published, and at the time the book uncrosses at one price (none if nothing
+  crosses, none at the weekend), with Thamesford's clients' flow drawn from its crowd stream. Storage is charged at
+  17:00 each weekday (three nights on Friday) on metal held long; a short pays the lease, which may go negative. A
+  future held to expiry is delivered as spot and its storage follows. Spot trades on whichever venue is open, and
+  from Friday 17:00 to Sunday 18:00 none is.
 - **one leg only:** an arbitrage whose far leg misses leaves a position; the block scratches its own.
 - **capacity:** orders past the computer's limit are dropped and counted, never queued.
 - **a tip:** real or made up, and the fine that may follow days later.
@@ -166,8 +179,8 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 - **Frames, the frame budget and the stalls** (a pin, the close, a save): measured headless with Playwright,
   borrowed from `~/projects/artshape-game-template` (there is none here), held by nothing. A worker would lift
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
-  cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 50,000 to 59,000 ticks a
-  second (2026-11-09), a game day at top speed about 450 s against 285 with none; the gate is a tripwire at 40,000.
+  cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 38,800 to 39,000 ticks a
+  second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 35,000.
 - **Layout shift:** held by hand. What changes as the market runs keeps its room (fixed P&L columns, the
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked

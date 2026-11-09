@@ -77,11 +77,22 @@ const FEATURE_STAGE: Record<string, StageId> = {
   'desk:fx': 4,
   'block:triangle': 4,
   'block:carry': 4,
+  // The metals desk opens with "The whole firm", the last stage: its miner-and-the-metal block is the pairs block
+  // across two desks, and pairs opens there; the curve and the fix come after the stocks' lessons are all done.
+  'desk:metals': 5,
+  'block:curve': 5,
+  'block:fixArb': 5,
+  'block:crossPairs': 5,
 };
 
 /** An unknown block is held to the last stage rather than shown early. */
 export function featureStage(feature: Feature): StageId {
   return FEATURE_STAGE[feature] ?? LAST_STAGE;
+}
+
+/** Whether a feature is named in the stage table, not left to fall to the last stage. */
+export function placed(feature: Feature): boolean {
+  return Object.hasOwn(FEATURE_STAGE, feature);
 }
 
 export function shows(feature: Feature, stage: StageId): boolean {
@@ -106,10 +117,16 @@ export function stageOf(progress: Readonly<Record<string, number>>): StageId {
 export const DESK_LESSONS: Readonly<Record<string, readonly string[]>> = {
   futures: ['basis', 'overnight', 'lead'],
   fx: ['pips', 'triangle', 'refused', 'rollover'],
+  metals: ['curve', 'flip', 'delivery', 'fix', 'miner'],
 };
 
 /** What the page calls each desk, in the day's report. */
-export const DESK_NAMES: Readonly<Record<string, string>> = { stocks: 'Stocks', futures: 'Futures', fx: 'Currencies' };
+export const DESK_NAMES: Readonly<Record<string, string>> = {
+  stocks: 'Stocks',
+  futures: 'Futures',
+  fx: 'Currencies',
+  metals: 'Metals',
+};
 
 /** The desk a lesson belongs to, if it is a desk's. */
 export function lessonDesk(id: string): string | undefined {

@@ -6,7 +6,7 @@ import { MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, isMarketOpen, isWeekday, nextOp
 import { STOCKS_DESK, deskOf } from './instrument';
 import type { Market } from './market';
 import type { Random } from './random';
-import type { Headline, NewsTemplate, RegimeSpec, StockSpec } from './types';
+import type { DeskNewsSpec, Headline, NewsTemplate, RegimeSpec, StockSpec } from './types';
 
 /** How far ahead the schedule is kept full, and how many published headlines are remembered. */
 export const LOOKAHEAD = MS_PER_DAY;
@@ -162,5 +162,132 @@ export class News {
     this.scheduled = s.scheduled.map((h) => ({ ...h }));
     this.published = s.published.map((h) => ({ ...h }));
     this.scheduledThrough = s.scheduledThrough;
+  }
+}
+
+/** The most headlines a desk's news schedules in a day, and how many published it remembers. */
+export const MAX_DESK_NEWS_PER_DAY = 12;
+export const DESK_FEED_LENGTH = 50;
+/** Tries to find a moment in a day when one of the desk's venues is open; a day with none gets no headline. */
+const DESK_NEWS_TRIES = 24;
+
+export interface SavedDeskNews {
+  nextId: number;
+  scheduled: Scheduled[];
+  published: Published[];
+  scheduledThrough: number;
+  /** Each headline's move in its symbol's lease, by headline id, while it is scheduled. */
+  leases: Record<number, number>;
+}
+
+/**
+ * A desk's own news: headlines about its instruments, drawn on its own stream a day ahead, timed in the hours its
+ * venues keep, each moving one instrument's fair value and its lease. It runs only while its desk is open, so a
+ * game with the desk shut draws nothing for it; its schedule starts from the moment the desk is first stepped.
+ */
+export class DeskNews {
+  readonly desk: string;
+  private readonly spec: DeskNewsSpec;
+  private nextId = 1;
+  /** Bounded by `MAX_DESK_NEWS_PER_DAY` a day, a day ahead. */
+  scheduled: Scheduled[] = [];
+  /** Bounded by `DESK_FEED_LENGTH`. */
+  published: Published[] = [];
+  /** Each scheduled headline's lease move, by id: one entry a scheduled headline. */
+  private leases = new Map<number, number>();
+  private scheduledThrough = -1;
+  tickPublished: Published[] = [];
+
+  constructor(spec: DeskNewsSpec) {
+    this.desk = spec.desk;
+    this.spec = spec;
+  }
+
+  /** Whether it has ever run: a desk's news that never ran is not saved. */
+  get started(): boolean {
+    return this.scheduledThrough >= 0;
+  }
+
+  step(now: number, market: Market, random: Random): void {
+    this.tickPublished = [];
+    if (this.scheduledThrough < 0) this.scheduledThrough = now;
+    while (this.scheduledThrough < now + LOOKAHEAD) this.scheduleDay(this.scheduledThrough, random, market);
+    while (this.scheduled.length > 0 && (this.scheduled[0]?.at ?? Infinity) <= now) {
+      const h = this.scheduled.shift();
+      if (h) this.publish(h, market);
+    }
+  }
+
+  /** The rest of the day from `from`: a few headlines, each at a moment one of the desk's venues is open. */
+  private scheduleDay(from: number, random: Random, market: Market): void {
+    const day = Math.floor(from / MS_PER_DAY);
+    const end = (day + 1) * MS_PER_DAY;
+    this.scheduledThrough = end;
+    const venues = market.venues.filter((e) => e.desk === this.desk);
+    const count = Math.min(MAX_DESK_NEWS_PER_DAY, Math.max(0, Math.round(this.spec.perDay + random.normal())));
+    for (let i = 0; i < count; i++) {
+      let at = -1;
+      for (let k = 0; k < DESK_NEWS_TRIES && at < 0; k++) {
+        const t = Math.floor(random.range(from, end));
+        if (venues.some((e) => e.isOpen(t))) at = t;
+      }
+      if (at < 0) continue;
+      this.scheduled.push(this.draw(at, random, market));
+    }
+    this.scheduled.sort((a, b) => a.at - b.at);
+  }
+
+  private draw(at: number, random: Random, market: Market): Scheduled {
+    const t = random.pick(this.spec.templates);
+    const symbol = random.pick(t.symbols);
+    const spec = market.stock(symbol);
+    const size = 0.6 + 0.8 * random.next();
+    const text = t.text.replace('{metal}', spec.name.toLowerCase()).replace('{n}', String(random.int(2, 9)));
+    const price = market.fair.get(symbol) ?? spec.startPrice;
+    const id = this.nextId++;
+    this.leases.set(id, t.lease * size);
+    return {
+      id,
+      at,
+      text,
+      symbols: [symbol],
+      sector: spec.sector,
+      direction: t.direction,
+      moves: { [symbol]: Math.round(((t.direction * t.magnitudeBps * size) / 10_000) * price) },
+      priceInMs: t.priceInMs,
+      noise: false,
+    };
+  }
+
+  private publish(h: Scheduled, market: Market): void {
+    const midsAt: Record<string, number | null> = {};
+    for (const symbol of h.symbols) {
+      midsAt[symbol] = market.venuesOf(symbol)[0]?.book(symbol).mid() ?? null;
+      market.shock(symbol, h.moves[symbol] ?? 0, h.priceInMs);
+      market.shiftLease(symbol, this.leases.get(h.id) ?? 0);
+    }
+    this.leases.delete(h.id);
+    const p: Published = { ...h, midsAt };
+    this.published.push(p);
+    this.tickPublished.push(p);
+    if (this.published.length > DESK_FEED_LENGTH) this.published.splice(0, this.published.length - DESK_FEED_LENGTH);
+  }
+
+  save(): SavedDeskNews {
+    return {
+      nextId: this.nextId,
+      scheduled: this.scheduled.map((h) => ({ ...h })),
+      published: this.published.map((h) => ({ ...h })),
+      scheduledThrough: this.scheduledThrough,
+      leases: Object.fromEntries(this.leases),
+    };
+  }
+
+  load(s: SavedDeskNews): void {
+    this.nextId = s.nextId;
+    this.scheduled = s.scheduled.map((h) => ({ ...h }));
+    this.published = s.published.map((h) => ({ ...h }));
+    this.scheduledThrough = s.scheduledThrough;
+    this.leases = new Map(Object.entries(s.leases).map(([k, v]) => [Number(k), v]));
   }
 }

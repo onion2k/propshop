@@ -670,6 +670,31 @@ export class Firm {
     return credited;
   }
 
+  /**
+   * Storage and the lease: each metal held long pays `rate` on its value at the mark, each held short pays its lease
+   * (it has borrowed the metal), for `days` of a `basis`-day year, from cash, rounded. Draws nothing. Says what it
+   * charged in all, in cents, negative for a cost: nought where no metal was held.
+   */
+  storage(
+    days: number,
+    leases: ReadonlyMap<string, number>,
+    markOf: (symbol: string) => number,
+    rate: number,
+    basis = 365,
+  ): number {
+    let total = 0;
+    if (days === 0) return total;
+    for (const [symbol, pos] of this.positions) {
+      const lease = leases.get(symbol);
+      if (lease === undefined || pos.qty === 0) continue;
+      const value = Math.abs(valueOf(this.scaleOf(symbol), pos.qty, markOf(symbol)));
+      const amount = -Math.round((value * (pos.qty > 0 ? rate : lease) * days) / basis) || 0;
+      this.cash += amount;
+      total += amount;
+    }
+    return total;
+  }
+
   private feeFor(exchange: string): number {
     return this.feeTable[exchange] ?? 0;
   }
@@ -920,6 +945,7 @@ export class Firm {
       constituents: common.constituents,
       exchanges: common.exchangeIds,
       quotes,
+      scales: common.scales,
       contracts: common.contracts,
       ...(pairParts ? { pairs: pairParts.pairs } : {}),
       ...(pairParts?.rollover ? { rollover: pairParts.rollover } : {}),
@@ -1409,7 +1435,8 @@ export class Firm {
         price: trade.price,
         size: trade.size,
         at: now,
-        taker: trade.aggressor === mine,
+        // At a fix nobody crossed the spread: no fill there is a taker's, so none pays the taker fee.
+        taker: !trade.fix && trade.aggressor === mine,
       },
       now + this.latency(exchange.id),
     );

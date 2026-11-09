@@ -75,13 +75,15 @@ describe('regimes', () => {
     const day = dayOf(13, 'trending');
     openOn(g, day);
     const start = new Map(g.market.anchor);
+    // The drift is set at the open from each stock's fair value then, which its anchor is near but not at.
+    const fairAtOpen = new Map(g.market.fair);
     while (isMarketOpen(g.now)) g.step(MS_PER_MINUTE);
     const regime = regimeFor(REGIMES, 13, day);
     g.market.stocks.forEach((s, i) => {
       // An index has no drift of its own: its constituents' drifts net out in the average.
       if (s.constituents) return;
       const moved = g.market.anchor.get(s.symbol)! - start.get(s.symbol)!;
-      const expected = (driftSign(13, day, i) * regime.driftBps * start.get(s.symbol)!) / 10_000;
+      const expected = (driftSign(13, day, i) * regime.driftBps * fairAtOpen.get(s.symbol)!) / 10_000;
       expect(moved).toBeCloseTo(expected, 0);
     });
     expect(MARKET_CLOSE - MARKET_OPEN).toBeGreaterThan(0);

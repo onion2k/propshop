@@ -120,9 +120,10 @@ describe('sessions', () => {
 
 describe('desks and venues', () => {
   it("leave the stocks' fair values and headlines alone, whether a desk is there, closed or open", () => {
-    const plain = fiveMinutesIn(new Game(CONTENT, 7));
-    const closed = fiveMinutesIn(new Game(WITH_DESK, 7));
-    const open = new Game(WITH_DESK, 7);
+    // Seed 8: six headlines by five minutes in (seed 7 had them until the miner moved the stocks' world, 2026-11-09).
+    const plain = fiveMinutesIn(new Game(CONTENT, 8));
+    const closed = fiveMinutesIn(new Game(WITH_DESK, 8));
+    const open = new Game(WITH_DESK, 8);
     open.openDesk('futures');
     fiveMinutesIn(open);
     expect(stockFairs(closed)).toEqual(stockFairs(plain));

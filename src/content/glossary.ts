@@ -484,7 +484,8 @@ export const GLOSSARY: GlossaryEntry[] = [
       'one to the other is never quite free. A currency has carry too: holding one earns its interest rate and ' +
       'owing the other costs its own, paid each night as rollover. Here the dollar pays 4.5% and the yen 0.5%, so ' +
       'long the dollar against the yen is paid to wait. The carry trade is holding that position for the nights, ' +
-      'and the risk is that the rate moves more in an hour than the nights pay in a month.',
+      'and the risk is that the rate moves more in an hour than the nights pay in a month. A metal carries the ' +
+      'dollar’s rate and its storage less its lease rate, and that can turn below nothing.',
   },
   {
     id: 'margin',
@@ -647,6 +648,142 @@ export const GLOSSARY: GlossaryEntry[] = [
       'but what it is worth moves with the rate: hold a hundred thousand yen and do nothing, and its dollar value ' +
       'goes up and down all day. The equity, the loss limit and the exposure cap all count the balances in ' +
       'dollars at the mid of the pair that prices them, so a currency held is a position, traded or not.',
+  },
+  {
+    id: 'spot',
+    term: 'Spot',
+    short: 'The metal itself, bought or sold for now, as against a future on it for later.',
+    long:
+      'Spot gold is gold you hold from the moment it fills: here a lot is ten ounces, priced in dollars an ounce ' +
+      'to ten cents. It trades in Port Sundar by night and in Thamesford by day; in the afternoon, when both are ' +
+      'shut, only the futures in Hudson trade, and spot has no market. Metal held long pays storage every night, ' +
+      'and metal sold short pays the lease, because it was borrowed to sell.',
+  },
+  {
+    id: 'futures-curve',
+    term: 'Futures curve',
+    short: 'Spot and each future’s price set against their dates: the market’s price of waiting.',
+    long:
+      'Line up the price of the metal now and of each contract by the day it expires, and the line they make is ' +
+      'the curve. Its slope is the carry: what it costs to buy the metal today and hold it until then, the ' +
+      'interest on the money and the storage, less what lending it out would earn. Here there are three weekly ' +
+      'contracts, so the curve has four points. A calendar spread trades one point of it against another when ' +
+      'the gap between them is not what the carry says.',
+  },
+  {
+    id: 'contango',
+    term: 'Contango',
+    short: 'A curve that rises: the later the date, the dearer the metal.',
+    long:
+      'Holding metal costs money: the interest on what it cost and its storage. So a contract for later is ' +
+      'normally dearer than the metal now, by about what holding it would cost until then. That rising curve is ' +
+      'contango. Here the dollar’s 4.5% and storage’s 0.5% a year outweigh the lease most of the time, so a week ' +
+      'out is a couple of dollars an ounce over spot.',
+  },
+  {
+    id: 'backwardation',
+    term: 'Backwardation',
+    short: 'A curve that falls: the metal now is dearer than the metal later.',
+    long:
+      'When metal is short now, whoever has it can lend it out at a high lease rate, and that pays more than the ' +
+      'interest and storage it costs to hold. The carry turns below nothing and later contracts are cheaper than ' +
+      'spot. A supply headline (a strike, a refinery fire) can do it in a minute: the lease jumps, and the curve ' +
+      'flips from contango to backwardation until the lease decays back.',
+  },
+  {
+    id: 'lease-rate',
+    term: 'Lease rate',
+    short: 'What borrowing the metal costs a year, and what lending it earns.',
+    long:
+      'A holder of gold can lend it out and be paid a rate for it, as cash earns interest. That rate comes off the ' +
+      'carry: a future is priced at spot carried by the dollar’s rate and storage, less the lease. Here gold’s ' +
+      'lease starts near 0.3% and silver’s near 0.8%, each wandering, and a supply headline lifts it by several ' +
+      'points before it decays over a day or two. Metal held short pays the lease each night.',
+  },
+  {
+    id: 'storage',
+    term: 'Storage',
+    short: 'What it costs a night to keep metal held long in a vault.',
+    long:
+      'Bullion has to sit somewhere guarded and insured. Here storage is 0.5% of its value a year, more than the ' +
+      'real figure so that a night of it shows, charged at 17:00 each weekday on spot metal held long, three ' +
+      'nights on Friday for the weekend and none on Saturday or Sunday. A short pays the lease instead. Both are ' +
+      'written into that day’s report and its P&L. A future costs no storage: its price carries it instead.',
+  },
+  {
+    id: 'delivery',
+    term: 'Delivery',
+    short: 'A contract held to expiry that ends as the thing itself, not as cash.',
+    long:
+      'An index future ends in cash. A metal future is delivered: whoever holds one long at expiry is paid the ' +
+      'metal, a lot of spot for each contract, and pays its price in cash; a short delivers it and is left short ' +
+      'spot. The trap is what comes after. Delivered metal is spot, so it pays storage from that night, and a ' +
+      'delivered short pays the lease, until it is sold or bought back on a spot venue. Rolling to the next ' +
+      'contract before expiry is how a trader keeps the exposure without the metal.',
+  },
+  {
+    id: 'fix',
+    term: 'The fix',
+    short: 'A daily price set by an auction at a fixed time, which many contracts are written against.',
+    long:
+      'Twice a weekday, at 05:30 and 10:00, the Thamesford Bullion Market stops trading gold and silver ' +
+      'continuously and runs a call auction. Everyone rests their orders for thirty seconds, the venue shows the ' +
+      'price it would uncross at, and at the time every crossing order fills at that one price. That price is ' +
+      'the fix. A large order rested into a fix pays no spread, but it is in the one price: a big buy lifts the fix it buys at. ' +
+      'If nothing crosses, there is no fix that time.',
+  },
+  {
+    id: 'fix-flow',
+    term: 'Orders at the fix',
+    short: 'Clients’ orders sent to be filled at the fix’s price, late and often more on one side.',
+    long:
+      'A fund that must buy gold at the day’s fix, a jeweller settling a contract written against it, a bank ' +
+      'squaring its book: they want the fix’s price, whatever it is, and send their orders into the call, many in ' +
+      'its last moments. When more of them buy than sell, the uncrossing price climbs above what the metal is ' +
+      'worth, and the other way when they sell. A firm that sees the indicative jump in time rests the other side ' +
+      'and is paid for it once the book is back by the future after the fix. Here they land in the last 150 ms of ' +
+      'the call, so only a firm beside Thamesford, or near it, sees them in time; silver’s fix moves most.',
+  },
+  {
+    id: 'call-auction',
+    term: 'Call auction',
+    short: 'A spell when orders only rest, then all cross at once at one price.',
+    long:
+      'In a call, an order that would trade does not: it rests, and a taker’s immediate-or-cancel order is refused ' +
+      'outright. The crowd rests too. Each moment the venue publishes an indicative: the price it would uncross at ' +
+      'now and how much would trade. A firm sees it as late as its quotes, so a firm nearer the venue sees it ' +
+      'move sooner. At the end, everything that crosses fills at the uncrossing price. The Lab’s batch auction ' +
+      'holds the firms but not the crowd; a call holds everyone.',
+  },
+  {
+    id: 'uncrossing-price',
+    term: 'Uncrossing price',
+    short: 'The one price an auction fills everything at: where the most trades.',
+    long:
+      'When a call ends, the bids above the asks have to be matched at a single price. The venue picks the one ' +
+      'that trades the most volume; if two tie, the one leaving least unfilled; then the one nearest what the ' +
+      'crowd believes. Every fill is at that price, the best bids and the lowest asks first, the oldest first ' +
+      'among equals. A buyer who bid far above it still pays only it.',
+  },
+  {
+    id: 'gold-silver-ratio',
+    term: 'Gold-silver ratio',
+    short: 'How many ounces of silver an ounce of gold buys.',
+    long:
+      'Gold near $2,400 and silver near $30 make the ratio about 80. The two move together, silver about twice as ' +
+      'far in a day, so the ratio wanders around where it has been. Pairs across desks can trade it: when gold is ' +
+      'dear against silver by more than its band, sell gold and buy the same value of silver, and wait for the ' +
+      'ratio to come back. When it does not, that is a loss on both legs.',
+  },
+  {
+    id: 'miner',
+    term: 'Miner',
+    short: 'A company that digs the metal up: a stock that moves with the metal, and with the stocks.',
+    long:
+      'Ridgeline Mining trades on the stock exchanges like any stock, but what it digs up is gold, so its price ' +
+      'and gold’s move together: here gold reads the miners’ factor of the stocks. The two are not the same ' +
+      'thing, though. The miner has its own news and its own costs, and it moves with the stock market too, so ' +
+      'the gap between them opens and closes. Pairs across desks trades the miner against the metal on that gap.',
   },
 ];
 

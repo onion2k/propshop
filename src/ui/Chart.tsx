@@ -54,22 +54,24 @@ export function Chart({
     const pad = Math.max(2, (hi - lo) * 0.1);
     lo -= pad;
     hi += pad;
-    const x = (t: number) => ((t - from) / (last.at - from || 1)) * (w - 44);
+    // Room at the right for the axis's prices, as wide as the widest of them: "2,400.10" needs more than "41.00".
+    ctx.font = '10px ui-monospace, monospace';
+    const axis = Math.max(44, Math.ceil(ctx.measureText(price(Math.ceil(hi), decimals)).width) + 8);
+    const x = (t: number) => ((t - from) / (last.at - from || 1)) * (w - axis);
     const y = (v: number) => h - 4 - ((v - lo) / (hi - lo)) * (h - 8);
     // Grid: a line per price point (a cent, or a pip), where there is room for it.
     const span = Math.ceil(hi) - Math.floor(lo);
     const every = span > 12 ? Math.ceil(span / 6) : 1;
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.font = '10px ui-monospace, monospace';
     ctx.textAlign = 'left';
     for (let c = Math.ceil(lo); c <= hi; c++) {
       if (c % every !== 0) continue;
       ctx.beginPath();
       ctx.moveTo(0, y(c));
-      ctx.lineTo(w - 44, y(c));
+      ctx.lineTo(w - axis, y(c));
       ctx.stroke();
-      ctx.fillText(price(c, decimals), w - 40, y(c) + 3);
+      ctx.fillText(price(c, decimals), w - axis + 4, y(c) + 3);
     }
     const line = (get: (p: HistoryPoint) => number | null, colour: string, width: number) => {
       ctx.strokeStyle = colour;

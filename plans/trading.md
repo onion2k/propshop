@@ -1,7 +1,8 @@
 # From a high-frequency sim to a trading sim
 
-State: parts 1 to 5½ built, 1 to 4 on 2026-11-08, 5 and 5½ on 2026-11-09; the futures desk's lead check unmet, by
-Chris's choice (part 4). Next: the metals desk (part 6), not yet specified.
+State: parts 1 to 6 built, 1 to 4 on 2026-11-08, 5 to 6 on 2026-11-09; the futures desk's lead check unmet, by
+Chris's choice (part 4), and the metals desk's fix-against-the-minute check too (part 6). Next: the options desk
+(part 7), to be specified.
 
 ## Context
 
@@ -239,7 +240,11 @@ its own. Part 1 must change nothing a player sees.
       against 285 with none, the game unchanged to the bit. Chris chose a gate (2026-11-09), a test in
       `test/game.test.ts` that opens every built desk and holds 40,000 as a tripwire (it read 59,000 alone and
       50,000 under the whole suite); the floor with none open stays at 75,000.
-- [ ] **6. Metals desk** (`plans/desk-metals.md`).
+- [x] **6. Metals desk** (`plans/desk-metals.md`, specified 2026-11-09): a miner on the stocks desk with the seeds
+      found again, the fix as a call auction that holds the crowd, a curve moved by a lease rate. Check: the desk's
+      plan's own. Built 2026-11-09 on Opus, six parts: the curve flips, delivery pays storage, `fixArb` earns from
+      the Thamesford rack and not from home; the fix does not beat the continuous minute for a large gold buy,
+      accepted by Chris. The tripwire with every desk open is now 35,000.
 - [ ] **7. Options desk** (`plans/desk-options.md`).
 - [ ] **8. The firm across desks** (`plans/firm-desks.md`).
 - [ ] **9. The words**: README and CLAUDE.md say "a game about trading", the cover's tagline and the game's

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { CONTENT, glossary } from '../src/content';
+import { CONTENT, DESK_NAMES, glossary } from '../src/content';
 import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
+import { DeskPanel } from '../src/ui/DeskPanel';
+import { NewsPanel } from '../src/ui/NewsPanel';
 import { App } from '../src/ui/App';
 import { Cover } from '../src/ui/Cover';
 import { Root } from '../src/ui/Root';
@@ -13,7 +15,7 @@ import { EXPERIMENTS_KEY } from '../src/ui/Root';
 import { MARKET_OPEN } from '../src/sim/clock';
 import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
 import { TESTS_KEY, type Night } from '../src/ui/nights';
-import { money } from '../src/ui/format';
+import { dollarPrice, money, pointsFrom, price, priceStep } from '../src/ui/format';
 
 /** The page switcher under the top bar. */
 function goTo(page: 'Overview' | 'Market' | 'Desk' | 'Strategy' | 'Reports') {
@@ -336,7 +338,7 @@ describe('App', () => {
     const store = createStore(CONTENT, null, 16);
     render(<App store={store} />);
     goTo('Market');
-    expect(document.querySelectorAll('.watchlist tbody tr')).toHaveLength(13);
+    expect(document.querySelectorAll('.watchlist tbody tr')).toHaveLength(14);
     expect(document.querySelector('.market h2')?.textContent).toMatch(/watching 4 of 4/);
     // Four watched, so an unwatched box is disabled until one is freed.
     const idx = screen.getByLabelText('Watch IDX');
@@ -915,7 +917,7 @@ describe('Root', () => {
     expect(store.game.now).toBeGreaterThan(t0);
   });
 
-  it('lists the five experiments and Free play', () => {
+  it('lists the seven experiments and Free play', () => {
     const store = createStore(CONTENT, null, 25);
     render(<Root store={store} />);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
@@ -924,7 +926,7 @@ describe('Root', () => {
       expect(screen.getByRole('button', { name: new RegExp(e.title) })).toBeInTheDocument();
       expect(screen.getByText(e.teaches)).toBeInTheDocument();
     }
-    expect(EXPERIMENTS).toHaveLength(5);
+    expect(EXPERIMENTS).toHaveLength(7);
     expect(screen.getByRole('button', { name: 'Free play' })).toBeInTheDocument();
   });
 
@@ -1169,8 +1171,9 @@ describe('stages', () => {
     expect(screen.getAllByRole('tab')).toHaveLength(7);
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    // The ten stock blocks and, everything shown, the futures desk's three and the currencies desk's two.
-    expect(listedBlocks()).toHaveLength(15);
+    // The ten stock blocks and, everything shown, the futures desk's three, the currencies desk's two and the metals
+    // desk's three.
+    expect(listedBlocks()).toHaveLength(18);
     // A reload.
     cleanup();
     const again = createStore(CONTENT, storage, 36);
@@ -1197,7 +1200,7 @@ describe('stages', () => {
     expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    expect(listedBlocks()).toHaveLength(15);
+    expect(listedBlocks()).toHaveLength(18);
   });
 
   it('criterion 8: the first week lists lessons by stage, and names the stages not open yet', () => {
@@ -1653,5 +1656,276 @@ describe('the currencies desk in the glossary', () => {
       expect(g!.long.length).toBeGreaterThan(100);
     }
     expect(glossary('carry')!.long).toMatch(/currency/);
+  });
+});
+
+describe('the metals desk on the page', () => {
+  const H = 3_600_000;
+  const IN_CALL = 9 * H + 59 * 60_000 + 40_000;
+  const AFTER_FIX = 10 * H + 5_000;
+  const stores = new Map<number, ReturnType<typeof createStore>>();
+  /** Free play (every desk open), stepped from the start to `at` on Monday: a second at a time, the last minute a tick at a time. */
+  function metalsAt(at: number) {
+    const cached = stores.get(at);
+    if (cached) return cached;
+    const store = createStore(CONTENT, null, 60);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    act(() => {
+      while (store.game.now < at - 60_000) store.game.step(1000);
+      while (store.game.now < at) store.game.step();
+      store.publish();
+    });
+    stores.set(at, store);
+    return store;
+  }
+  const row = (symbol: string) =>
+    [...document.querySelectorAll('.watchlist tbody tr')].find(
+      (r) => r.querySelector('strong')?.textContent === symbol,
+    )!;
+  const terms = (el: Element) => [...el.querySelectorAll('button.term')].map((b) => b.textContent);
+
+  it('writes gold in its ten-cent points to the cent, as money in words, and the limit box steps a point', () => {
+    expect(price(24001, 1)).toBe('2400.10');
+    expect(dollarPrice(24001, 1)).toBe('$2,400.10');
+    expect(price(4512, 2)).toBe('45.12');
+    expect(priceStep(1)).toBe(0.1);
+    expect(pointsFrom('2400.10', 1)).toBe(24001);
+    const store = metalsAt(IN_CALL);
+    render(<App store={store} />);
+    goTo('Market');
+    expect(row('XAU').querySelector('.bid')!.textContent).toMatch(/^2\d{3}\.\d0$/);
+    expect(row('XAG').querySelector('.bid')!.textContent).toMatch(/^\d\d\.\d\d$/);
+    cleanup();
+    const s = store.getSnapshot();
+    const only: Snapshot = { ...s, stocks: s.stocks.map((st) => ({ ...st, watched: st.symbol === 'XAU' })) };
+    render(<DeskPanel s={only} store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Limit' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Limit price').step).toBe('0.1');
+  }, 60_000);
+
+  it('draws the curve for a metal and its futures, spot and three expiries, and names contango in words', () => {
+    const store = metalsAt(IN_CALL);
+    render(<App store={store} />);
+    goTo('Market');
+    fireEvent.click(row('XAU'));
+    const curve = document.querySelector('.curve')!;
+    expect(curve).not.toBeNull();
+    expect(curve.querySelectorAll('tbody tr')).toHaveLength(4);
+    expect(curve.textContent).toMatch(/Contango/);
+    expect(terms(curve)).toEqual(expect.arrayContaining(['futures curve', 'spot', 'Contango', 'lease', 'storage']));
+    const near = store.game.market.live('GC')[0]!;
+    fireEvent.click(row(near));
+    expect(document.querySelector('.curve')!.querySelectorAll('tbody tr')).toHaveLength(4);
+    expect(document.querySelector('.contract-line')!.textContent).toMatch(/delivered as XAU/);
+    expect(terms(document.querySelector('.contract-line')!)).toContain('delivered');
+  }, 60_000);
+
+  it('names backwardation when the later dates are cheaper, and keeps the same room', () => {
+    const store = metalsAt(IN_CALL);
+    const s = store.getSnapshot();
+    const spot = s.stocks.find((x) => x.symbol === 'XAU')!;
+    const mid = Math.round(((spot.bid ?? spot.fair) + (spot.ask ?? spot.fair)) / 2);
+    const futures = s.stocks
+      .filter((x) => x.contract?.underlying === 'XAU')
+      .sort((a, b) => a.contract!.expiry - b.contract!.expiry);
+    const flipped: Snapshot = {
+      ...s,
+      stocks: s.stocks.map((x) => {
+        const i = futures.findIndex((f) => f.symbol === x.symbol);
+        if (i < 0) return x;
+        const p = mid - 40 * (i + 1);
+        return { ...x, bid: p - 1, ask: p + 1 };
+      }),
+    };
+    render(<MarketPanel s={flipped} store={store} picked="XAU" onPick={() => undefined} />);
+    const curve = document.querySelector('.curve')!;
+    expect(curve.textContent).toMatch(/Backwardation/);
+    expect(curve.textContent).not.toMatch(/Contango/);
+    expect(curve.querySelectorAll('tbody tr')).toHaveLength(4);
+  }, 60_000);
+
+  it("says the fix is running, the seconds left and the indicative as the firm sees it, during Thamesford's call", () => {
+    const store = metalsAt(IN_CALL);
+    render(<App store={store} />);
+    goTo('Market');
+    fireEvent.click(row('XAU'));
+    const line = document.querySelector('.fix-line')!;
+    expect(line.textContent).toMatch(/^In the fix: 20 s, indicative (\$2,\d{3}\.\d0|not crossed yet)/);
+    expect(terms(line)).toEqual(expect.arrayContaining(['In the fix', 'indicative']));
+    const seen = store
+      .getSnapshot()
+      .stocks.find((x) => x.symbol === 'XAU')!
+      .exchanges.find((e) => e.id === 'THAMESFORD')!.seen!.indicative;
+    expect(seen).toBeDefined();
+    if (seen!.price !== null) expect(line.textContent).toContain(money(seen!.price * 10));
+  }, 60_000);
+
+  it("lists the day's fixes from the venue's log after the call, with no fix said so", () => {
+    const store = metalsAt(AFTER_FIX);
+    render(<App store={store} />);
+    goTo('Market');
+    fireEvent.click(row('XAU'));
+    const line = document.querySelector('.fix-line')!;
+    const fix = store.game.market.exchanges.find((e) => e.id === 'THAMESFORD')!.fixes.find((f) => f.symbol === 'XAU')!;
+    expect(fix).toBeDefined();
+    expect(line.textContent).toMatch(/^Fixes today: 10:00 /);
+    expect(line.textContent).toContain(fix.price === null ? 'no fix' : money(fix.price * 10));
+    cleanup();
+    const s = store.getSnapshot();
+    const none: Snapshot = {
+      ...s,
+      exchanges: s.exchanges.map((e) =>
+        e.id === 'THAMESFORD' ? { ...e, fixes: [{ at: fix.at, symbol: 'XAU', price: null, volume: 0 }] } : e,
+      ),
+    };
+    render(<MarketPanel s={none} store={store} picked="XAU" onPick={() => undefined} />);
+    expect(document.querySelector('.fix-line')!.textContent).toMatch(/^Fixes today: 10:00 no fix/);
+  }, 60_000);
+
+  it("puts the metals desk's supply headlines in the snapshot and the News tab, labelled as the desk's", () => {
+    const store = createStore(CONTENT, null, 60);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    const published = () => store.game.deskNews.flatMap((n) => n.published);
+    act(() => {
+      while (published().length === 0 && store.game.now < 3 * 24 * H) store.game.step(1000);
+      store.publish();
+    });
+    const s = store.getSnapshot();
+    expect(published().length).toBeGreaterThan(0);
+    expect(s.deskNews.map((h) => h.text)).toEqual(published().map((h) => h.text));
+    expect(s.deskNews.every((h) => h.desk === 'metals')).toBe(true);
+    render(<NewsPanel s={s} />);
+    const real = [...document.querySelectorAll('.headline')].find((l) => l.textContent.includes(s.deskNews[0]!.text))!;
+    expect(real.textContent).toContain('Metals desk');
+    cleanup();
+    const base: Snapshot = {
+      ...s,
+      deskNews: [
+        {
+          id: 1,
+          at: s.now - 120_000,
+          text: 'Fire at a gold refinery: deliveries held for 3 days',
+          symbols: ['XAU'],
+          sector: 'precious',
+          direction: 1,
+          moves: { XAU: 12 },
+          priceInMs: 45_000,
+          noise: false,
+          midsAt: { XAU: 24000 },
+          desk: 'metals',
+        },
+      ],
+    };
+    render(<NewsPanel s={base} />);
+    const li = [...document.querySelectorAll('.headline')].find((l) => l.textContent.includes('refinery'))!;
+    expect(li.textContent).toContain('Metals desk');
+    expect(li.textContent).toContain('XAU +$1.20');
+  }, 60_000);
+
+  it('writes storage and the lease into the day report, and the metals desk as a row of By desk', () => {
+    const store = createStore(CONTENT, null, 76);
+    store.setTutorial({ state: 'done' });
+    act(() => {
+      store.game.days.push({
+        day: 0,
+        week: 1,
+        weekday: 'Mon',
+        pnl: 1000,
+        equityAtClose: 1000,
+        byBlock: {},
+        bySymbol: {},
+        races: { won: 0, beaten: 0, missed: 0 },
+        fees: 0,
+        fines: 0,
+        headlines: [],
+        latency: {},
+        rivals: [],
+        byDesk: { stocks: { fills: 1, realised: 0, fees: 1 }, metals: { fills: 2, realised: 500, fees: 3 } },
+        storage: -1234,
+      });
+      store.game.step();
+      store.publish();
+    });
+    render(<App store={store} />);
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+    const report = document.querySelector('.report')!;
+    expect(report.querySelector('.storage')!.textContent).toMatch(/Storage and the lease at 17:00.*-\$12\.34/);
+    expect(terms(report.querySelector('.storage')!)).toEqual(expect.arrayContaining(['Storage', 'lease']));
+    const metals = [...report.querySelectorAll('.by-desk tbody tr')].find(
+      (r) => r.firstElementChild!.textContent === 'Metals',
+    )!;
+    expect(metals).toBeDefined();
+    expect(metals.textContent).toContain('-$12.34');
+    // Net is what the fills made less the fees and the night's storage: $5.00 − $0.03 − $12.34.
+    expect(metals.lastElementChild!.textContent).toBe('-$7.37');
+  });
+
+  it('shows a metal held as ounces, and what it costs a night: storage long, the lease short', () => {
+    const store = metalsAt(IN_CALL);
+    const s = store.getSnapshot();
+    const held: Snapshot = {
+      ...s,
+      positions: [
+        { symbol: 'XAU', qty: 2, avgCost: 24001, mark: 24003, unrealised: 400, decimals: 1 },
+        { symbol: 'XAG', qty: -1, avgCost: 3000, mark: 2999, unrealised: 500, decimals: 2 },
+      ],
+    };
+    render(<FirmPanel s={held} />);
+    const rows = [...document.querySelectorAll('.positions tr')];
+    expect(rows[0]!.textContent).toMatch(/XAU.*20 oz.*storage/);
+    expect(rows[0]!.textContent).toContain('@ 2400.10');
+    expect(rows[1]!.textContent).toMatch(/XAG.*500 oz short.*lease/);
+    expect(terms(rows[0]!)).toContain('storage');
+    expect(terms(rows[1]!)).toContain('lease');
+  }, 60_000);
+
+  it('names the desk Metals, opens it at the last stage with its blocks, and links each block to the glossary', () => {
+    expect(DESK_NAMES.metals).toBe('Metals');
+    const store = metalsAt(IN_CALL);
+    render(<App store={store} />);
+    goTo('Strategy');
+    expect(listedBlocks()).toEqual(expect.arrayContaining(['Calendar spread', 'Fix arbitrage', 'Pairs across desks']));
+    const linked = [...document.querySelectorAll('.strategy summary strong button.term')].map((b) => b.textContent);
+    for (const name of ['Calendar spread', 'Fix arbitrage', 'Pairs across desks']) expect(linked).toContain(name);
+  }, 60_000);
+
+  it('links the miner and the gold-silver ratio where they are shown', () => {
+    const store = metalsAt(IN_CALL);
+    render(<App store={store} />);
+    goTo('Market');
+    fireEvent.click(row('RDG'));
+    expect(terms(document.querySelector('.stock-head')!)).toContain('miner');
+    fireEvent.click(row('XAG'));
+    const head = document.querySelector('.stock-head')!;
+    expect(head.textContent).toMatch(/gold-silver ratio \d+\.\d/);
+    expect(terms(head)).toContain('gold-silver ratio');
+  }, 60_000);
+});
+
+describe('the metals desk in the glossary', () => {
+  it('has an entry, short and long, for each concept the desk shows', () => {
+    for (const id of [
+      'spot',
+      'futures-curve',
+      'contango',
+      'backwardation',
+      'lease-rate',
+      'storage',
+      'delivery',
+      'fix',
+      'call-auction',
+      'uncrossing-price',
+      'gold-silver-ratio',
+      'miner',
+    ]) {
+      const g = glossary(id);
+      expect(g, id).toBeDefined();
+      expect(g!.short.length).toBeGreaterThan(10);
+      expect(g!.long.length).toBeGreaterThan(100);
+    }
+    expect(glossary('delivery')!.long).toMatch(/storage/);
   });
 });

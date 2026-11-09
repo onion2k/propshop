@@ -107,7 +107,10 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
             <tbody>
               {s.positions.map((p) => (
                 <tr key={p.symbol}>
-                  <td>{p.symbol}</td>
+                  <td>
+                    {p.symbol}
+                    <MetalHeld s={s} symbol={p.symbol} qty={p.qty} />
+                  </td>
                   <td className={`num ${p.qty > 0 ? 'up' : 'down'}`}>{shares(p.qty)}</td>
                   <td className="num muted">@ {price(Math.round(p.avgCost), p.decimals)}</td>
                   <td className={`num ${p.unrealised >= 0 ? 'up' : 'down'}`}>
@@ -206,5 +209,29 @@ export function Balances({ s }: { s: Snapshot }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Metal held, delivered or bought: the ounces, and what holding it costs each night. Long pays storage; short has
+ * borrowed the metal and pays its lease.
+ */
+function MetalHeld({ s, symbol, qty }: { s: Snapshot; symbol: string; qty: number }) {
+  const metal = s.stocks.find((x) => x.symbol === symbol)?.metal;
+  if (!metal) return null;
+  const oz = shares(Math.abs(qty) * metal.ounces);
+  return (
+    <span className="muted small">
+      {' '}
+      {qty > 0 ? (
+        <>
+          {oz} oz · <Term id="storage">storage</Term> nightly
+        </>
+      ) : (
+        <>
+          {oz} oz short · pays the <Term id="lease-rate">lease</Term>
+        </>
+      )}
+    </span>
   );
 }

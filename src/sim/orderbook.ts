@@ -39,6 +39,19 @@ export interface Trade {
    * order was matched. Set by the exchange; absent in a save from before it was kept.
    */
   cleared?: boolean;
+  /** Made at a call auction's uncrossing (the fix), where nobody crossed the spread. Absent otherwise. */
+  fix?: true;
+}
+
+/**
+ * Where a crossed book would uncross: the one price, the volume that trades there, and what was bid and offered at
+ * that price or better (the larger of the two is the side left wanting).
+ */
+export interface Uncrossing {
+  price: number;
+  volume: number;
+  buy: number;
+  sell: number;
 }
 
 export interface Level {
@@ -121,6 +134,136 @@ export class OrderBook {
       this.rest(order);
     }
     return { order, trades, refused: null };
+  }
+
+  /**
+   * Rest an order without matching it, whatever it would cross: a call auction's book, which holds every order until
+   * the uncrossing. An immediate-or-cancel order is the caller's to refuse or turn into a resting one first.
+   */
+  place(req: OrderRequest, at: number): { order: Order; trades: Trade[]; refused: string | null } {
+    if (!Number.isInteger(req.price) || !Number.isInteger(req.size) || req.size <= 0 || req.price <= 0) {
+      throw new Error(`Bad order: price ${req.price}, size ${req.size}`);
+    }
+    const display =
+      req.display !== undefined && req.display !== null && req.display > 0 ? Math.min(req.display, req.size) : null;
+    const order: Order = {
+      id: this.nextId++,
+      owner: req.owner,
+      side: req.side,
+      price: req.price,
+      size: req.size,
+      remaining: req.size,
+      at,
+      ioc: false,
+      postOnly: req.postOnly ?? false,
+      display,
+      shown: display ?? req.size,
+    };
+    this.changed = true;
+    this.rest(order);
+    return { order, trades: [], refused: null };
+  }
+
+  /**
+   * The uncrossing price the book would trade at now, or null where nothing crosses. Of the prices where the best bid
+   * and the best ask overlap (each limit there, and the two prices of the `tick` grid either side of `belief`): the one
+   * that trades the most; between equals, the one that leaves the least over; then the nearest `belief` (the crowd's);
+   * then the lower. Volume and what is left over change only at a limit, so the grid prices by the belief are the only
+   * others that can win. An iceberg counts its whole remainder. Walks the crossed part of each side once.
+   */
+  indicative(belief: number, tick = 1): Uncrossing | null {
+    const top = this.bids[0];
+    const low = this.asks[0];
+    if (!top || !low || top.price < low.price) return null;
+    // The candidate prices are the limits in the overlap, from the lowest ask to the highest bid.
+    const prices: number[] = [];
+    for (const o of this.asks) {
+      if (o.price > top.price) break;
+      if (prices[prices.length - 1] !== o.price) prices.push(o.price);
+    }
+    for (const o of this.bids) {
+      if (o.price < low.price) break;
+      prices.push(o.price);
+    }
+    const near = Math.floor(belief / tick) * tick;
+    for (const p of [near, near + tick]) if (p >= low.price && p <= top.price) prices.push(p);
+    prices.sort((a, b) => a - b);
+    let best: Uncrossing | null = null;
+    let bestDistance = Infinity;
+    // Going up in price, what is offered at or below it grows and what is bid at or above it shrinks.
+    let sell = 0;
+    let ai = 0;
+    let buy = 0;
+    for (const o of this.bids) if (o.price >= low.price) buy += o.remaining;
+    let bi = this.bids.length - 1;
+    while (bi >= 0 && this.bids[bi]!.price < low.price) bi--;
+    let last = -1;
+    for (const p of prices) {
+      if (p === last) continue;
+      last = p;
+      while (ai < this.asks.length && this.asks[ai]!.price <= p) sell += this.asks[ai++]!.remaining;
+      while (bi >= 0 && this.bids[bi]!.price < p) buy -= this.bids[bi--]!.remaining;
+      const volume = Math.min(buy, sell);
+      if (volume <= 0) continue;
+      const over = Math.abs(buy - sell);
+      const distance = Math.abs(p - belief);
+      const better =
+        best === null ||
+        volume > best.volume ||
+        (volume === best.volume &&
+          (over < Math.abs(best.buy - best.sell) ||
+            (over === Math.abs(best.buy - best.sell) && distance < bestDistance)));
+      if (better) {
+        best = { price: p, volume, buy, sell };
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Uncross the book at its one price: every bid at or above it and every ask at or below, in price then time
+   * priority, fill until the volume is traded, all at that price. The side left wanting is named the aggressor, though
+   * nobody crossed: the trades say `fix`. Returns null, and leaves the book as it was, where nothing crosses. What is
+   * left does not cross: the price that trades the most leaves no bid above an ask.
+   */
+  uncross(belief: number, at: number, tick = 1): (Uncrossing & { trades: Trade[] }) | null {
+    const u = this.indicative(belief, tick);
+    if (!u) return null;
+    const aggressor: Side = u.buy >= u.sell ? 'buy' : 'sell';
+    const trades: Trade[] = [];
+    let left = u.volume;
+    let bi = 0;
+    let ai = 0;
+    while (left > 0) {
+      const b = this.bids[bi]!;
+      const a = this.asks[ai]!;
+      const size = Math.min(left, b.remaining, a.remaining);
+      left -= size;
+      b.remaining -= size;
+      a.remaining -= size;
+      b.shown = Math.min(b.display ?? b.remaining, b.remaining);
+      a.shown = Math.min(a.display ?? a.remaining, a.remaining);
+      trades.push({
+        price: u.price,
+        size,
+        at,
+        buyId: b.id,
+        sellId: a.id,
+        buyer: b.owner,
+        seller: a.owner,
+        aggressor,
+        cleared: false,
+        fix: true,
+      });
+      if (b.remaining === 0) bi++;
+      if (a.remaining === 0) ai++;
+    }
+    this.bids = this.bids.filter((o) => o.remaining > 0);
+    this.asks = this.asks.filter((o) => o.remaining > 0);
+    this.lastPrice = u.price;
+    this.changed = true;
+    return { ...u, trades };
   }
 
   private wouldCross(order: Order): boolean {

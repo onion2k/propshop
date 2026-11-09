@@ -93,7 +93,7 @@ All headless with Playwright, borrowed from `~/projects/artshape-game-template`.
   not 78 (8 ms of 16.7 is under half the time, at about 52,000 ticks a second); throttled, 300× reaches 21 at
   54 frames, a day about 18 minutes. A game two days old holds about 50 frames at 10× throttled, on the
   Overview and the Market alike.
-- `steps fast enough for the top speed` in `game.test.ts` starts timing a minute before the open, so a closed
+- `steps fast enough for the top speed` in `game.test.ts` (now in `test/speed.test.ts`, `npm run floors`) starts timing a minute before the open, so a closed
   market flatters it: alone it reads about 77,000 ticks a second, but the open market alone is about 52,000,
   and under the whole suite it falls under its floor of 75,000 now and then, and always with other runs beside
   it (63,000 on 2026-11-08 beside four harness runs). Alone on 2026-11-07, after the Overview's sim changes:
@@ -241,3 +241,202 @@ higher on three of ten: two minutes of lead-lag is a few hundred dollars, inside
   the stage harness (`STAGE_PACE=1 STAGE_SEEDS=1 STAGE_DAYS=1`), each
   stage opening at the same moment. The whole PACE harness takes about 73 minutes on this machine under load,
   past the test's hour: it prints its table and then reports the timeout.
+
+## The miner (6a), 2026-11-09
+
+Ridgeline Mining (`RDG`, $45, sector mining, not in the index) joined the stocks, which changed what `world` draws
+for every seed, on purpose (`plans/desk-metals.md`, 6a). Before is a copy of the tree at `d653b38`; after is the
+working tree with the miner. Both by `PACE=1 PACE_SEEDS=<n> PACE_ONLY=home,city,colo,prairie,lakeside,fx npx
+vitest run test/pace.test.ts`, one process a seed, the timeout raised in the copy (each took about 26 minutes,
+seven at once), and `STAGE_PACE=1 STAGE_SEEDS=1 STAGE_DAYS=1 npx vitest run test/stagepace.test.ts`.
+
+- **PACE**, an hour from the open of seeds 1 to 3, scaled to a day, dollars a day, before → after (seeds after):
+  - home: arbitrage 366 → 471; the maker 857 → 1,064; momentum 339 → 85 (528, −464, 190); revert −3,562 → −3,579;
+    sniper 423 → 332; news and index arbitrage no fill, as before; the hand −28,780 → −33,198.
+  - city: momentum 599 → 62 (1,644, −916, −542); arbitrage −5,190 → −403; held near −4,708 → 199; the maker
+    2,739 → 3,547; arbitrage with the maker −2,021 → 3,721.
+  - colocated: arbitrage 5,167 → 5,990; the maker 5,403 → 6,929, and 37,140 → 40,288 at no half-spread; revert
+    −7,059 → −6,609; sniper 3,653 → 1,157; pairs −941 → −66; index arbitrage −212 → −322; the hand −8,865 →
+    −28,363 (before, seed 2 made 38,570; after, all three lose 26,000 to 31,000).
+  - the rivals beside home arbitrage: Harbor Quant 5,626 → 13,881, Lakeside Partners −10,396 → 776, Midtown
+    −12,196 → 153, Bayview 987 → 1,285 (before, seed 2's morning cost each of the first three 11,000 to 37,000).
+  - the futures desk: lead-lag from home 1,050 → 1,045; a rack at the Prairie Board on fibre 1,022 → 1,030, on
+    microwave 1,523 → 1,787 (at 1 cent 1,507 → 1,122); a rack at Lakeside on microwave 1,472 → 1,662; Prairie
+    Partners 1,001 → 1,085; basis arbitrage 5 → 0, at 0.5 cents −322 → −349; the roll −12 → −47.
+  - the currencies desk: every row the same to the dollar, and each refusal count the same.
+- **The stages**, seed 1, one day, the follower: stage 2 at 1.4 → 1.2 minutes of trading, stage 3 at 3.4 → 1.5,
+  stage 4 at 3.4 → 1.6; stage 5 not by the end of the day either time. The sitter: stage 2 at 1.4 → 1.2. Both
+  before and after are below the 2026-11-05 figures above (three seeds, seven days: stage 3 at 5.6 to 7.7), and
+  the miner moves stages 3 and 4 earlier still: the twenty races come sooner. Not re-tuned.
+- **The step rate**, `npx vitest run test/game.test.ts -t "steps fast enough"` alone (the floors have since moved to
+  `test/speed.test.ts`, run alone by `npm run floors`; these figures are as measured then), three runs each: before
+  87,000 to 92,000 ticks a second and 52,500 with both desks open; after 86,500 to 86,700 and 49,700 to 50,200.
+  Inside `npm run check` (the other files beside it): before 90,400 to 91,100 in three runs; after 74,100 to
+  82,800 in four, under the 75,000 floor in two of them (the desks-open figure 41,300 to 44,400, over its 40,000).
+- **The experiments' seeds**, found again by each one's method (the schedule is drawn when the game is built, so
+  a seed's headlines are read without running it), seeds 1 to 1,000; the method finds the old seeds on the old
+  tree. `npx vitest run test/experiments.test.ts`, two-minute windows:
+  - the headline, 854 → 70 (Quantal recalls a product line 40.2 s in): momentum $281; size better ($592), threshold
+    the same ($268), news worse ($95; it was better).
+  - a few miles, 854 → 70: arbitrage from home −$708, 224 won and 109 lost; the city worse (−$1,084), fibre better
+    (−$205), the rack better ($182).
+  - the free option, 879 → 537 (Quantal beats on earnings 93.4 s in): −$875; wider better (−$417), aside better
+    ($583), the city the same (−$869).
+  - the lead, 566 from 9:31:06 → 338 from 9:31:05 (the print 40.1 s in): $561, 7 won and 24 lost; microwave worse
+    ($414, 19 won and 9 lost; it was better, 13 and 1), home the same ($483), Lakeside the same ($659).
+  - last look, 30 kept: `world:fx` is untouched, and the dollar still jumps 8.7 pips 41.3 s in, with the same legs,
+    refusals and fills. Each run reads about $70 more ($149, the book $369, home $71, the book from home $47):
+    the firm comes into the window holding 200 VRT from the warm-up's momentum, as it did before, and that stock
+    now moves.
+- **A save from before the miner** (seed 3, five minutes into Monday, from the copy) loads as a good game:
+  `RDG` comes in at $45 with empty books that the crowd fills at once (quoted on all three exchanges two minutes
+  on, and a hand buy of 100 filled), the Mining factor at nought, its history from the load, and no trending-day
+  drift until the next open. Its `world` stream carries on from where it was saved but now draws for the miner
+  too, so it is not the future it had; a save of the loaded game reloads to the same future.
+
+## The metals desk in the sim (6b), 2026-11-09
+
+The metals desk's venues, spot gold and silver, the `GC` and `SI` futures, leases, storage and supply news are in
+the content, closed (`plans/desk-metals.md`, 6b). Before is a copy of the tree with 6a, uncommitted, in the
+scratchpad; after is the working tree.
+
+- **The step rate**, `npm run floors` alone (nothing else running), three runs each. Before: 88,900 to 89,700 ticks
+  a second, and 50,900 to 51,100 with futures and fx open. After: 85,200 to 86,300 with every desk shut, and
+  39,500 to 39,700 with futures, fx and metals open: under the 40,000 tripwire in all three runs. The esbuild bundle
+  (seed 12, four minutes from the open, `node --cpu-prof`): metals alone 57,000, futures and fx 47,700 to 48,700,
+  all three 39,800 to 40,200; every desk shut 74,100 to 75,200 before and 71,600 to 73,000 after. The profile with
+  all three open spreads the cost over the books (the crowd's step, the quote log, the depth and tape the firms
+  read) and the draws: twelve more books (two spots on three venues, six contracts on Hudson), not one hot path.
+  _Amended in 6c:_ Hudson no longer lists the spot, so ten more books (two spots on two venues, six contracts).
+  The leases and the reads are `driftDesk`'s 2.2% (1.1% without metals). With the desk shut the cost is about 3%
+  in the floor test, its cause not pinned in the profile.
+- **Fingerprints** (`test/instruments.test.ts`): every figure of the busy game and of the two-desk game the same;
+  the fingerprints with the metals desk there and closed `ab8d1400` (busy), `d7fa5a46` and `cecb8650` (two desks,
+  seeds 1 and 2); without it `d8661a66`, `5a409e9e` and `473e9068`, the post-6a ones, to the bit. With metals open
+  too: `beafb15` and `5c3e6bd3`, the player's fills, orders and orders by block the same.
+- **PACE**, `PACE=1 PACE_SEEDS=1 PACE_ONLY="home arb,home momentum,colo mm,prairie leadLag mw,fx home triangle book"
+npx vitest run test/pace.test.ts`, before and after, every row (15, the rivals beside them included) the same to
+  the dollar: home arbitrage 653, momentum 528, the colocated maker 8,044 (18,348 at no half-spread), lead-lag on a
+  Prairie rack on microwave 2,211, the triangle from home −29. **The stages**, `STAGE_PACE=1 STAGE_SEEDS=1
+STAGE_DAYS=1 npx vitest run test/stagepace.test.ts`: every line the same (the follower's stages 2 to 4 at 1.2,
+  1.5 and 1.6 minutes, the sitter's stage 2 at 1.2).
+
+## The fix (6c), 2026-11-09
+
+Thamesford's two fixes, a call auction at 05:30 and 10:00 with a 30 s call (`plans/desk-metals.md`, 6c), and before
+them the amendment to 6b: Hudson lists the futures only, the spot trading on Sundar and Thamesford. "Step 0" is a
+copy of the tree before 6c with only the spots' `venues` changed; "6c" is the working tree. Node 24.
+
+- **The step rate**, `npm run floors` alone (nothing else of mine running), three runs each, the two trees taken in
+  turn. Step 0 (six runs): every desk shut 85,600 to 87,100 ticks a second, every
+  desk open 40,385, 40,383, 40,044, 40,640, 40,160 and 39,977. 6c: 86,000 to 87,100, and 40,013, 40,032, 40,064. So Hudson's two spot books gone lift
+  every desk open from 39,500 to 39,700 (6b) to about 40,000 to 40,600, and the fix costs nothing seen: the floors'
+  two minutes from the open reach no call. A first cut of 6c's quote log (reading every book's last entry each tick)
+  read 83,600 to 84,100 and 39,300 to 39,500; it now takes the old path on a venue without fixes.
+- **The fix, measured** (seeds 1 to 3, the whole content, metals open, blocks off, the 10:00 call stepped tick by
+  tick, a probe not kept): gold fixed at 24,015, 23,866 and 24,242 points (the Thamesford mid 30 s before the call
+  24,030, 23,862.5, 24,241.5), volumes 2,000, 1,000 and 900; silver 2,983, 2,963 and 3,060 (mid 2,987, 2,962.5,
+  3,060.5), volumes 800, 800 and 1,300. The books held 36 to 48 orders as the call began, 40 to 47 at its end, 31 to
+  38 after the fix; the fix's tick took 0.1 to 0.4 ms. Stepped a minute at a time (a skip over closed hours), the
+  call is stepped over and the fix comes with the crowd's book uncrossed: "no fix".
+- **Fingerprints** (`test/instruments.test.ts`), the amendment: with the metals desk there and closed, `ab8d1400` →
+  `702a3c4f` (busy), `d7fa5a46` → `9326e341` and `cecb8650` → `4f30cd6d` (two desks); metals open `beafb15` →
+  `adab4574`, `5c3e6bd3` → `1f0cdc79`; every fill, order and figure the same, and the held ones (`d8661a66`,
+  `a45526ec`, `5a409e9e`, `473e9068`) unmoved. 6c moved none of them, the metals-open ones included (ten minutes
+  from the open reach no fix).
+- **PACE**, `PACE=1 PACE_SEEDS=1 PACE_ONLY="home arb,home momentum,colo mm,prairie leadLag mw,fx home triangle book"
+npx vitest run test/pace.test.ts`, before (a copy of the tree before the amendment) and after 6c: all 15 rows the
+  same to the dollar (home arbitrage 653, momentum 528, the colocated maker 8,044 and 18,348 at no half-spread,
+  lead-lag on a Prairie rack 2,211, the triangle from home −29). **The stages**, `STAGE_PACE=1 STAGE_SEEDS=1
+STAGE_DAYS=1 npx vitest run test/stagepace.test.ts`: every line the same (the follower's stages 2 to 4 at 1.2, 1.5
+  and 1.6 minutes, the sitter's stage 2 at 1.2).
+
+## The metals blocks and the rival (6d), 2026-11-09
+
+`curve`, `fixArb`, `crossPairs`, Aldgate Metals on the Thamesford rack and the mark that reads the open spot venue
+(`plans/desk-metals.md`, 6d). "Before" is a copy of the tree before 6d. Node 24.
+
+- **The step rate**, `npm run floors` alone, three runs each: before 89,955, 90,266, 91,449 ticks a second shut and
+  42,027, 41,993, 41,702 every desk open; after 84,685, 85,907, 84,346 and 38,489, 38,589, 38,519. The two trees run in
+  turn, three rounds (`npm run floors` in each, nothing else running): before 85,944, 84,283, 85,648 and 39,821,
+  39,733, 39,795; after 84,444, 86,417, 86,631 and 38,701, 38,787, 38,581; after without the rival 85,799, 85,491,
+  85,694 and 40,176, 39,970, 40,306. So shut is unmoved, and the rival costs about 2.8% with every desk open.
+- **The rival's profile** (seed 12, every desk open, two minutes from the open, the rival's calls timed, a probe not
+  kept): before the early return, 91 ms of 1,606 in the rival's step, of it 54 ms in `fixArb`'s decide and 26 ms
+  building its view; that first cut read 37,764 to 38,159 every desk open, interleaved (−5.4%).
+- **The fix against the future** (seeds 1 to 5, Monday's 10:00 call, every 5 s): the indicative was within 0 to 3
+  points of the spot the front gold future implies (about 1 bp), and the fix within 1 point of the last indicative.
+  Aldgate at 1 bp, seeds 1 to 6, Monday 10:00, Tuesday 05:30 and 10:00: 7 to 42 orders rested, cumulatively, and one
+  fill (seed 3, silver, Tuesday's 10:00 fix: sold 4 at 2,950, hedged long in the front future, both out at 2,949).
+- **Held to the bit**: the held fingerprints and the whole-content closed ones; PACE, `PACE=1 PACE_SEEDS=1
+PACE_ONLY="home arb,home momentum,colo mm,prairie leadLag mw,fx home triangle book" npx vitest run test/pace.test.ts`
+  (15 rows, home arbitrage 653, momentum 528, the colocated maker 8,044, lead-lag 2,211, the triangle −29) and
+  `PACE_ONLY="colo pairs"` (−56); `STAGE_PACE=1 STAGE_SEEDS=1 STAGE_DAYS=1 npx vitest run test/stagepace.test.ts`
+  (stages 2 to 4 at 1.2, 1.5 and 1.6 minutes). The pairs game in `test/metalblocks.test.ts`, `caf87952`, before and
+  after. Metals open moved with the blocks and the rival: `adab4574` → `b0c0774`, `1f0cdc79` → `b4c4cf9f`.
+
+## The metals desk's lessons, experiments and tuning (6f), 2026-11-09
+
+`plans/desk-metals.md` 6f. "Before" is a copy of the tree before 6f. Node 24. Every figure here is one machine's.
+
+- **The tuning harness**, `METAL_PACE=1 METAL_SEEDS=1,2,3 npx vitest run test/metalpace.test.ts` (JSON to
+  `METAL_OUT`, about ten minutes), with the clients' flow at the fix (`FIX_FLOW` in `src/content/metals.ts`: 70% of
+  calls, 10 to 200 lots, the share of the range a uniform draw squared, in the last 150 ms, six grid steps through the
+  belief), the crowd in lots of one, and `fixArb` at 4 bp:
+
+  | Check, over seeds 1, 2, 3                                            | Seed 1                  | Seed 2                 | Seed 3                 | Met             |
+  | -------------------------------------------------------------------- | ----------------------- | ---------------------- | ---------------------- | --------------- |
+  | The curve flips to backwardation in a game week (gold; silver)       | 4; 6 flips              | 1 (12 min); 0          | 2; 0                   | yes, every seed |
+  | Storage, the week's 60 lots of gold held into delivery; rolled       | −$60.19; $0             | −$60.12; $0            | −$61.59; $0            | yes             |
+  | `fixArb`, nine fixes (Mon 10:00 to Fri 10:00): home; Thamesford rack | $0 (0 fills); $150 (24) | $0 (0); $60 (16)       | $0 (0); $140 (20)      | yes             |
+  | … the Hudson rack; Aldgate, 4 lots, beside the Thamesford row        | $75; $284               | $10; $120              | $100; $234             | (not a check)   |
+  | 25 lots of gold, the fix against the slices, over the mid where told | 35¢ vs 9¢               | 5¢ vs 5¢               | 35¢ vs 9¢              | **no**          |
+  | … in average price                                                   | $2,404.20 vs $2,404.28  | $2,391.70 vs $2,389.56 | $2,415.70 vs $2,415.67 | **no** (1 of 3) |
+
+  The curve flips readily: gold was in backwardation for 1,667 and 3,566 minutes of the week on seeds 1 and 3 (the
+  lease past 9% at its height, a carry of −9.2%), 12 minutes on seed 2. The fix's distance from fair (bps, the flow
+  in lots): gold's moves 0 to 3 bp whatever the flow (a point is 0.4 bp and the crowd's depth runs six points), silver's
+  10 to 20 bp under a flow of 100 lots or more (a cent is 3.3 bp). From home on a laptop (72 ms each way) `fixArb` never
+  rests in time for the flow; from Hudson (29 ms) it sometimes does. At 1 bp, home earned $15, −$10 and $0 over five
+  fixes, resting on noise a tick wide and paid when the flow came its way, and the Thamesford rack $2, $0 and $0, held
+  back by a sell it had rested when the fix was rich (fixed: a resting order is pulled once the indicative has left its
+  side). At 4 bp home never rests.
+
+- **Why the fix does not beat the minute for a large order.** The slices pay about half a tick over the mid (5 to 9¢
+  an ounce): gold's book is a point wide and refills within milliseconds, and the crowd's belief does not move for a
+  buyer, so a minute of two-lot IOCs leaves no mark. The fix pays its one price, which the buyer's own 25 lots and any
+  clients' buying push up the ask side of the call's book, about 3.5 points on seeds 1 and 3. A deeper call book would
+  only bring the fix to the ask (the uncrossing lands on the grid, and a buy imbalance lands it on the ask side); only
+  impact that lasts in continuous trading, or a book that thins before the fix, would make the minute dearer. Not
+  added: for Chris.
+- **The fix experiment's seed**, 2013: of seeds 1 to 3,000, read from the metals news drawn on `world:metals` as the
+  desk opens (one minute stepped, as `startOf`'s skip does), those with a headline on gold from two minutes before the
+  10:00 fix to thirty seconds after it: 383, 462, 1090, 2013, 2065, 2339, 2356, 2781, 2931 (gold), others on silver.
+  2013's lands at 09:59:30.6, the call's first second (central banks, +109 points over two minutes); 2931's at 09:59:43
+  (a deposit, −190). 2013 was taken so the fix's money and its price against the mid part ways. `npx vitest run
+test/experiments.test.ts`: the slices $2,403.83 an ounce, 6¢ over the mid, $2,030; into the fix $2,406.50, 10¢ under
+  the mid, $1,375 (worse: gold rose into 10:00); all at once $2,405.44, $1,614 (worse); slices from the rack $2,030
+  (same). Its start takes about 1.5 s (minute steps to 09:56, ticks from there), each run 2.5 s.
+- **The delivery experiment**, seed 1, Friday 13:27:30 for four minutes from a Hudson rack, 60 lots of `GC0`: held
+  through, $1,447,588 of gold delivered, cash −$1,247,253, $20 of storage a night and $59 that Friday, the window's
+  P&L $307; rolled −$30 (worse, two spreads on 120 lots), closed $131 (worse), from home $302 (same). Its start takes
+  about 2.3 s (four days a minute at a time), each run 3.2 s. At 20 lots every change came out "about the same".
+- **PACE**, `PACE=1 PACE_SEEDS=1,2,3 PACE_ONLY=metals npx vitest run test/pace.test.ts` (the hour from the stocks'
+  open, which holds the 10:00 fix; scaled to a day as every row is, so the fix rows count 6.5 fixes a day): $/day,
+  seeds 1, 2, 3: curve home 0 (no fills), Thamesford −332, −33, 0, Hudson −501, −98, 0; fixArb home 0 (no fills),
+  Thamesford 195, 0, 0, Hudson 194, 0, 0, Aldgate beside them 324 to 389 on seed 1 and 0 on 2 and 3; crossPairs (the
+  miner and gold) home −855, −118, −167, Thamesford −722, −172, −200, Hudson −1,021, −210, −65. The hour holds one fix,
+  so the fix rows are read from the tuning harness's nine; `curve` and `crossPairs` lose from every seat in the hour
+  (not tuned in 6f).
+- **Momentum over nine seeds** (`PACE=1 PACE_SEEDS=1,2,3,4,5,6,7,8,9 PACE_ONLY="home momentum,city momentum"`),
+  before the miner (commit `d653b38`) and now, $/day: home 93, 496, 429, 276, 9,491, −186, 232, 1,748, 5,949 (mean
+  2,059, median 276) → 528, −464, 190, −78, 11,609, 167, 263, 2,584, 2,711 (mean 1,946, median 263); city 159, 1,955,
+  −316, 285, 15,070, −357, 171, 1,910, 8,300 (mean 3,020, median 285) → 1,644, −916, −542, −215, 18,022, −404, 340,
+  2,616, 4,051 (mean 2,733, median 340). The drop on seeds 1 to 3 (339 → 85, 599 → 62) does not hold over nine: one
+  seed's day in nine carries the mean either way.
+- **The step rate**, `npm run floors` alone, three runs each, turn about with the copy before 6f: after 83,940,
+  84,750, 84,486 shut and 38,837, 38,823, 39,014 every desk open; before 84,361, 83,306, 84,977 and 38,290, 38,022,
+  38,563. Under the 40,000 tripwire either way (allowed until Chris re-sets it after 6f); inside `npm run check` it
+  read 80,764 and 37,042.
+- **The tripwire re-set**, 2026-11-09: Chris set the every-desk-open floor to 35,000 from these figures. A game
+  day at top speed with every desk open is about 580 s (450 s at 50,000, scaled to 38,900).

@@ -16,11 +16,11 @@ http://localhost:5181.
   block), guess whether it will do better, the same or worse, and run the
   same morning again. The two runs sit side by side, the answer is measured
   from them, and the moments that decided it replay a hundred times slower
-  on a map of every message on the wire. Five so far: the headline, a few
-  miles, the free option, the lead and last look. The open week below is
+  on a map of every message on the wire. Seven so far: the headline, a few
+  miles, the free option, the lead, last look, the fix and delivery. The open week below is
   **Free play**.
-- **A market, not a price feed.** Twelve fictional stocks in four sectors
-  and an index over them trade on three fictional exchanges, each with its
+- **A market, not a price feed.** Fourteen fictional stocks in six sectors
+  and an index over twelve of them trade on three fictional exchanges, each with its
   own price-time order book fed by a crowd of background traders. Stocks
   move with the market, with their sector and on their own. Each exchange's
   crowd learns about a move at its own pace, so for a few hundred
@@ -53,7 +53,13 @@ http://localhost:5181.
   dealer charges none and may refuse your fill a few milliseconds after it
   sees it. The firm holds euros and yen and counts in dollars, and a
   position held through five in the evening earns or pays the rollover.
-- **Eight strategy blocks and a script.** Cross-exchange arbitrage, market
+- **A metals desk, last.** Gold and silver, spot and weekly futures, traded
+  somewhere at almost any hour. The curve's slope is the cost of carrying
+  metal, and a supply headline can flip it. A contract held to expiry is
+  delivered, and metal costs storage every night. Twice a morning the
+  London-like market runs the fix, a call auction at one price. A gold miner
+  on the stocks desk moves with the metal.
+- **Strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day
   it suits. Or write your own in JavaScript, with a loop budget, no chance,

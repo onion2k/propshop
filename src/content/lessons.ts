@@ -308,6 +308,124 @@ LESSONS.push(
   },
 );
 
+type Row = Snapshot['stocks'][number];
+
+/** The watched futures on a watched metal: the rows a curve can be read from. */
+function watchedCurves(s: Snapshot): Row[] {
+  const metals = new Set(s.stocks.filter((st) => st.metal && st.watched).map((st) => st.symbol));
+  return s.stocks.filter((st) => st.watched && st.contract && metals.has(st.contract.underlying));
+}
+
+/** How long after a fix a fill told of it can still be the fix's: the slowest seat's latency, and a margin. */
+const FIX_TOLD_WITHIN = 2000;
+
+/** The metals desk's lessons: they open with the desk at stage 5 and open no stage (DESK_LESSONS in stages.ts). */
+LESSONS.push(
+  {
+    id: 'curve',
+    title: 'Read the curve',
+    task:
+      'The metals desk is open. Put XAU, gold, and its near GC future on your watchlist; a laptop watches four ' +
+      'symbols. Open gold on the Market page and find its curve.',
+    watch:
+      'Spot and the three weekly futures set against their dates, each a little dearer than the one before, and the ' +
+      'carry under them: the dollar’s rate and storage, less the lease.',
+    terms: ['futures-curve', 'spot', 'contango', 'storage', 'lease-rate'],
+    done: (s) => watchedCurves(s).length > 0,
+    lesson:
+      'A contract for gold next Friday is gold now carried to next Friday: the interest on what it cost and a week ' +
+      'of storage, less what lending it out would earn. That is why the curve rises, and by how much. It is not a ' +
+      'forecast that gold will be dearer; it is the price of waiting. When the curve and the carry disagree, one of ' +
+      'the points is mispriced, and a calendar spread trades the gap.',
+  },
+  {
+    id: 'flip',
+    title: 'Watch it flip',
+    task:
+      'Keep gold or silver and one of its futures on your watchlist, with the curve open, and play on until a supply ' +
+      'headline lands: a strike, or a fire at a refinery. The News tab marks the metals desk’s.',
+    watch:
+      'The lease jumping with the headline, the carry turning below nothing, and the later futures falling under ' +
+      'spot: the curve named backwardation.',
+    terms: ['backwardation', 'lease-rate', 'contango', 'futures-curve'],
+    done: (s) => s.deskNews.some((h) => h.desk === 'metals') && watchedCurves(s).some((st) => st.contract!.carry < 0),
+    lesson:
+      'Metal short now is worth more now than later. Whoever holds it can lend it at a lease above the interest and ' +
+      'storage it costs to keep, so the futures fall below spot and the curve slopes down. A headline did that in ' +
+      'a minute; the lease decays over a day or two and the curve comes back. A spread that bet on contango is ' +
+      'on the wrong side while it lasts, which is why the curve block has a stop.',
+  },
+  {
+    id: 'delivery',
+    title: 'Take delivery',
+    task:
+      'Buy one GC contract, the week’s, from the Desk page, and hold it through Friday’s expiry at 13:30, then on to ' +
+      'the evening.',
+    watch:
+      'The future gone from your positions and gold in its place, paid for in cash at the final price; and at 17:00 ' +
+      'the storage in the day’s report, three nights of it on a Friday.',
+    terms: ['delivery', 'storage', 'spot', 'future', 'margin'],
+    done: (s) => s.positions.some((p) => (p.delivered ?? 0) !== 0) && s.days.some((d) => d.storage !== undefined),
+    lesson:
+      'The future cost you a margin. The metal cost its whole price, out of your cash, and it goes on costing: ' +
+      'storage every night until it is sold, and on a Friday afternoon there is nowhere to sell it, since both spot ' +
+      'venues are shut until Port Sundar opens on Sunday evening. A trader who wants the exposure and not the bars ' +
+      'rolls to the next contract the day before. Holding a future into expiry is a decision to own the metal.',
+  },
+  {
+    id: 'fix',
+    title: 'Trade the fix',
+    task:
+      'Put XAU on your watchlist. At 09:59:30 Thamesford stops trading for the 10:00 fix; while the call runs, rest ' +
+      'a limit buy or sell on THAMESFORD from the Desk page, priced through the indicative, and run the clock past 10:00.',
+    watch:
+      'The fix line counting down with the indicative price and volume; a market order refused in the call; and ' +
+      'your fill at the fix’s one price, the same as everyone else’s.',
+    terms: ['fix', 'call-auction', 'uncrossing-price', 'fix-flow'],
+    done: (s) => {
+      const fixes = s.exchanges.flatMap((e) => (e.fixes ?? []).map((f) => ({ ...f, venue: e.id })));
+      return s.fills.some((f) =>
+        fixes.some(
+          (x) =>
+            x.venue === f.exchange &&
+            x.symbol === f.symbol &&
+            x.price === f.price &&
+            f.at >= x.at &&
+            f.at - x.at <= FIX_TOLD_WITHIN,
+        ),
+      );
+    },
+    lesson:
+      'Everyone who crossed at the fix paid the same price, however far through it they bid, and nobody paid a ' +
+      'spread. That is what a large order wants: all of it at once, at one price, with the whole market there. The ' +
+      'price is set by what was in the call, though, and clients send their orders for the fix late and often on ' +
+      'one side, so the fix can land a little off what the metal is worth. A firm beside Thamesford sees that ' +
+      'imbalance in time to rest against it; one across the ocean does not.',
+  },
+  {
+    id: 'miner',
+    title: 'The miner and the metal',
+    task:
+      'Put RDG, Ridgeline Mining, and XAU on your watchlist and turn on pairs across desks, set to the miner ' +
+      'against gold. Run it through a morning when Thamesford is open.',
+    watch:
+      'Both legs filling together when the ratio leaves its band, a stock on one desk against a metal on another, ' +
+      'and whether the ratio comes back.',
+    terms: ['miner', 'pairs', 'spot'],
+    done: (s) => {
+      const legs = new Set(s.fills.filter((f) => f.block === 'crossPairs').map((f) => f.symbol));
+      const metal = s.stocks.some((st) => st.metal && legs.has(st.symbol));
+      const stock = s.stocks.some((st) => !st.metal && !st.contract && !st.pair && legs.has(st.symbol));
+      return metal && stock;
+    },
+    lesson:
+      'A miner is a bet on the metal with a company wrapped round it: its costs, its own news, and the stock ' +
+      'market’s mood. Most days the two move together and the ratio between them wanders in a band; pairs sells ' +
+      'whichever is dear and buys the other, and waits. It is a bet that the link holds. A strike at the mine moves ' +
+      'one leg and not the other, and then the band is no comfort.',
+  },
+);
+
 export function lesson(id: string): Lesson | undefined {
   return LESSONS.find((l) => l.id === id);
 }

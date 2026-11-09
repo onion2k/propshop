@@ -46,6 +46,7 @@ export function DaysPanel({ s }: { s: Snapshot }) {
 
 function Report({ d }: { d: DayReport }) {
   const races = d.races.won + d.races.beaten + d.races.missed;
+  const desks = deskRows(d);
   return (
     <div className="report">
       <div className="report-grid">
@@ -53,10 +54,10 @@ function Report({ d }: { d: DayReport }) {
           <h3>By block</h3>
           <TallyTable rows={Object.entries(d.byBlock).map(([k, t]) => [blockName(k), t])} />
         </div>
-        {d.byDesk && (
+        {desks.length > 0 && (
           <div>
             <h3>By desk</h3>
-            <TallyTable rows={Object.entries(d.byDesk).map(([k, t]) => [DESK_NAMES[k] ?? k, t])} />
+            <TallyTable rows={desks} night className="by-desk" />
           </div>
         )}
         <div>
@@ -69,6 +70,17 @@ function Report({ d }: { d: DayReport }) {
           <Term id="rollover">Rollover</Term> at 17:00, after the close:{' '}
           <span className={`num ${d.rollover >= 0 ? 'up' : 'down'}`}>{money(d.rollover, true)}</span>
           <span className="muted"> in dollars, on the currencies held then, into equity before the next open</span>
+        </p>
+      )}
+      {d.storage !== undefined && (
+        <p className="storage">
+          <Term id="storage">Storage</Term> and the <Term id="lease-rate">lease</Term> at 17:00, after the close:{' '}
+          <span className={`num ${d.storage >= 0 ? 'up' : 'down'}`}>{money(d.storage, true)}</span>
+          <span className="muted">
+            {' '}
+            on the metal held then, storage on metal held long and the lease on metal held short, into equity before the
+            next open
+          </span>
         </p>
       )}
       <h3>
@@ -148,29 +160,49 @@ function Report({ d }: { d: DayReport }) {
   );
 }
 
-function TallyTable({ rows }: { rows: [string, Tally][] }) {
+/**
+ * The day by desk: each desk's fills, and what the night charged it at 17:00 (the currencies' rollover, the metals'
+ * storage and lease), so a desk that only held overnight still has its row.
+ */
+function deskRows(d: DayReport): Row[] {
+  const night: Record<string, number> = {};
+  if (d.rollover !== undefined) night.fx = d.rollover;
+  if (d.storage !== undefined) night.metals = d.storage;
+  const ids = [...Object.keys(d.byDesk ?? {}), ...Object.keys(night).filter((k) => !d.byDesk?.[k])];
+  return ids.map((k) => [DESK_NAMES[k] ?? k, d.byDesk?.[k] ?? { fills: 0, realised: 0, fees: 0 }, night[k]]);
+}
+
+type Row = [string, Tally, number?];
+
+/** `night` adds a column for what 17:00 charged or paid, counted in Net. */
+function TallyTable({ rows, night = false, className }: { rows: Row[]; night?: boolean; className?: string }) {
   if (rows.length === 0) return <p className="muted small">Nothing.</p>;
   return (
-    <table>
+    <table className={className}>
       <thead>
         <tr>
           <th></th>
           <th className="num">Fills</th>
           <th className="num">Realised</th>
           <th className="num">Fees</th>
+          {night && <th className="num">17:00</th>}
           <th className="num">Net</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map(([name, t]) => (
-          <tr key={name}>
-            <td>{name}</td>
-            <td className="num">{t.fills}</td>
-            <td className="num">{money(Math.round(t.realised), true)}</td>
-            <td className="num muted">{money(-t.fees)}</td>
-            <td className={`num ${net(t) >= 0 ? 'up' : 'down'}`}>{money(Math.round(net(t)), true)}</td>
-          </tr>
-        ))}
+        {rows.map(([name, t, overnight]) => {
+          const total = net(t) + (overnight ?? 0);
+          return (
+            <tr key={name}>
+              <td>{name}</td>
+              <td className="num">{t.fills}</td>
+              <td className="num">{money(Math.round(t.realised), true)}</td>
+              <td className="num muted">{money(-t.fees)}</td>
+              {night && <td className="num muted">{overnight === undefined ? '—' : money(overnight, true)}</td>}
+              <td className={`num ${total >= 0 ? 'up' : 'down'}`}>{money(Math.round(total), true)}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

@@ -21,6 +21,9 @@ const TERM_FOR: Record<string, string> = {
   leadLag: 'lead-lag',
   basisArb: 'basis',
   roll: 'roll',
+  curve: 'futures-curve',
+  fixArb: 'fix',
+  crossPairs: 'miner',
 };
 
 /** `stage` is the stage in force; a block that is on is shown whatever the stage, so nothing running is hidden. */

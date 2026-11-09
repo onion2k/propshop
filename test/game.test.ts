@@ -442,36 +442,6 @@ describe('Game', () => {
     const saved = { ...g.save(), version: 4 } as unknown as SavedGame;
     expect(() => Game.load(CONTENT, saved)).toThrow(/version/);
   });
-
-  it('steps fast enough for the top speed', () => {
-    const g = new Game(CONTENT, 12);
-    g.skipToOpen();
-    run(g, 10 * MS_PER_SECOND);
-    const start = performance.now();
-    run(g, 2 * MS_PER_MINUTE);
-    const wall = performance.now() - start;
-    const ticksPerSecond = ((2 * MS_PER_MINUTE) / TICK_MS / wall) * 1000;
-    process.stderr.write(`${Math.round(ticksPerSecond)} ticks/s\n`);
-    // The top speed is 300x: 150,000 ticks a wall second. Hold it to half that here, where the machine may be busy.
-    expect(ticksPerSecond).toBeGreaterThan(75_000);
-  });
-
-  it('steps fast enough with every built desk open', () => {
-    const g = new Game(CONTENT, 12);
-    const desks = g.market.desks;
-    expect(desks.length).toBeGreaterThanOrEqual(2);
-    for (const d of desks) g.openDesk(d);
-    g.skipToOpen();
-    run(g, 10 * MS_PER_SECOND);
-    const start = performance.now();
-    run(g, 2 * MS_PER_MINUTE);
-    const wall = performance.now() - start;
-    const ticksPerSecond = ((2 * MS_PER_MINUTE) / TICK_MS / wall) * 1000;
-    process.stderr.write(`${desks.join('+')} open: ${Math.round(ticksPerSecond)} ticks/s\n`);
-    // A tripwire, not the top speed: every desk open read about 50,000 alone on 2026-11-09 (docs/measured.md),
-    // a game day at top speed about 450 s. A new desk that pulls this under is part of that desk's work.
-    expect(ticksPerSecond).toBeGreaterThan(40_000);
-  });
 });
 
 describe('Game gap log', () => {

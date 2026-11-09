@@ -1,20 +1,40 @@
 import { CONTENT } from '../src/content';
 import { Game, MS_PER_MINUTE, TICK_MS, isMarketOpen, type SavedGame } from '../src/sim';
 import { Market } from '../src/sim/market';
+import { News } from '../src/sim/news';
 import { deriveStreams } from '../src/sim/random';
-import { MARKET_OPEN } from '../src/sim/clock';
+import { MARKET_OPEN, MS_PER_DAY } from '../src/sim/clock';
 import { infrastructureFrom } from '../src/sim/upgrades';
 
 const bySector = (sector: string) => CONTENT.stocks.filter((s) => s.sector === sector).map((s) => s.symbol);
 
 describe('the universe', () => {
-  it('has twelve stocks in four sectors and an index over all of them', () => {
+  it('has thirteen stocks in five sectors and an index over the twelve before the miner', () => {
     const stocks = CONTENT.stocks.filter((s) => !s.constituents);
-    expect(stocks).toHaveLength(12);
-    expect(new Set(stocks.map((s) => s.sector)).size).toBe(4);
+    expect(stocks).toHaveLength(13);
+    expect(new Set(stocks.map((s) => s.sector)).size).toBe(5);
     const index = CONTENT.stocks.find((s) => s.constituents)!;
     expect(index.constituents).toHaveLength(12);
-    expect(index.constituents).toEqual(stocks.map((s) => s.symbol));
+    expect(index.constituents).toEqual(stocks.filter((s) => s.symbol !== 'RDG').map((s) => s.symbol));
+  });
+
+  // The gold miner (plans/desk-metals.md, 6a): a stock like any other, in a sector of its own, out of the index.
+  it('lists the miner on the three stock exchanges, gives it a Mining factor and company news', () => {
+    const rdg = CONTENT.stocks.find((s) => s.symbol === 'RDG')!;
+    expect(rdg).toMatchObject({ name: 'Ridgeline Mining', sector: 'mining', startPrice: 4500 });
+    expect(bySector('mining')).toEqual(['RDG']);
+    const m = new Market(CONTENT.stocks, CONTENT.exchanges, CONTENT.factors);
+    expect(m.exchanges.filter((e) => e.lists('RDG')).map((e) => e.id)).toEqual(['HARBOR', 'LAKESIDE', 'PACIFIC']);
+    expect(m.factors.sectors.has('mining')).toBe(true);
+    // Four weeks of schedules: company news picks the miner as it picks any stock.
+    const news = new News(CONTENT.news, CONTENT.stocks);
+    const world = deriveStreams(5, []).world;
+    const company: string[] = [];
+    for (let day = 1; day <= 28; day++) {
+      news.step(day * MS_PER_DAY, m, world);
+      for (const h of news.tickPublished) if (h.symbols.length === 1) company.push(h.symbols[0]!);
+    }
+    expect(company).toContain('RDG');
   });
 
   it('prices the index at the average of its constituents, every tick', () => {

@@ -272,11 +272,11 @@ export function ExperimentPage({
         let side = e[which];
         if (!side) {
           // Building the start is the one lump of work; the frame it lands in is not drawn on time.
-          e.start ??= startOf(CONTENT, x.seed, x.startAt, x.desks);
+          e.start ??= startOf(CONTENT, x.seed, x.startAt, x.desks, x.warmMs);
           const tracker = x.tracker();
           const setup = which === 'a' ? x.baseline : e.setupB!.change.apply(structuredClone(x.baseline));
           side = {
-            run: new Run(CONTENT, e.start, setup, x.windowMs, tracker.source),
+            run: new Run(CONTENT, e.start, setup, x.windowMs, tracker.source, { ledger: x.ledger }),
             tracker,
             moments: [],
             prep: null,

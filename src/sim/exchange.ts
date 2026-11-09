@@ -15,11 +15,12 @@ import {
 
 /** What an order met: matched, rested or refused; `lastLook` where the dealer refused it after its look. */
 export type SubmitResult = ReturnType<OrderBook['add']> & { lastLook?: boolean };
-import { activity as stockActivity, isMarketOpen, nextOpen as stockNextOpen } from './clock';
+import { MS_PER_DAY, activity as stockActivity, isMarketOpen, isWeekday, nextOpen as stockNextOpen } from './clock';
 import { deskOf, tickOf } from './instrument';
 import { activityIn, isOpenIn, nextOpenIn, type SessionSpec } from './session';
 import type { Random } from './random';
-import { DEFAULT_RULES, type ExchangeRules, type ExchangeSpec } from './types';
+import type { Indicative } from './strategy/types';
+import { DEFAULT_RULES, type ExchangeRules, type ExchangeSpec, type FixFlow } from './types';
 
 /** The owner tag for the background crowd, who are nobody in particular. */
 export const BACKGROUND = 'bg';
@@ -27,6 +28,18 @@ export const BACKGROUND = 'bg';
 export const REFUSED_CLOSED = 'market closed';
 /** Why a venue refused an order or a cancel: it does not list the symbol, or no longer (an expired contract). */
 export const REFUSED_UNLISTED = 'not listed here';
+/** Why a venue in a fix's call refused an immediate-or-cancel order: nothing matches until the uncrossing. */
+export const REFUSED_IN_FIX = 'in the fix: send a resting order';
+/** How many fixes a venue keeps: two weeks of Thamesford's, two a weekday for each of its two metals. */
+export const MAX_FIXES = 40;
+
+/** A fix as the venue logs it: its time, the symbol, the one price and the volume, or no price where nothing crossed. */
+export interface Fix {
+  at: number;
+  symbol: string;
+  price: number | null;
+  volume: number;
+}
 /** Why a dealer refused a fill it had looked at: its price moved against it in the hold. */
 export function refusedByDealer(holdMs: number): string {
   return `refused by the dealer after ${holdMs} ms`;
@@ -68,6 +81,8 @@ export interface LoggedQuote extends Quote {
   at: number;
   /** The top DEPTH_LEVELS a side at that moment; absent in a save from before depth was kept. */
   depth?: { bids: DepthLevel[]; asks: DepthLevel[] };
+  /** In a fix's call, where the book would uncross; absent outside one. */
+  indicative?: Indicative;
 }
 
 export interface StockState {
@@ -81,12 +96,27 @@ export interface StockState {
   quoteLog: LoggedQuote[];
   /** The instrument's own price grid; absent, the exchange's rule. Not saved: it comes from the content. */
   tickSize?: number;
+  /** The units in one of the crowd's orders; absent, a hundred. Not saved: it comes from the content. */
+  crowdLot?: number;
+  /** In a call with clients' flow: what is coming for this fix, drawn as the call starts; gone at the fix. */
+  flow?: FlowState;
+}
+
+/** The clients' order aimed at one fix: its side and size (none where nobody came), when it arrives, whether it has. */
+export interface FlowState {
+  fixAt: number;
+  side: Side;
+  size: number;
+  at: number;
+  sent: boolean;
 }
 
 export interface SavedExchange {
-  stocks: Record<string, { book: SavedBook; belief: number; tape: Trade[]; quoteLog: LoggedQuote[] }>;
+  stocks: Record<string, { book: SavedBook; belief: number; tape: Trade[]; quoteLog: LoggedQuote[]; flow?: FlowState }>;
   lastSweep: number;
   rules?: ExchangeRules;
+  /** Its fixes, oldest first; absent where it has had none. */
+  fixes?: Fix[];
 }
 
 export class Exchange {
@@ -114,6 +144,11 @@ export class Exchange {
   readonly session: SessionSpec | null;
   /** Whether it was open at the last step, so it closes its books on the tick its own session ends. Not saved. */
   wasOpen = false;
+  /** Its fixes, oldest first, at most MAX_FIXES. */
+  fixes: Fix[] = [];
+  /** The last moment asked of `callAt`, and its answer: the clock's, so not saved. */
+  private callAsked = Number.NaN;
+  private callAnswer: number | null = null;
   constructor(
     spec: ExchangeSpec,
     symbols: {
@@ -121,6 +156,7 @@ export class Exchange {
       startPrice: number;
       constituents?: string[];
       tickSize?: number;
+      crowdLot?: number;
       cross?: readonly [string, string];
     }[],
   ) {
@@ -133,6 +169,7 @@ export class Exchange {
         // A cross is derived as an index is, and its crowd as slow to catch up.
         index: (s.constituents?.length ?? 0) > 0 || s.cross !== undefined,
         ...(s.tickSize === undefined ? {} : { tickSize: s.tickSize }),
+        ...(s.crowdLot === undefined ? {} : { crowdLot: s.crowdLot }),
         belief: s.startPrice,
         tape: [],
         quoteLog: [],
@@ -150,12 +187,13 @@ export class Exchange {
   }
 
   /** List an instrument from now: a new book, the crowd's belief at its fair value. */
-  list(spec: { symbol: string; tickSize?: number }, fair: number): void {
+  list(spec: { symbol: string; tickSize?: number; crowdLot?: number }, fair: number): void {
     if (this.stocks.has(spec.symbol)) return;
     this.stocks.set(spec.symbol, {
       book: new OrderBook(),
       index: false,
       ...(spec.tickSize === undefined ? {} : { tickSize: spec.tickSize }),
+      ...(spec.crowdLot === undefined ? {} : { crowdLot: spec.crowdLot }),
       belief: fair,
       tape: [],
       quoteLog: [],
@@ -190,6 +228,70 @@ export class Exchange {
     return this.session ? nextOpenIn(this.session, now) : stockNextOpen(now);
   }
 
+  /**
+   * The fix whose call is running now, as the moment it uncrosses, or null outside a call: from `at − callMs` up to
+   * (not at) `at`, Monday to Friday, while the venue is open now and at `at`. Worked out from the clock alone, so a
+   * save mid-call needs nothing of it.
+   */
+  callAt(now: number): number | null {
+    const auctions = this.spec.auctions;
+    if (!auctions) return null;
+    if (now === this.callAsked) return this.callAnswer;
+    const day = Math.floor(now / MS_PER_DAY);
+    const time = now - day * MS_PER_DAY;
+    let answer: number | null = null;
+    if (isWeekday(day)) {
+      for (const a of auctions) {
+        if (time < a.at - a.callMs || time >= a.at) continue;
+        const fixAt = day * MS_PER_DAY + a.at;
+        if (this.isOpen(now) && this.isOpen(fixAt)) answer = fixAt;
+        break;
+      }
+    }
+    this.callAsked = now;
+    this.callAnswer = answer;
+    return answer;
+  }
+
+  /**
+   * The fixes the tick ending at `now`, `dt` long, reached: each uncrosses every book at one price, its trades told to
+   * their owners as any fill is, the whole of it one print on the tape, and the fix logged (no price where nothing
+   * crossed). None on Saturday or Sunday, or where the venue is shut at the fix.
+   */
+  private fix(now: number, dt: number): void {
+    for (const a of this.spec.auctions ?? []) {
+      // Whether this tick passed `at` past some midnight: the fix is then that midnight plus `at`.
+      const fixDay = Math.floor((now - a.at) / MS_PER_DAY);
+      if (fixDay === Math.floor((now - dt - a.at) / MS_PER_DAY)) continue;
+      const fixAt = fixDay * MS_PER_DAY + a.at;
+      if (!isWeekday(fixDay) || !this.isOpen(fixAt)) continue;
+      for (const [symbol, s] of this.stocks) {
+        const u = s.book.uncross(s.belief, now, tickOf(s, this.rules.tickSize));
+        delete s.flow;
+        this.fixes.push({ at: fixAt, symbol, price: u?.price ?? null, volume: u?.volume ?? 0 });
+        if (this.fixes.length > MAX_FIXES) this.fixes.shift();
+        if (!u) continue;
+        for (const trade of u.trades) this.tickTrades.push({ symbol, trade });
+        // One print for the fix: its volume at its price. Its trades are told to their owners above; the tape is what
+        // a reader sees, and a fix is one event, not a sweep through the book. It names no owner, and no race.
+        s.tape.push({
+          price: u.price,
+          size: u.volume,
+          at: now,
+          buyId: -1,
+          sellId: -1,
+          buyer: '',
+          seller: '',
+          aggressor: u.trades[0]!.aggressor,
+          cleared: false,
+          fix: true,
+        });
+        if (s.tape.length > TAPE_LENGTH) s.tape.splice(0, s.tape.length - TAPE_LENGTH);
+        this.tapeVersion.set(symbol, (this.tapeVersion.get(symbol) ?? 0) + 1);
+      }
+    }
+  }
+
   private stock(symbol: string): StockState {
     const s = this.stocks.get(symbol);
     if (!s) throw new Error(`${this.spec.id} does not list ${symbol}`);
@@ -212,7 +314,7 @@ export class Exchange {
     symbol: string,
     at: number,
     limit: number,
-  ): { price: number; size: number; aggressor: Side; at: number; cleared: boolean }[] {
+  ): { price: number; size: number; aggressor: Side; at: number; cleared: boolean; fix?: true }[] {
     const tape = this.stock(symbol).tape;
     let end = tape.length;
     while (end > 0 && (tape[end - 1]?.at ?? 0) > at) end--;
@@ -222,8 +324,15 @@ export class Exchange {
     if (hit && hit.version === version && hit.end === end && hit.limit === limit) return hit.prints;
     // Prints, not trades: one aggressor order's fills in one tick are summed into one entry. Direct feeds stamp
     // a sweep's trades identically, and a fast firm reads them as the single order they are.
-    const prints: { price: number; size: number; aggressor: Side; at: number; notional: number; cleared: boolean }[] =
-      [];
+    const prints: {
+      price: number;
+      size: number;
+      aggressor: Side;
+      at: number;
+      notional: number;
+      cleared: boolean;
+      fix?: true;
+    }[] = [];
     let lastId = -1;
     let i = end - 1;
     // Newest first, stopping once `limit` prints are made, so a long tape is not walked for a short answer.
@@ -236,24 +345,30 @@ export class Exchange {
         first.notional += t.price * t.size;
       } else {
         if (prints.length === limit) break;
-        prints.push({
+        const print: (typeof prints)[number] = {
           price: t.price,
           size: t.size,
           aggressor: t.aggressor,
           at: t.at,
           notional: t.price * t.size,
           cleared: t.cleared ?? false,
-        });
+        };
+        if (t.fix) print.fix = true;
+        prints.push(print);
       }
       lastId = id;
     }
-    const result = prints.reverse().map((x) => ({
-      price: Math.round(x.notional / x.size),
-      size: x.size,
-      aggressor: x.aggressor,
-      at: x.at,
-      cleared: x.cleared,
-    }));
+    const result = prints.reverse().map((x) => {
+      const out: { price: number; size: number; aggressor: Side; at: number; cleared: boolean; fix?: true } = {
+        price: Math.round(x.notional / x.size),
+        size: x.size,
+        aggressor: x.aggressor,
+        at: x.at,
+        cleared: x.cleared,
+      };
+      if (x.fix) out.fix = true;
+      return out;
+    });
     this.printCache.set(symbol, { version, end, limit, prints: result });
     return result;
   }
@@ -266,7 +381,7 @@ export class Exchange {
       version: number;
       end: number;
       limit: number;
-      prints: { price: number; size: number; aggressor: Side; at: number; cleared: boolean }[];
+      prints: { price: number; size: number; aggressor: Side; at: number; cleared: boolean; fix?: true }[];
     }
   >();
 
@@ -277,7 +392,8 @@ export class Exchange {
   takersSince(symbol: string, since: number, side: 'buy' | 'sell', price: number, except: string) {
     const out: { owner: string; at: number; price: number; size: number }[] = [];
     for (const t of this.stock(symbol).tape) {
-      if (t.at < since || t.aggressor !== side) continue;
+      // A fix is no race: nobody took the liquidity first.
+      if (t.at < since || t.aggressor !== side || t.fix) continue;
       const better = side === 'buy' ? t.price <= price : t.price >= price;
       if (!better) continue;
       const owner = side === 'buy' ? t.buyer : t.seller;
@@ -304,35 +420,58 @@ export class Exchange {
    * book that something touched is looked at: the rest cannot have moved, and this runs for every book every tick.
    */
   logQuotes(now: number): void {
+    // A venue with fixes logs by its own path; every other venue exactly as before, at the same cost.
+    if (this.spec.auctions) return this.logCalled(now);
     for (const s of this.stocks.values()) {
       if (!s.book.takeChanged()) continue;
-      const q = s.book.quote();
-      const d = s.book.depth(DEPTH_LEVELS);
-      const big = s.book.largestAt(DEPTH_LEVELS);
-      const depth = {
-        bids: d.bids.map((l, i) => levelOf(l, big.bids[i])),
-        asks: d.asks.map((l, i) => levelOf(l, big.asks[i])),
-      };
-      const last = s.quoteLog[s.quoteLog.length - 1];
-      // A tick on which nothing changed needs no entry: the last one still answers for it.
-      if (
-        last &&
-        sameDepth(last.depth, depth) &&
-        last.bid === q.bid &&
-        last.ask === q.ask &&
-        last.bidSize === q.bidSize &&
-        last.askSize === q.askSize &&
-        last.bid2 === q.bid2 &&
-        last.ask2 === q.ask2 &&
-        last.bid2Size === q.bid2Size &&
-        last.ask2Size === q.ask2Size
-      ) {
-        continue;
-      }
-      s.quoteLog.push({ ...q, at: now, depth });
-      // One off the front at a time: the engine drops a single element from the front without moving the rest.
-      while (s.quoteLog.length > QUOTE_LOG_LENGTH) s.quoteLog.shift();
+      this.logQuote(s, now, undefined);
     }
+  }
+
+  /**
+   * The quote log of a venue with fixes. In a fix's call each book publishes its indicative every tick, in its quote
+   * log entry, so a firm sees it through its data latency as it sees the quote; after the call an entry without it.
+   */
+  private logCalled(now: number): void {
+    const fixAt = this.callAt(now);
+    for (const s of this.stocks.values()) {
+      const changed = s.book.takeChanged();
+      const indicative = fixAt === null ? undefined : indicativeOf(s, fixAt, this.rules.tickSize);
+      if (!changed && sameIndicative(s.quoteLog[s.quoteLog.length - 1]?.indicative, indicative)) continue;
+      this.logQuote(s, now, indicative);
+    }
+  }
+
+  private logQuote(s: StockState, now: number, indicative: Indicative | undefined): void {
+    const q = s.book.quote();
+    const d = s.book.depth(DEPTH_LEVELS);
+    const big = s.book.largestAt(DEPTH_LEVELS);
+    const depth = {
+      bids: d.bids.map((l, i) => levelOf(l, big.bids[i])),
+      asks: d.asks.map((l, i) => levelOf(l, big.asks[i])),
+    };
+    const last = s.quoteLog[s.quoteLog.length - 1];
+    // A tick on which nothing changed needs no entry: the last one still answers for it.
+    if (
+      last &&
+      sameIndicative(last.indicative, indicative) &&
+      sameDepth(last.depth, depth) &&
+      last.bid === q.bid &&
+      last.ask === q.ask &&
+      last.bidSize === q.bidSize &&
+      last.askSize === q.askSize &&
+      last.bid2 === q.bid2 &&
+      last.ask2 === q.ask2 &&
+      last.bid2Size === q.bid2Size &&
+      last.ask2Size === q.ask2Size
+    ) {
+      return;
+    }
+    const entry: LoggedQuote = { ...q, at: now, depth };
+    if (indicative) entry.indicative = indicative;
+    s.quoteLog.push(entry);
+    // One off the front at a time: the engine drops a single element from the front without moving the rest.
+    while (s.quoteLog.length > QUOTE_LOG_LENGTH) s.quoteLog.shift();
   }
 
   /**
@@ -347,6 +486,12 @@ export class Exchange {
       return this.refusal(req, now, unlisted ? REFUSED_UNLISTED : REFUSED_CLOSED);
     }
     const shaped = this.shape(this.stock(symbol), req);
+    // In a fix's call nothing matches: a resting order rests, a firm's IOC is refused, the crowd's taker rests at its
+    // limit. Ahead of a dealer's look and the lab's batch, which a venue with fixes does not run.
+    if (this.spec.auctions && this.callAt(now) !== null) {
+      if (shaped.ioc && req.owner !== BACKGROUND) return this.refusal(req, now, REFUSED_IN_FIX);
+      return this.stock(symbol).book.place(shaped, now);
+    }
     // A dealer looks at a firm's order that would take its price before it fills it; the crowd's it does not.
     const look = this.spec.lastLook;
     if (look && done && req.owner !== BACKGROUND && !shaped.postOnly) {
@@ -497,6 +642,8 @@ export class Exchange {
     if (this.rules.batchMs > 0 && Math.round(now / dt) % Math.max(1, Math.round(this.rules.batchMs / dt)) === 0) {
       this.runBatch(now, random);
     }
+    if (this.spec.auctions) this.fix(now, dt);
+    const inCall = this.spec.auctions ? this.callAt(now) !== null : false;
     // The crowd's own pace is REFERENCE_DT; each book takes its turn once in that many ticks, staggered, so a
     // tick costs a fifth of what every book acting every tick would, and nothing about the crowd changes. A
     // turn is a sweep as well: the sweep's own period is the same, and a sweep keyed to the exchange's clock
@@ -516,7 +663,7 @@ export class Exchange {
       const lag = this.spec.lag * (s.index ? INDEX_LAG : 1);
       const pull = Math.min(1, span / lag);
       s.belief += (target - s.belief) * pull + this.spec.noise * Math.sqrt(span / 1000) * random.normal();
-      if (activity > 0) this.crowd(symbol, s, now, span, activity, random, sweep);
+      if (activity > 0) this.crowd(symbol, s, now, span, activity, random, sweep, inCall);
     }
   }
 
@@ -528,9 +675,11 @@ export class Exchange {
     activity: number,
     random: Random,
     sweep: boolean,
+    inCall = false,
   ) {
     const scale = dt / REFERENCE_DT;
     const tick = tickOf(s, this.rules.tickSize);
+    if (inCall) this.clients(s, now, tick, random);
     const bidCenter = Math.floor(s.belief / tick) * tick;
     const askCenter = bidCenter + tick;
     // How many crowd orders rest near the touch on each side: a bounded walk, since this runs every tick.
@@ -541,10 +690,10 @@ export class Exchange {
     // Replenish toward the target depth, faster when the book is thin, slower when the day is quiet.
     const rate = (0.15 + 0.85 * activity) * scale;
     if (bids < TARGET_DEPTH && random.chance(rate * (1 - bids / TARGET_DEPTH) * 2)) {
-      this.post(symbol, s, 'buy', bidCenter - this.offset(random) * tick, now, random);
+      this.post(symbol, s, 'buy', bidCenter - this.offset(random) * tick, now, random, inCall);
     }
     if (asks < TARGET_DEPTH && random.chance(rate * (1 - asks / TARGET_DEPTH) * 2)) {
-      this.post(symbol, s, 'sell', askCenter + this.offset(random) * tick, now, random);
+      this.post(symbol, s, 'sell', askCenter + this.offset(random) * tick, now, random, inCall);
     }
     // Someone wants in or out and pays the spread for it: this is what prints a last price. Now and then they
     // want more than the touch holds and walk a few cents into the book, which is the flow a market maker lives on.
@@ -556,21 +705,56 @@ export class Exchange {
         const impatient = random.chance(0.25);
         const reach = (impatient ? random.int(1, 4) : 0) * tick;
         const price = side === 'buy' ? touch + reach : touch - reach;
-        const size = impatient ? 100 * random.int(3, 10) : 100 * random.int(1, 3);
+        const lot = s.crowdLot ?? 100;
+        const size = impatient ? lot * random.int(3, 10) : lot * random.int(1, 3);
         this.submit(symbol, { owner: BACKGROUND, side, price, size, ioc: true }, now);
       }
     }
     if (sweep) {
       // A quote now on the wrong side of what the crowd believes is pulled, most of them within a few sweeps.
-      // That window is the arbitrage: a firm fast enough to hit the quote before its owner pulls it.
+      // That window is the arbitrage: a firm fast enough to hit the quote before its owner pulls it. In a fix's call
+      // the crowd's takers rest across the belief on purpose, and stay for the uncrossing.
       s.book.cancelWhere(BACKGROUND, (o) => {
-        const wrongSide = o.side === 'buy' ? o.price > s.belief : o.price < s.belief;
+        const wrongSide = !inCall && (o.side === 'buy' ? o.price > s.belief : o.price < s.belief);
         if (wrongSide && random.chance(PULL_SHARE)) return true;
         return (
           Math.abs(o.price - s.belief) > STALE_DISTANCE * unit || (now - o.at > 3000 && random.chance(0.1 * scale))
         );
       });
     }
+  }
+
+  /**
+   * The clients' order aimed at the fix whose call is running, where the venue's auction has `flow`: drawn on the
+   * book's first crowd turn in the call, from the venue's own stream, and rested once its moment comes, priced through
+   * the belief so it joins the uncrossing. Nothing is drawn on a venue without flow, or outside a call.
+   */
+  private clients(s: StockState, now: number, tick: number, random: Random): void {
+    const fixAt = this.callAt(now);
+    if (fixAt === null) return;
+    if (s.flow?.fixAt !== fixAt) {
+      const flow = this.flowFor(fixAt);
+      if (!flow) return;
+      const comes = random.chance(flow.chance);
+      const side: Side = random.chance(0.5) ? 'buy' : 'sell';
+      const u = random.next();
+      const lots = Math.round(flow.lots[0] + (flow.lots[1] - flow.lots[0]) * u * u);
+      const at = fixAt - flow.withinMs * random.next();
+      s.flow = { fixAt, side, size: comes ? lots * (s.crowdLot ?? 100) : 0, at, sent: !comes };
+    }
+    const f = s.flow;
+    if (f.sent || now < f.at) return;
+    f.sent = true;
+    const reach = (this.flowFor(fixAt)?.reach ?? 0) * tick;
+    const price =
+      f.side === 'buy' ? Math.floor(s.belief / tick) * tick + reach : Math.ceil(s.belief / tick) * tick - reach;
+    if (price > 0 && f.size > 0) s.book.place({ owner: BACKGROUND, side: f.side, price, size: f.size }, now);
+  }
+
+  /** The clients' flow of the auction that fixes at `fixAt`, if it has any. */
+  private flowFor(fixAt: number): FixFlow | undefined {
+    const time = fixAt - Math.floor(fixAt / MS_PER_DAY) * MS_PER_DAY;
+    return this.spec.auctions?.find((a) => a.at === time)?.flow;
   }
 
   /** Orders cluster near the touch and thin out with distance. */
@@ -584,13 +768,28 @@ export class Exchange {
    * (above), and one who is posting a quote tucks it inside the touch. Without this, every move in the crowd's
    * belief would run over whatever quotes were resting, and nobody could make a market.
    */
-  private post(symbol: string, s: StockState, side: 'buy' | 'sell', price: number, now: number, random: Random) {
+  private post(
+    symbol: string,
+    s: StockState,
+    side: 'buy' | 'sell',
+    price: number,
+    now: number,
+    random: Random,
+    inCall = false,
+  ) {
+    // In a fix's call nothing crosses, so the crowd quotes about its belief, whatever rests across it.
+    if (inCall) {
+      if (price > 0)
+        s.book.place({ owner: BACKGROUND, side, price, size: (s.crowdLot ?? 100) * random.int(1, 5) }, now);
+      return;
+    }
     const q = s.book.quote();
     const tick = this.rules.tickSize;
     if (side === 'buy' && q.ask !== null) price = Math.min(price, q.ask - tick);
     if (side === 'sell' && q.bid !== null) price = Math.max(price, q.bid + tick);
     if (price <= 0) return;
-    const result = this.addMarked(symbol, { owner: BACKGROUND, side, price, size: 100 * random.int(1, 5) }, now);
+    const size = (s.crowdLot ?? 100) * random.int(1, 5);
+    const result = this.addMarked(symbol, { owner: BACKGROUND, side, price, size }, now);
     this.record(symbol, result.trades);
   }
 
@@ -609,20 +808,29 @@ export class Exchange {
   save(): SavedExchange {
     const stocks: SavedExchange['stocks'] = {};
     for (const [symbol, s] of this.stocks) {
-      stocks[symbol] = { book: s.book.save(), belief: s.belief, tape: s.tape, quoteLog: s.quoteLog };
+      stocks[symbol] = {
+        book: s.book.save(),
+        belief: s.belief,
+        tape: s.tape,
+        quoteLog: s.quoteLog,
+        ...(s.flow ? { flow: { ...s.flow } } : {}),
+      };
     }
-    return { stocks, lastSweep: 0, rules: this.rules };
+    return { stocks, lastSweep: 0, rules: this.rules, ...(this.fixes.length > 0 ? { fixes: this.fixes } : {}) };
   }
 
   load(saved: SavedExchange): void {
     if (saved.rules) this.rules = { ...DEFAULT_RULES, ...saved.rules };
     this.pending = [];
+    this.fixes = (saved.fixes ?? []).map((f) => ({ ...f }));
     for (const [symbol, s] of Object.entries(saved.stocks)) {
       const built = this.stocks.get(symbol);
       this.stocks.set(symbol, {
         book: OrderBook.load(s.book),
         index: built?.index ?? false,
         ...(built?.tickSize === undefined ? {} : { tickSize: built.tickSize }),
+        ...(built?.crowdLot === undefined ? {} : { crowdLot: built.crowdLot }),
+        ...(s.flow ? { flow: { ...s.flow } } : {}),
         belief: s.belief,
         tape: s.tape.map((t) => ({ ...t })),
         quoteLog: s.quoteLog.map((q) => ({ ...q })),
@@ -641,4 +849,15 @@ function sameDepth(a: LoggedQuote['depth'], b: NonNullable<LoggedQuote['depth']>
     x.length === y.length &&
     x.every((l, i) => l.price === y[i]!.price && l.size === y[i]!.size && l.largest === y[i]!.largest);
   return same(a.bids, b.bids) && same(a.asks, b.asks);
+}
+
+/** A book's indicative in a call: where it would uncross now, on its grid, by the crowd's belief. */
+function indicativeOf(s: StockState, fixAt: number, ruleTick: number): Indicative {
+  const u = s.book.indicative(s.belief, tickOf(s, ruleTick));
+  return { price: u?.price ?? null, volume: u?.volume ?? 0, fixAt };
+}
+
+function sameIndicative(a: Indicative | undefined, b: Indicative | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.price === b.price && a.volume === b.volume && a.fixAt === b.fixAt;
 }

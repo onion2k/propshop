@@ -12,6 +12,76 @@ import {
   type StrategyBlock,
 } from './types';
 
+/**
+ * How far the ratio of a's mid to b's has strayed from its average over the last `lookback` samples, a share; null
+ * with fewer samples of either. The mids are the firm's, sampled at each decision while a symbol is quoted.
+ */
+export function ratioAway(view: MarketView, a: string, b: string, lookback: number): number | null {
+  const ma = view.mids[a] ?? [];
+  const mb = view.mids[b] ?? [];
+  const n = Math.min(ma.length, mb.length);
+  if (n < lookback) return null;
+  const ratios: number[] = [];
+  for (let i = 1; i <= lookback; i++) ratios.push(ma[ma.length - i]! / mb[mb.length - i]!);
+  const average = ratios.reduce((x, y) => x + y, 0) / ratios.length;
+  const now = ratios[0]!;
+  return now / average - 1;
+}
+
+/** When the block last filled in either leg, of the fills still in the log; -Infinity where none is. */
+export function lastPairFill(view: MarketView, block: string, a: string, b: string): number {
+  let lastFill = -Infinity;
+  for (const f of view.recentFills) {
+    if (f.block === block && (f.symbol === a || f.symbol === b) && f.at > lastFill) lastFill = f.at;
+  }
+  return lastFill;
+}
+
+/** Whether a headline in the last `pauseMs` named either symbol. */
+export function namedIn(view: MarketView, a: string, b: string, pauseMs: number): boolean {
+  return view.news.some((h) => view.now - h.at < pauseMs && (h.symbols.includes(a) || h.symbols.includes(b)));
+}
+
+/**
+ * What a pair wants to hold of each leg: out once the ratio is back within a quarter of the threshold or the pair is
+ * in the news; from flat, short the leg that has run ahead and long the other past the threshold; else as it is.
+ */
+export function pairWant(
+  away: number,
+  threshold: number,
+  named: boolean,
+  posA: number,
+  posB: number,
+  sizeA: number,
+  sizeB: number,
+): [number, number] {
+  if (named || Math.abs(away) < threshold / 4) return [0, 0];
+  if (away > threshold && posA === 0 && posB === 0) return [-sizeA, sizeB];
+  if (away < -threshold && posA === 0 && posB === 0) return [sizeA, -sizeB];
+  return [posA, posB];
+}
+
+/**
+ * The IOCs that take both legs toward what is wanted: both, where both can go (`both`); else a leg alone only on its
+ * way out, never into a pair half made.
+ */
+export function pairOrders(
+  view: MarketView,
+  a: string,
+  b: string,
+  posA: number,
+  posB: number,
+  wantA: number,
+  wantB: number,
+): { intents: Intent[]; both: boolean } {
+  const ia = flattenTo(view, a, posA, wantA);
+  const ib = flattenTo(view, b, posB, wantB);
+  if (ia && ib) return { intents: [ia, ib], both: true };
+  if (ia && wantA === 0) return { intents: [ia], both: false };
+  if (ib && wantB === 0) return { intents: [ib], both: false };
+  return { intents: [], both: false };
+}
+
 export const pairs: StrategyBlock = {
   spec: {
     id: 'pairs',
@@ -93,49 +163,18 @@ export const pairs: StrategyBlock = {
         if (a >= b || done.has(a) || done.has(b)) continue;
         if (view.sectors[a] !== view.sectors[b]) continue;
         if (inFlight(view, a, this.spec.id) || inFlight(view, b, this.spec.id)) continue;
-        let lastFill = -Infinity;
-        for (const f of view.recentFills) {
-          if (f.block === this.spec.id && (f.symbol === a || f.symbol === b) && f.at > lastFill) lastFill = f.at;
-        }
-        if (view.now - lastFill < hold) continue;
-        const ma = view.mids[a] ?? [];
-        const mb = view.mids[b] ?? [];
-        const n = Math.min(ma.length, mb.length);
-        if (n < lookback) continue;
-        const ratios: number[] = [];
-        for (let i = 1; i <= lookback; i++) ratios.push(ma[ma.length - i]! / mb[mb.length - i]!);
-        const average = ratios.reduce((x, y) => x + y, 0) / ratios.length;
-        const now = ratios[0]!;
-        const away = now / average - 1;
-        const named = view.news.some(
-          (h) => view.now - h.at < pause && (h.symbols.includes(a) || h.symbols.includes(b)),
-        );
+        if (view.now - lastPairFill(view, this.spec.id, a, b) < hold) continue;
+        const away = ratioAway(view, a, b, lookback);
+        if (away === null) continue;
+        const named = namedIn(view, a, b, pause);
         const posA = ownPosition(view, this.spec.id, a);
         const posB = ownPosition(view, this.spec.id, b);
-        let wantA = posA;
-        let wantB = posB;
-        // Out once the ratio is back within a quarter of the threshold, or the pair has been named in the news.
-        if (named || Math.abs(away) < threshold / 4) {
-          wantA = 0;
-          wantB = 0;
-        } else if (away > threshold && posA === 0 && posB === 0) {
-          // a has run ahead of b: sell a, buy b.
-          wantA = -size;
-          wantB = size;
-        } else if (away < -threshold && posA === 0 && posB === 0) {
-          wantA = size;
-          wantB = -size;
-        }
-        const ia = flattenTo(view, a, posA, wantA);
-        const ib = flattenTo(view, b, posB, wantB);
-        if (ia && ib) {
-          out.push(ia, ib);
+        const [wantA, wantB] = pairWant(away, threshold, named, posA, posB, size, size);
+        const { intents, both } = pairOrders(view, a, b, posA, posB, wantA, wantB);
+        out.push(...intents);
+        if (both) {
           done.add(a);
           done.add(b);
-        } else if (ia && wantA === 0) {
-          out.push(ia);
-        } else if (ib && wantB === 0) {
-          out.push(ib);
         }
       }
     }

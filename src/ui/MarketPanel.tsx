@@ -3,11 +3,13 @@
 // computer says how many that may be.
 
 import { useState } from 'react';
-import { TICK_MS, calendar, formatTime, type Level, type Snapshot } from '../sim';
+import { TICK_MS, type Level, type Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
-import { moneyShort, price, priceDelta, shares } from './format';
+import { expiryLabel, money, moneyShort, pointsInCents, price, priceDelta, shares } from './format';
 import { GapLine, GapList } from './Gaps';
 import { Term } from './Glossary';
+import { CurveView, FixLine } from './MetalsDesk';
+import { goldSilverRatio } from './metals';
 import type { Store } from './store';
 
 export function MarketPanel({
@@ -86,9 +88,11 @@ export function MarketPanel({
                   ? `future on ${st.contract.underlying}, ${expiryLabel(st.contract.expiry)}`
                   : st.pair
                     ? pairLabel(st.pair, st.name)
-                    : st.constituents
-                      ? `index of ${st.constituents.length}`
-                      : st.sector}
+                    : st.metal
+                      ? `spot, ${st.metal.ounces} oz a lot`
+                      : st.constituents
+                        ? `index of ${st.constituents.length}`
+                        : st.sector}
               </td>
               <td className="num bid">{price(st.bid, st.decimals)}</td>
               <td className="num ask">{price(st.ask, st.decimals)}</td>
@@ -123,8 +127,18 @@ export function MarketPanel({
                   {' · '}a <Term id="lot">lot</Term> is {selected.pair.lot.toLocaleString('en-US')} {selected.pair.base}
                   , the <Term id="base-quote">base</Term>, priced in {selected.pair.quote} <Term id="pip">pips</Term>
                 </>
+              ) : selected.metal ? (
+                <>
+                  <Term id="spot">spot</Term>, a <Term id="lot">lot</Term> is {selected.metal.ounces} oz, priced in
+                  dollars an ounce
+                  <GoldSilver s={s} />
+                </>
               ) : selected.constituents ? (
                 `index of ${selected.constituents.join(', ')}`
+              ) : selected.sector === 'mining' ? (
+                <>
+                  mining: a <Term id="miner">miner</Term>, which gold reads
+                </>
               ) : (
                 selected.sector
               )}
@@ -136,8 +150,28 @@ export function MarketPanel({
           </div>
           {selected.contract && (
             <p className="contract-line small muted">
-              <Term id="basis">basis</Term> <span className="num">{selected.contract.basis.toFixed(1)}¢</span> over the
-              index (<Term id="carry">carry</Term> {(selected.contract.carry * 100).toFixed(1)}% a year to expiry)
+              {selected.contract.delivery ? (
+                <>
+                  <Term id="basis">basis</Term>{' '}
+                  <span className="num">
+                    {money(
+                      pointsInCents(
+                        selected.contract.basis,
+                        s.stocks.find((x) => x.symbol === selected.contract!.underlying)?.decimals,
+                      ),
+                      true,
+                    )}
+                  </span>{' '}
+                  an ounce over spot (<Term id="carry">carry</Term> {(selected.contract.carry * 100).toFixed(1)}% a year
+                  to expiry) · <Term id="delivery">delivered</Term> as {selected.contract.underlying} if held at expiry
+                </>
+              ) : (
+                <>
+                  <Term id="basis">basis</Term> <span className="num">{selected.contract.basis.toFixed(1)}¢</span> over
+                  the index (<Term id="carry">carry</Term> {(selected.contract.carry * 100).toFixed(1)}% a year to
+                  expiry)
+                </>
+              )}
               {selected.contract.margin && (
                 <>
                   {' · '}
@@ -148,7 +182,14 @@ export function MarketPanel({
               )}
             </p>
           )}
-          <table className="quotes" data-tut="quotes">
+          <CurveView s={s} symbol={selected.symbol} />
+          <FixLine s={s} symbol={selected.symbol} />
+          {/* Prices of four figures before the point (gold) are two characters wider than a stock's: their table is
+              set tighter, so it still fits its panel at a desk's width. */}
+          <table
+            className={`quotes ${selected.fair / 10 ** selected.decimals >= 1000 ? 'wide-prices' : ''}`}
+            data-tut="quotes"
+          >
             <thead>
               <tr>
                 <th>Exchange</th>
@@ -188,7 +229,11 @@ export function MarketPanel({
                     <td className={`num bid ${bestBid ? 'best' : ''}`}>{price(q?.bid ?? null, places)}</td>
                     <td className={`num ask ${bestAsk ? 'best' : ''}`}>{price(q?.ask ?? null, places)}</td>
                     <td className="num col-spread">
-                      {spread === null ? '—' : selected.pair ? `${spread} pip${spread === 1 ? '' : 's'}` : `${spread}¢`}
+                      {spread === null
+                        ? '—'
+                        : selected.pair
+                          ? `${spread} pip${spread === 1 ? '' : 's'}`
+                          : `${pointsInCents(spread, places)}¢`}
                     </td>
                     <td className="num muted col-now">
                       {live
@@ -280,14 +325,20 @@ function Ladder({
   );
 }
 
-/** When a contract expires, as the top bar writes a time: "Fri wk 1 16:00". */
-function expiryLabel(at: number): string {
-  const c = calendar(at);
-  return `${c.weekday} wk ${c.week} ${formatTime(at).slice(0, 5)}`;
-}
-
 /** What a pair is, in the watchlist's words: "euro in dollars", or "cross of EUR/USD and USD/JPY". */
 function pairLabel(pair: NonNullable<Snapshot['stocks'][number]['pair']>, name: string): string {
   if (pair.cross) return `cross of ${pair.cross.map((l) => `${l.base}/${l.quote}`).join(' and ')}`;
   return name.charAt(0).toLowerCase() + name.slice(1);
+}
+
+/** The gold-silver ratio beside a metal's name, while both metals are listed. */
+function GoldSilver({ s }: { s: Snapshot }) {
+  const r = goldSilverRatio(s);
+  if (r === null) return null;
+  return (
+    <>
+      {' · '}
+      <Term id="gold-silver-ratio">gold-silver ratio</Term> <span className="num">{r.toFixed(1)}</span>
+    </>
+  );
 }

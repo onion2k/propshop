@@ -185,7 +185,9 @@ describe('pinTimes', () => {
     const d = dayStart(g);
     const pins = pinTimes(g);
     expect(pins[0]).toEqual({ label: 'open', at: d + MARKET_OPEN });
-    expect(pins.at(-1)).toEqual({ label: 'afternoon', at: d + 14.5 * MS_PER_HOUR });
+    // In time order: the day's largest headline may come before half past two or after it.
+    expect(pins.find((p) => p.label === 'afternoon')).toEqual({ label: 'afternoon', at: d + 14.5 * MS_PER_HOUR });
+    expect(pins.map((p) => p.at)).toEqual(pins.map((p) => p.at).sort((a, b) => a - b));
     expect(pins.length).toBeLessThanOrEqual(MAX_DAY_PINS);
     expect(pins.map((p) => p.label)).toContain('headline');
     const h = pins.find((p) => p.label === 'headline')!;

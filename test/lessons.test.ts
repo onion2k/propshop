@@ -1,15 +1,19 @@
 import { CONTENT, LESSONS, REGIMES } from '../src/content';
 import {
   Game,
+  MS_PER_DAY,
+  MS_PER_HOUR,
   MS_PER_MINUTE,
   MS_PER_SECOND,
   TICK_MS,
   isMarketOpen,
   regimeFor,
+  type Content,
   type DayReport,
   type Snapshot,
 } from '../src/sim';
 import { infrastructureFrom } from '../src/sim/upgrades';
+import { METALS_DESK, METAL_SERIES, METAL_VENUES, SPOT } from '../src/content/metals';
 
 function fresh(): Snapshot {
   return new Game(CONTENT, 1).snapshot();
@@ -18,7 +22,7 @@ function fresh(): Snapshot {
 const L = (id: string) => LESSONS.find((l) => l.id === id)!;
 
 describe('lessons', () => {
-  it("are the stocks' ten in stage order, then the futures desk's three and the currencies desk's four, each with words", () => {
+  it("are the stocks' ten in stage order, then the futures desk's three, the currencies desk's four and the metals desk's five, each with words", () => {
     expect(LESSONS.map((l) => l.id)).toEqual([
       'home',
       'seat',
@@ -37,6 +41,11 @@ describe('lessons', () => {
       'triangle',
       'refused',
       'rollover',
+      'curve',
+      'flip',
+      'delivery',
+      'fix',
+      'miner',
     ]);
     for (const l of LESSONS) {
       expect(l.task.length).toBeGreaterThan(20);
@@ -235,5 +244,126 @@ describe('lessons', () => {
       expect(L('rollover').done(withFx({ days: [day(), day(-40)] }))).toBe(false);
       expect(L('rollover').done(withFx({ days: [day(), day(49)] }))).toBe(true);
     });
+  });
+
+  describe("the metals desk's", () => {
+    /** A snapshot with the desk open, and these fields over it. */
+    function withMetals(over: Partial<Snapshot> = {}): Snapshot {
+      const g = new Game(CONTENT, 9);
+      g.openDesk(METALS_DESK);
+      return { ...g.snapshot(), ...over };
+    }
+    type Row = Snapshot['stocks'][number];
+    /** The snapshot's rows with these symbols watched and the rest not, each changed as asked. */
+    const rows = (s: Snapshot, watched: string[], change: (r: Row) => Row = (r) => r) =>
+      s.stocks.map((r) => change({ ...r, watched: watched.includes(r.symbol) }));
+    const fill = (block: string, symbol: string, over: Record<string, unknown> = {}) =>
+      ({ block, symbol, ...over }) as unknown as Snapshot['fills'][number];
+
+    it('Read the curve: done by watching a metal and one of its futures, not either alone nor the index future', () => {
+      const s = withMetals();
+      const gc = s.stocks.find((r) => r.contract?.underlying === 'XAU')!.symbol;
+      expect(L('curve').done({ ...s, stocks: rows(s, ['XAU']) })).toBe(false);
+      expect(L('curve').done({ ...s, stocks: rows(s, [gc]) })).toBe(false);
+      expect(L('curve').done({ ...s, stocks: rows(s, ['XAU', 'XAG']) })).toBe(false);
+      expect(L('curve').done({ ...s, stocks: rows(s, ['XAU', gc]) })).toBe(true);
+    });
+
+    it('Watch it flip: done once a watched curve is in backwardation after a supply headline, not in contango', () => {
+      const s = withMetals();
+      const gc = s.stocks.find((r) => r.contract?.underlying === 'XAU')!.symbol;
+      const headline = { desk: METALS_DESK } as unknown as Snapshot['deskNews'][number];
+      const flipped = (r: Row): Row => (r.contract ? { ...r, contract: { ...r.contract, carry: -0.01 } } : r);
+      // The curve as it starts is in contango.
+      expect(s.stocks.find((r) => r.symbol === gc)!.contract!.carry).toBeGreaterThan(0);
+      expect(L('flip').done({ ...s, stocks: rows(s, ['XAU', gc]), deskNews: [headline] })).toBe(false);
+      expect(L('flip').done({ ...s, stocks: rows(s, ['XAU', gc], flipped), deskNews: [] })).toBe(false);
+      expect(L('flip').done({ ...s, stocks: rows(s, [], flipped), deskNews: [headline] })).toBe(false);
+      expect(L('flip').done({ ...s, stocks: rows(s, ['XAU', gc], flipped), deskNews: [headline] })).toBe(true);
+    });
+
+    it('Take delivery: done by metal delivered and a night of storage or the lease, not by metal bought', () => {
+      const day = (storage?: number) => ({ ...(storage === undefined ? {} : { storage }) }) as unknown as DayReport;
+      const pos = (delivered?: number) =>
+        ({ symbol: 'XAU', qty: 1, ...(delivered === undefined ? {} : { delivered }) }) as Snapshot['positions'][number];
+      expect(L('delivery').done(withMetals({ positions: [pos()], days: [day(-330)] }))).toBe(false);
+      expect(L('delivery').done(withMetals({ positions: [pos(1)], days: [day()] }))).toBe(false);
+      expect(L('delivery').done(withMetals({ positions: [pos(1)], days: [day(-330)] }))).toBe(true);
+    });
+
+    it('Trade the fix: done by a fill on the fix venue at a fix and its price, not by a fill in continuous trading', () => {
+      const s = withMetals();
+      const fixAt = 10 * MS_PER_HOUR;
+      const exchanges = s.exchanges.map((e) =>
+        e.id === 'THAMESFORD' ? { ...e, fixes: [{ at: fixAt, symbol: 'XAU', price: 24_010, volume: 40 }] } : e,
+      );
+      const at = (t: number, price: number) => fill('hand', 'XAU', { exchange: 'THAMESFORD', at: t, price });
+      expect(L('fix').done({ ...s, exchanges, fills: [at(fixAt + 500, 24_011)] })).toBe(false);
+      expect(L('fix').done({ ...s, exchanges, fills: [at(fixAt - 60_000, 24_010)] })).toBe(false);
+      expect(L('fix').done({ ...s, exchanges, fills: [at(fixAt + 70, 24_010)] })).toBe(true);
+    });
+
+    it('The miner and the metal: done once the cross-desk pair has filled in both legs', () => {
+      const legs = [fill('crossPairs', 'RDG'), fill('crossPairs', 'XAU')];
+      expect(L('miner').done(withMetals({ fills: [legs[0]!] }))).toBe(false);
+      expect(L('miner').done(withMetals({ fills: [legs[0]!, fill('hand', 'XAU')] }))).toBe(false);
+      expect(L('miner').done(withMetals({ fills: legs }))).toBe(true);
+    });
+
+    /** The miner and two other stocks, the stock exchanges and the metals desk, no rivals: a week steps quickly. */
+    const METALS: Content = {
+      ...CONTENT,
+      stocks: CONTENT.stocks.filter((s) => ['ABC', 'QNT', 'RDG'].includes(s.symbol)),
+      exchanges: [...CONTENT.exchanges.filter((e) => e.desk === undefined), ...METAL_VENUES],
+      series: METAL_SERIES,
+      instruments: SPOT,
+      currencies: [],
+      competitors: [],
+    };
+    const run = (g: Game, until: number, stride = TICK_MS) => {
+      while (g.now < until) g.step(Math.min(stride, until - g.now));
+    };
+
+    it('Trade the fix: done in a game by a buy rested into the 10:00 fix', { timeout: 60_000 }, () => {
+      const g = new Game(METALS, 3);
+      g.openDesk(METALS_DESK);
+      for (const b of g.firm.blocks) b.enabled = false;
+      // A laptop watches four symbols: the metal has to be one of them for its quote to reach the desk.
+      g.firm.setWatch(['XAU']);
+      run(g, 10 * MS_PER_HOUR - 20 * MS_PER_SECOND, MS_PER_MINUTE);
+      run(g, 10 * MS_PER_HOUR - 15 * MS_PER_SECOND);
+      const ind = g
+        .snapshot()
+        .stocks.find((r) => r.symbol === 'XAU')!
+        .exchanges.find((e) => e.id === 'THAMESFORD')!.seen!.indicative!;
+      const order = { symbol: 'XAU', side: 'buy', size: 1, exchange: 'THAMESFORD', type: 'limit' } as const;
+      expect(g.hand({ ...order, price: ind.price! + 50 }).ok).toBe(true);
+      run(g, 10 * MS_PER_HOUR - TICK_MS);
+      expect(L('fix').done(g.snapshot())).toBe(false);
+      run(g, 10 * MS_PER_HOUR + MS_PER_SECOND);
+      expect(L('fix').done(g.snapshot())).toBe(true);
+    });
+
+    it(
+      'Take delivery: done in a game by a gold future held through Friday into the evening',
+      { timeout: 120_000 },
+      () => {
+        const g = new Game(METALS, 3);
+        g.openDesk(METALS_DESK);
+        for (const b of g.firm.blocks) b.enabled = false;
+        const near = g.market.live('GC')[0]!;
+        g.firm.setWatch([near]);
+        run(g, 10 * MS_PER_HOUR, MS_PER_MINUTE);
+        run(g, 10 * MS_PER_HOUR + 5 * MS_PER_SECOND);
+        expect(g.hand({ symbol: near, side: 'buy', size: 1, exchange: 'HUDSON', type: 'market' }).ok).toBe(true);
+        run(g, 10 * MS_PER_HOUR + 10 * MS_PER_SECOND);
+        expect(g.firm.positions.get(near)?.qty).toBe(1);
+        // Friday 13:30 the contract expires and is delivered; 17:00 the metal pays three nights of storage.
+        run(g, 4 * MS_PER_DAY + 17 * MS_PER_HOUR + MS_PER_MINUTE, MS_PER_MINUTE);
+        const s = g.snapshot();
+        expect(s.positions.find((p) => p.symbol === 'XAU')?.delivered).toBe(1);
+        expect(L('delivery').done(s)).toBe(true);
+      },
+    );
   });
 });

@@ -3,6 +3,9 @@ import { anticipate } from './anticipate';
 import { arbitrage } from './arbitrage';
 import { basisArb } from './basisArb';
 import { carry } from './carry';
+import { crossPairs } from './crossPairs';
+import { curve } from './curve';
+import { fixArb } from './fixArb';
 import { indexArb } from './indexArb';
 import { leadLag } from './leadLag';
 import { marketMaker } from './marketMaker';
@@ -34,12 +37,17 @@ export const BLOCKS: readonly StrategyBlock[] = [
   // The currencies desk's, the same way.
   triangle,
   carry,
+  // The metals desk's, the same way.
+  curve,
+  fixArb,
+  crossPairs,
 ];
 
 /** The blocks of each desk but the stocks, which a firm is given, off, when the desk opens. */
 export const DESK_BLOCKS: Readonly<Record<string, readonly string[]>> = {
   futures: ['basisArb', 'leadLag', 'roll'],
   fx: ['triangle', 'carry'],
+  metals: ['curve', 'fixArb', 'crossPairs'],
 };
 
 export function blockById(id: string): StrategyBlock {

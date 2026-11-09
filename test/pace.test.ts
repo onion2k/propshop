@@ -24,6 +24,12 @@ const EASTHOLM = { location: 'colo-eastholm', network: 'fibre', computer: 'rack'
 const HOME_FIBRE = { location: 'home', network: 'fibre', computer: 'server' };
 const FX_BLOCK_IDS = ['triangle', 'carry'];
 const FX_PAIRS = ['EURUSD', 'USDJPY', 'EURJPY'];
+// The metals desk's: from home, and the racks at Thamesford (the spot and its fixes) and at Hudson (the futures), on
+// fibre (plans/desk-metals.md). A block of the desk opens it and watches gold, the miner and gold's two nearest
+// futures first, so a laptop's four are those.
+const THAMESFORD_RACK = { location: 'colo-thamesford', network: 'fibre', computer: 'rack' };
+const HUDSON_RACK = { location: 'colo-hudson', network: 'fibre', computer: 'rack' };
+const METAL_BLOCK_IDS = ['curve', 'fixArb', 'crossPairs'];
 
 type Config = [
   string,
@@ -77,9 +83,20 @@ const CONFIGS: Config[] = [
   ['fx home fibre triangle dealer', HOME_FIBRE, ['triangle'], { triangle: { venue: 1 } }],
   ['fx eastholm triangle dealer', EASTHOLM, ['triangle'], { triangle: { venue: 1 } }],
   ['fx home carry', HOME, ['carry']],
+  ['metals home curve', HOME, ['curve']],
+  ['metals thamesford curve', THAMESFORD_RACK, ['curve']],
+  ['metals hudson curve', HUDSON_RACK, ['curve']],
+  ['metals home fixArb', HOME, ['fixArb']],
+  ['metals thamesford fixArb', THAMESFORD_RACK, ['fixArb']],
+  ['metals hudson fixArb', HUDSON_RACK, ['fixArb']],
+  ['metals home crossPairs', HOME, ['crossPairs']],
+  ['metals thamesford crossPairs', THAMESFORD_RACK, ['crossPairs']],
+  ['metals hudson crossPairs', HUDSON_RACK, ['crossPairs']],
 ];
 // PACE_FX='{"triangle":{"threshold":2}}' sets the currencies' blocks' parameters over every fx row, for tuning.
 const FX_OVER = JSON.parse(process.env.PACE_FX ?? '{}') as Record<string, Record<string, number>>;
+// PACE_METALS='{"fixArb":{"threshold":2}}' sets the metals blocks' parameters over every metals row, the same way.
+const METALS_OVER = JSON.parse(process.env.PACE_METALS ?? '{}') as Record<string, Record<string, number>>;
 
 function pnl(f: Firm, g: Game): number {
   return f.realised - f.feesPaid + f.unrealised(g.market, g.now);
@@ -104,22 +121,28 @@ measure('paces', { timeout: 3_600_000 }, () => {
       if (desk) g.openDesk('futures');
       const fx = blocks.some((b) => FX_BLOCK_IDS.includes(b));
       if (fx) g.openDesk('fx');
+      const metals = blocks.some((b) => METAL_BLOCK_IDS.includes(b));
+      if (metals) g.openDesk('metals');
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
       for (const [id, p] of Object.entries(params ?? {})) g.setBlock(id, { params: p });
       if (fx) for (const [id, p] of Object.entries(FX_OVER)) g.setBlock(id, { params: p });
+      if (metals) for (const [id, p] of Object.entries(METALS_OVER)) g.setBlock(id, { params: p });
       // Watch everything the computer allows, the index first so index arbitrage has its basket on a rack.
       g.firm.setWatch([
         ...(fx ? FX_PAIRS : []),
+        ...(metals ? ['XAU', 'RDG', ...g.market.live('GC').slice(0, 2), 'XAG', ...g.market.live('SI')] : []),
         'IDX',
         ...(desk ? g.market.live('IXF') : []),
         ...CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol),
       ]);
       g.skipToOpen();
       // The currencies trade all night, so their hour is measured from here, not from nothing.
-      const startEquity = fx ? g.firm.equity(g.market, g.now) : 0;
+      const startEquity = fx || metals ? g.firm.equity(g.market, g.now) : 0;
       const kestrel = g.competitors.find((x) => x.name === 'Kestrel Currency');
       const kestrelStart = kestrel ? kestrel.equity(g.market, g.now) : 0;
+      const aldgate = g.competitors.find((x) => x.name === 'Aldgate Metals');
+      const aldgateStart = aldgate ? aldgate.equity(g.market, g.now) : 0;
       const person = blocks.includes(HAND);
       const momentum = blockById('momentum');
       // The block's own size range stops at 2,000; the person's order is larger than any one top of book.
@@ -154,7 +177,18 @@ measure('paces', { timeout: 3_600_000 }, () => {
         }
       }
       // A currency firm's P&L is its equity's move: its balances, in dollars at the rates now, are the position.
-      add(name, fx ? g.firm.equity(g.market, g.now) - startEquity : pnl(g.firm, g), g.firm.stats.fillsReceived);
+      // The metals' too: delivered metal and storage are cash and holdings, not realised P&L.
+      add(
+        name,
+        fx || metals ? g.firm.equity(g.market, g.now) - startEquity : pnl(g.firm, g),
+        g.firm.stats.fillsReceived,
+      );
+      if (metals && aldgate && name.includes('fixArb'))
+        add(
+          `bot Aldgate (${name.slice(7)})`,
+          aldgate.equity(g.market, g.now) - aldgateStart,
+          aldgate.stats.fillsReceived,
+        );
       if (fx) {
         const sent = [...g.firm.orders.values()].filter((o) => FX_PAIRS.includes(o.symbol) && o.status !== 'rejected');
         const refused = sent.filter((o) => o.status === 'refused').length;

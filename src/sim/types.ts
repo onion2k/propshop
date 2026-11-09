@@ -36,6 +36,11 @@ export interface InstrumentSpec {
   priceUnit?: number;
   /** The price grid, in price points; absent, the exchange's rule. */
   tickSize?: number;
+  /**
+   * The units in one of the crowd's orders, which come in one to five of them (a taker's in up to ten): absent, a
+   * hundred, a stock's round lot. A metal's crowd trades lots, as its firms do.
+   */
+  crowdLot?: number;
   /** The venues that list it; absent, every venue of its desk. */
   venues?: string[];
   /** What a contract is on: what a delivered contract becomes. */
@@ -60,6 +65,51 @@ export interface InstrumentSpec {
    * to its own points, worked out each tick and drawing nothing.
    */
   cross?: readonly [string, string];
+  /**
+   * A factor of the stocks it reads, not draws: its fair value and anchor take the stocks' sector factor's level (a
+   * gold's, the miners') at `loading`, as an index future reads its index. Opening its desk draws nothing from `world`.
+   */
+  reads?: { sector: string; loading: number };
+  /**
+   * A metal's lease rate, a year, a share: what borrowing it costs, wandering on its desk's stream around `rate`
+   * (`hourlyVol` one standard deviation an hour, pulled back at `reversionPerHour`) and moved by supply news. A
+   * contract on it takes the lease off its carry; a short held overnight pays it.
+   */
+  lease?: { rate: number; hourlyVol: number; reversionPerHour: number };
+  /** A contract whose carry is its fixed `carry` less this metal's lease rate now: a carry that moves. */
+  leaseOf?: string;
+}
+
+/** What holding a metal costs overnight: storage on a long, the lease on a short. */
+export interface StorageSpec {
+  /** Ms past midnight, each weekday; Friday's carries the weekend's two nights too. */
+  at: number;
+  /** A share of value a year, on metal held long. */
+  rate: number;
+  /** Days in the year it is counted on. */
+  basis: number;
+}
+
+/** A desk's own news: what moves its instruments and their leases, on its own stream, in its venues' hours. */
+export interface DeskNewsSpec {
+  desk: string;
+  /** Headlines a weekday, on average. */
+  perDay: number;
+  templates: DeskNewsTemplate[];
+}
+
+export interface DeskNewsTemplate {
+  /** Text with {metal} and {n} to fill. */
+  text: string;
+  /** The symbols it may be about; one is picked. */
+  symbols: string[];
+  direction: -1 | 1;
+  /** Typical size of the move in the fair value, basis points. */
+  magnitudeBps: number;
+  /** Typical change to the symbol's lease rate, a share a year, signed. */
+  lease: number;
+  /** How long the market takes to price the move in, ms. */
+  priceInMs: number;
 }
 
 /** A currency the firm may hold a balance in. The dollar is the firm's own, its home currency, kept as cash. */
@@ -130,6 +180,26 @@ export interface ExchangeSpec {
    * met unless the dealer's belief has moved more than `refuseTicks` of the grid past it, when it is refused.
    */
   lastLook?: { holdMs: number; refuseTicks: number };
+  /**
+   * Its fixes: call auctions at these times of day (the sim's clock), Monday to Friday, while it is open at `at`. For
+   * `callMs` before each, nothing matches on its books: orders rest uncrossed, a firm's immediate-or-cancel order is
+   * refused, and the crowd's takers rest at their limit; at `at` each book uncrosses at one price. A call may not
+   * reach back past midnight. `flow`, where given, is the clients' orders aimed at the fix (see `FixFlow`).
+   */
+  auctions?: { at: number; callMs: number; flow?: FixFlow }[];
+}
+
+/**
+ * The clients' orders aimed at a fix: in each call, for each book, with this `chance`, one order on one side (even
+ * odds), arriving in the last `withinMs` of the call, of between `lots[0]` and `lots[1]` of the instrument's crowd lot
+ * (small more often: the share of the range is a uniform draw squared), priced `reach` grid steps through the crowd's
+ * belief, so it moves the uncrossing price and not the continuous book. Drawn from the venue's own crowd stream.
+ */
+export interface FixFlow {
+  chance: number;
+  lots: readonly [number, number];
+  withinMs: number;
+  reach: number;
 }
 
 export interface LocationSpec {
@@ -263,6 +333,10 @@ export interface Content {
   currencies?: CurrencySpec[];
   /** Rollover for currency positions; absent, none. */
   rollover?: RolloverSpec;
+  /** Storage and the lease on metal held overnight; absent, none. */
+  storage?: StorageSpec;
+  /** Each desk's own news; absent, none. */
+  deskNews?: DeskNewsSpec[];
   /** Contract series, listed as time passes; absent, none. */
   series?: ContractSeriesSpec[];
   exchanges: ExchangeSpec[];

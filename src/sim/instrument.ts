@@ -141,3 +141,9 @@ export function rolloverDays(now: number): number {
   const weekday = Math.floor(now / MS_PER_DAY) % 7;
   return weekday === 2 ? 3 : weekday < 5 ? 1 : 0;
 }
+
+/** Nights a storage charge at this moment carries: one each weekday, three on Friday (the weekend's), none at the weekend. */
+export function storageDays(now: number): number {
+  const weekday = Math.floor(now / MS_PER_DAY) % 7;
+  return weekday === 4 ? 3 : weekday < 4 ? 1 : 0;
+}

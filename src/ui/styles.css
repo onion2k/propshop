@@ -744,6 +744,31 @@ code {
   min-width: 7ch;
   white-space: nowrap;
 }
+/* Gold's prices are two characters wider than a stock's ("2,400.10"): the sector, secondary like the name beside the
+   symbol, is written as small as the name, so the watchlist still fits its panel at a desk's width. */
+.watchlist td.col-sector {
+  font-size: 12px;
+}
+@media (min-width: 601px) {
+  .watchlist th,
+  .watchlist td {
+    padding: 2px 5px;
+  }
+  .quotes.wide-prices th,
+  .quotes.wide-prices td {
+    padding: 2px 4px;
+  }
+}
+.quotes.wide-prices td.col-now {
+  font-size: 12px;
+  width: 17ch;
+  min-width: 17ch;
+}
+.quotes.wide-prices td.col-size {
+  font-size: 12px;
+  width: 15ch;
+  min-width: 15ch;
+}
 .positions td.num {
   min-width: 7ch;
 }
@@ -1576,5 +1601,69 @@ code {
   }
   .ov-signals {
     min-height: 20em;
+  }
+}
+
+/* The metals desk: a metal's curve, in a fixed box (a chart and four rows, spot and the three live expiries) with
+   room for two lines of words; the fix line under it, its room kept whether the call is running or not. The curve
+   is drawn in the text colour: its shape is said in words, never by colour alone. */
+.curve {
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+}
+.curve h3 {
+  margin: 8px 0 4px;
+}
+.curve-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: center;
+}
+.curve-chart {
+  width: 100%;
+  height: 64px;
+  display: block;
+}
+.curve-line {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.curve-dot {
+  fill: var(--text);
+}
+.curve-dot.unquoted {
+  fill: var(--panel);
+  stroke: var(--text);
+  stroke-width: 1;
+}
+.curve table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.curve td {
+  padding: 1px 4px;
+  white-space: nowrap;
+  height: 1.5em;
+}
+.curve tr.picked td {
+  background: #1d2430;
+}
+.curve-words {
+  min-height: 2.9em;
+  margin: 4px 0;
+}
+.fix-line {
+  min-height: 2.9em;
+  margin: 4px 0;
+}
+@media (max-width: 600px) {
+  .curve-body {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .curve-words,
+  .fix-line {
+    min-height: 4.3em;
   }
 }

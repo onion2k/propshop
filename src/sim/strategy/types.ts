@@ -36,6 +36,16 @@ export type Params = Record<string, number>;
 export interface SeenQuote extends Quote {
   /** When the exchange published it; the firm sees it later than this. */
   at: number;
+  /** In a fix's call: where the book would uncross now, and when it will. Absent outside a call. */
+  indicative?: Indicative;
+}
+
+/** A call auction's indicative: the price and volume it would uncross at now (null and 0 where nothing crosses). */
+export interface Indicative {
+  price: number | null;
+  volume: number;
+  /** When the call ends and the book uncrosses. */
+  fixAt: number;
 }
 
 /** A trade that took the liquidity an order was sent for, before the order arrived. */
@@ -105,6 +115,8 @@ export interface SeenPrint {
   at: number;
   /** The aggressor took the whole of the best level as it stood: the signature of a routed sweep's child. */
   cleared: boolean;
+  /** A fix: the whole of a call auction's volume at its one price, which nobody took first. Absent otherwise. */
+  fix?: true;
 }
 
 /** One price level as the firm sees it: what rests there, whoever it belongs to. */
@@ -161,6 +173,12 @@ export interface MarketView {
   recentFills: readonly Fill[];
   /** Headlines published recently, newest last. */
   news: readonly Headline[];
+  /**
+   * What a price point of one unit of each live instrument is worth, in its quote currency's minor units: a stock's
+   * cent is 1, a lot of gold's ten-cent point 100. So a block can match two legs in value. Absent in a hand-built view;
+   * read a missing one as 1.
+   */
+  scales?: Readonly<Record<string, number>>;
   /** Each listed contract priced from an underlying: what it is on, when it expires, its carry and multiplier. */
   contracts?: Readonly<Record<string, ContractView>>;
   /** Each live currency pair: what a lot buys, what it is priced in, where it trades, and a cross's legs. */

@@ -15,7 +15,9 @@ import {
 } from '../src/sim';
 import { MARKET_OPEN } from '../src/sim/clock';
 
-const SEED = 7;
+// Seed 1: 31 races for a colocated arbitrage firm in the window (seed 7, before the miner moved the stocks' world on
+// 2026-11-09, had them; it now has none).
+const SEED = 1;
 const START_AT = MARKET_OPEN + MS_PER_MINUTE;
 const WINDOW = 12 * MS_PER_SECOND;
 

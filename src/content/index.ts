@@ -4,6 +4,16 @@ import { DESK } from './desk';
 import { EXCHANGES } from './exchanges';
 import { COLO_PRAIRIE, IXF, PRAIRIE, PRAIRIE_DISTANCE } from './futures';
 import { COLO_EASTHOLM, CURRENCIES, FX_DISTANCE, FX_VENUES, PAIRS, ROLLOVER } from './fx';
+import {
+  COLO_HUDSON,
+  COLO_THAMESFORD,
+  METALS_DISTANCE,
+  METAL_SERIES,
+  METAL_VENUES,
+  SPOT,
+  STORAGE,
+  SUPPLY_NEWS,
+} from './metals';
 import { NEWS } from './news';
 import { REGIMES } from './regimes';
 import { FACTORS, STOCKS } from './stocks';
@@ -11,13 +21,15 @@ import { COMPETITORS, COMPUTERS, LOCATIONS, NETWORKS, START, STARTING_CASH } fro
 
 export const CONTENT: Content = {
   stocks: STOCKS,
-  // The futures desk's venue and contracts, and the currencies desk's venues and pairs: there, and closed, until
-  // each desk opens.
-  exchanges: [...EXCHANGES, PRAIRIE, ...FX_VENUES],
-  series: [IXF],
-  instruments: PAIRS,
+  // The futures desk's venue and contracts, the currencies desk's venues and pairs, and the metals desk's venues,
+  // spot and futures: there, and closed, until each desk opens.
+  exchanges: [...EXCHANGES, PRAIRIE, ...FX_VENUES, ...METAL_VENUES],
+  series: [IXF, ...METAL_SERIES],
+  instruments: [...PAIRS, ...SPOT],
   currencies: CURRENCIES,
   rollover: ROLLOVER,
+  storage: STORAGE,
+  deskNews: [SUPPLY_NEWS],
   news: NEWS,
   locations: [
     ...[
@@ -29,7 +41,10 @@ export const CONTENT: Content = {
     }),
     // The currencies' rack carries its own distance to every venue.
     COLO_EASTHOLM,
-  ],
+  ]
+    .map((l) => ({ ...l, distance: { ...l.distance, ...(METALS_DISTANCE[l.id] ?? {}) } }))
+    // The metals' racks carry their own distance to every venue.
+    .concat([COLO_THAMESFORD, COLO_HUDSON]),
   networks: NETWORKS,
   computers: COMPUTERS,
   competitors: COMPETITORS,

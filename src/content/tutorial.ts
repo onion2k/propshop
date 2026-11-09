@@ -38,7 +38,7 @@ export const TUTORIAL: TutorialStep[] = [
     id: 'watchlist',
     title: 'The watchlist',
     text:
-      'Twelve stocks and an index. Your laptop can follow four at a time, and the ticked ones are what your ' +
+      'Thirteen stocks and an index. Your laptop can follow four at a time, and the ticked ones are what your ' +
       'strategy sees. Each row shows the best price anyone will pay and the best anyone will take, as you ' +
       'can see them. Tap a row to pick it.',
     page: 'market',

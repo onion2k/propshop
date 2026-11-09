@@ -3,7 +3,7 @@ import { Game, MS_PER_MINUTE, TICK_MS } from '../src/sim';
 import { Exchange } from '../src/sim/exchange';
 import { kindOf, scaleOf, tickOf, valueOf } from '../src/sim/instrument';
 import { Market } from '../src/sim/market';
-import type { InstrumentSpec } from '../src/sim/types';
+import type { Content, InstrumentSpec } from '../src/sim/types';
 import { infrastructureFrom } from '../src/sim/upgrades';
 import { EXCHANGES, STOCKS } from './fixtures';
 
@@ -21,43 +21,77 @@ function busyGame(content = CONTENT): Game {
   return g;
 }
 
+/** The game's content without the metals desk (plans/desk-metals.md 6b): what the held fingerprints were taken on. */
+const NO_METALS: Content = {
+  ...CONTENT,
+  exchanges: CONTENT.exchanges.filter((e) => e.desk !== 'metals'),
+  series: (CONTENT.series ?? []).filter((s) => s.contract.desk !== 'metals'),
+  instruments: (CONTENT.instruments ?? []).filter((s) => s.desk !== 'metals'),
+  deskNews: [],
+  locations: CONTENT.locations.filter((l) => l.desk !== 'metals'),
+};
+
 const BLOCKS_ON = ['momentum', 'basisArb', 'leadLag', 'carry', 'triangle'];
 const EXPECTED_DESKS_OPEN: unknown[] = [
-  [1, '87d3edc1', 445, 445, [97, 0, 69, 0, 79]],
-  [2, 'ea81a08b', 261, 299, [74, 0, 88, 0, 137]],
+  [1, '5a409e9e', 481, 498, [119, 0, 100, 0, 79]],
+  [2, '473e9068', 261, 314, [64, 0, 113, 0, 137]],
+];
+
+// The two below moved on 2026-11-09 when Hudson stopped listing the spot (6c's amendment to 6b), every other figure the
+// same: closed 'd7fa5a46' and 'cecb8650', open 'beafb15' and '5c3e6bd3' before.
+const EXPECTED_METALS_CLOSED: unknown[] = [
+  [1, '9326e341', 481, 498, [119, 0, 100, 0, 79]],
+  [2, '4f30cd6d', 261, 314, [64, 0, 113, 0, 137]],
+];
+// Moved on 2026-11-09 with the desk's blocks and its rival (plans/desk-metals.md 6d): the firm is given the three blocks,
+// off, and Aldgate Metals joins as the desk opens, so the save carries both (without the rival, 'a650dd47' and
+// '1ffa9dfe'); every other figure is the same. Before, seed 1 was 'adab4574' and seed 2 '1f0cdc79'.
+// Moved again on 2026-11-09 with 6f, every other figure the same: the metals' crowd trades in lots of one (the books
+// and their logs differ), and Aldgate's fixArb asks 4 bp (its saved parameters). Before, 'b0c0774' and 'b4c4cf9f'.
+const EXPECTED_METALS_OPEN: unknown[] = [
+  [1, '23255924', 481, 498, [119, 0, 100, 0, 79]],
+  [2, 'f3320a6b', 261, 314, [64, 0, 113, 0, 137]],
 ];
 
 describe('instruments, folded in from stocks', () => {
   // Taken on 2026-11-08 at commit 074c5df, before instruments existed: a stock is an instrument with a multiplier
-  // of one and a price in cents, so the same seed and setup must give the same game to the bit.
+  // of one and a price in cents, so the same seed and setup must give the same game to the bit. Every figure moved
+  // once, on purpose, on 2026-11-09, when the miner (RDG, plans/desk-metals.md 6a) changed what `world` draws: 616
+  // fills, cash -5,744,615, equity 20,056,935 and fingerprint '914a5ecf' before; the stocks-only one was 'c08c8813'.
   it('leave a busy colocated game exactly as it was', () => {
     const g = busyGame();
     const f = g.firm;
-    expect(f.stats.fillsReceived).toBe(616);
-    expect(f.cash).toBe(-5744615);
-    expect(f.realised).toBe(62915.67450731223);
-    expect(f.feesPaid).toBe(16965);
-    expect(f.unrealised(g.market, g.now)).toBe(10984.32549268307);
-    expect(f.equity(g.market, g.now)).toBe(20056935);
-    expect((f as unknown as { exposure(): number }).exposure()).toBe(75209065.67450732);
-    expect(g.competitors.map((c) => c.cash)).toEqual([200000000, 199999972, 200001148, 200002880, 200000000]);
+    expect(f.stats.fillsReceived).toBe(579);
+    expect(f.cash).toBe(4000789);
+    expect(f.realised).toBe(-29823.998351899692);
+    expect(f.feesPaid).toBe(16636);
+    expect(f.unrealised(g.market, g.now)).toBe(1786.4983519045836);
+    expect(f.equity(g.market, g.now)).toBe(19955326.5);
+    expect((f as unknown as { exposure(): number }).exposure()).toBe(65216953.942824565);
+    expect(g.competitors.map((c) => c.cash)).toEqual([200000000, 199999956, 200000940, 200004460, 200000000]);
     // The save now carries the futures desk, there and closed (its venue's books, streams and contracts), so the
     // whole game's fingerprint moved on 2026-11-08 while every figure above stayed; without the desk it is the same.
     // It moved again on 2026-11-09 for the currencies desk, there and closed (its venues' books and streams, its
-    // pairs' fair values and factor, the rates); without that desk it is '50fb0670', the futures desk's, still.
-    expect(g.fingerprint()).toBe('914a5ecf');
+    // pairs' fair values and factor, the rates); without that desk it was '50fb0670', the futures desk's, until the
+    // miner moved the stocks' world on 2026-11-09.
+    // It moved again on 2026-11-09 for the metals desk, there and closed (its three venues' books and streams, the
+    // spot metals' fair values and factor, the six contracts), every figure above the same; without that desk it is
+    // 'd8661a66', the miner's, still. It was 'ab8d1400' until Hudson stopped listing the spot (6c's amendment to 6b).
+    expect(g.fingerprint()).toBe('702a3c4f');
+    expect(busyGame(NO_METALS).fingerprint()).toBe('d8661a66');
     const stocksOnly = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
-    expect(busyGame(stocksOnly).fingerprint()).toBe('c08c8813');
+    expect(busyGame(stocksOnly).fingerprint()).toBe('a45526ec');
   }, 120_000);
 
   // Taken on 2026-11-09 at commit f94384f, before the step-rate cuts of plans/desk-speed.md: both desks open, the
   // player on a rack with a stocks block, a futures block and a currencies block, so the narrowed views are at work,
-  // and the rivals as content has them. Every cut to how a firm builds its view must leave these as they are.
+  // and the rivals as content has them. Every cut to how a firm builds its view must leave these as they are. They
+  // moved once, on purpose, on 2026-11-09 with the miner (plans/desk-metals.md 6a): before, seed 1 was '87d3edc1',
+  // 445 fills, 445 orders, [97, 0, 69, 0, 79], and seed 2 'ea81a08b', 261, 299, [74, 0, 88, 0, 137].
   it('leave a game with both desks open exactly as it was', () => {
-    const play = (seed: number): Game => {
-      const g = new Game(CONTENT, seed);
-      g.openDesk('futures');
-      g.openDesk('fx');
+    const play = (seed: number, content = NO_METALS, desks = ['futures', 'fx']): Game => {
+      const g = new Game(content, seed);
+      for (const d of desks) g.openDesk(d);
       g.firm.infra = infrastructureFrom(CONTENT, { location: 'colo-harbor', network: 'microwave', computer: 'rack' });
       const on = BLOCKS_ON;
       for (const b of g.firm.blocks) b.enabled = on.includes(b.id);
@@ -65,12 +99,18 @@ describe('instruments, folded in from stocks', () => {
       g.stepTicks((10 * MS_PER_MINUTE) / TICK_MS);
       return g;
     };
-    const seen = [1, 2].map((seed) => {
-      const g = play(seed);
-      const byBlock = (id: string) => [...g.firm.orders.values()].filter((o) => o.block === id).length;
-      return [seed, g.fingerprint(), g.firm.stats.fillsReceived, g.firm.stats.ordersSent, BLOCKS_ON.map(byBlock)];
-    });
-    expect(seen).toEqual(EXPECTED_DESKS_OPEN);
+    const seen = (content: Content, desks?: string[]) =>
+      [1, 2].map((seed) => {
+        const g = play(seed, content, desks);
+        const byBlock = (id: string) => [...g.firm.orders.values()].filter((o) => o.block === id).length;
+        return [seed, g.fingerprint(), g.firm.stats.fillsReceived, g.firm.stats.ordersSent, BLOCKS_ON.map(byBlock)];
+      });
+    // Held on the content without the metals desk, as they were taken (plans/desk-metals.md 6b).
+    expect(seen(NO_METALS)).toEqual(EXPECTED_DESKS_OPEN);
+    // With it there and closed, every figure is the same and the fingerprint carries the closed desk.
+    expect(seen(CONTENT)).toEqual(EXPECTED_METALS_CLOSED);
+    // And with the metals desk open too: taken on 2026-11-09 when it was built (6b), moved with its rival (6d).
+    expect(seen(CONTENT, ['futures', 'fx', 'metals'])).toEqual(EXPECTED_METALS_OPEN);
   }, 120_000);
 
   /** A future on an index: fifty times the index, quoted in quarter points of a dollar. */

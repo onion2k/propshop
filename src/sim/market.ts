@@ -82,6 +82,10 @@ export interface SavedMarket {
   lastSample: number;
   /** Each currency's last mid of its pair; absent where there is no currency but the dollar. */
   rates?: Record<string, number>;
+  /** Each metal's lease rate; absent while no desk with a lease is open, and in every save from before them. */
+  leases?: Record<string, number>;
+  /** The stocks' factor level each reading instrument last took; absent as the leases are. */
+  reads?: Record<string, number>;
 }
 
 /** What every firm sees alike of the live instruments (`Market.sharedParts`). */
@@ -91,6 +95,8 @@ export interface SharedParts {
   constituents: Readonly<Record<string, readonly string[]>>;
   contracts: Readonly<Record<string, ContractView>>;
   exchangeIds: readonly string[];
+  /** Each live instrument's value of a price point of one unit (`scaleOf`). */
+  scales: Readonly<Record<string, number>>;
 }
 
 /** A pair's parts that stay while the live instruments do. */
@@ -175,6 +181,17 @@ export class Market {
   private pairCache: PairParts | null = null;
   /** The pairs the rates are read from, with their desks. */
   private readonly ratePairs: { currency: string; pair: string; desk: string }[] = [];
+  /**
+   * Each metal's lease rate now, a year, a share: one entry a leased instrument of the content, at its start until
+   * its desk opens, then wandering on the desk's stream and moved by its news.
+   */
+  readonly leases = new Map<string, number>();
+  /** The leased instruments, by desk, in the content's order. */
+  private readonly leased = new Map<string, StockSpec[]>();
+  /** Counts the changes to the leases, so the contracts' carries are rebuilt only when one has moved. */
+  private leaseStamp = 0;
+  /** The stocks' factor level each reading instrument last took (`InstrumentSpec.reads`): one entry each. */
+  private readonly lastRead = new Map<string, number>();
 
   constructor(
     stocks: StockSpec[],
@@ -187,6 +204,12 @@ export class Market {
     this.currencyPairs(stocks, currencies);
     this.instruments = [...stocks];
     for (const s of stocks) if (s.margin) this.margins.set(s.symbol, s.margin);
+    for (const s of stocks) {
+      if (!s.lease) continue;
+      this.leases.set(s.symbol, s.lease.rate);
+      this.leased.set(deskOf(s), [...(this.leased.get(deskOf(s)) ?? []), s]);
+    }
+    for (const s of stocks) if (s.reads) this.lastRead.set(s.symbol, 0);
     this.stockDesk = stocks.filter((s) => deskOf(s) === STOCKS_DESK);
     this.scales = new Map(stocks.map((s) => [s.symbol, scaleOf(s)]));
     this.factorSpec = factors;
@@ -272,7 +295,38 @@ export class Market {
   openDesk(desk: string): void {
     if (this.openDesks.has(desk)) return;
     this.openDesks.add(desk);
+    // What reads the stocks' factors takes their level at once: read, not drawn.
+    for (const s of this.instruments) if (s.reads && deskOf(s) === desk) this.read(s);
     this.refreshLive();
+  }
+
+  /**
+   * An instrument that reads a stocks' factor takes its move since last read, at its loading, into its fair value
+   * and anchor, as a stock takes its sector's move. Draws nothing.
+   */
+  private read(s: StockSpec): void {
+    const r = s.reads!;
+    const level = this.factors.sectors.get(r.sector) ?? 0;
+    const move = (r.loading * (level - (this.lastRead.get(s.symbol) ?? 0))) / 10_000;
+    this.lastRead.set(s.symbol, level);
+    if (move === 0) return;
+    const fair = this.fair.get(s.symbol) ?? s.startPrice;
+    const anchor = this.anchor.get(s.symbol) ?? s.startPrice;
+    this.fair.set(s.symbol, Math.max(1, fair * (1 + move)));
+    this.anchor.set(s.symbol, anchor * (1 + move));
+  }
+
+  /** A contract's carry now, a year: its own, less its metal's lease where it names one. */
+  carryOf(s: StockSpec): number {
+    return (s.carry ?? 0) - (s.leaseOf !== undefined ? (this.leases.get(s.leaseOf) ?? 0) : 0);
+  }
+
+  /** Supply news: a metal's lease moves by so much at once, and wanders back from there. */
+  shiftLease(symbol: string, by: number): void {
+    const l = this.leases.get(symbol);
+    if (l === undefined || by === 0) return;
+    this.leases.set(symbol, l + by);
+    this.leaseStamp++;
   }
 
   private refreshLive(): void {
@@ -287,29 +341,50 @@ export class Market {
    * block reads them and never writes (the view's types say so).
    */
   sharedParts(): SharedParts {
-    if (this.shared && this.shared.stamp === this.liveStamp) return this.shared;
+    const kept = this.shared;
+    if (kept && kept.stamp === this.liveStamp) {
+      if (this.sharedLeases === this.leaseStamp) return kept;
+      // A lease has moved: the contracts' carries are new objects, the rest as it was.
+      this.sharedLeases = this.leaseStamp;
+      this.shared = { ...kept, contracts: this.contractViews() };
+      return this.shared;
+    }
     const sectors: Record<string, string> = {};
     const constituents: Record<string, readonly string[]> = {};
-    const contracts: Record<string, ContractView> = {};
+    const scales: Record<string, number> = {};
     for (const s of this.stocks) {
       sectors[s.symbol] = s.sector;
       if (s.constituents) constituents[s.symbol] = s.constituents;
-      if (isCarried(s))
-        contracts[s.symbol] = {
-          underlying: s.underlying!,
-          expiry: s.expiry!,
-          carry: s.carry!,
-          multiplier: s.multiplier ?? 1,
-        };
+      scales[s.symbol] = this.scales.get(s.symbol) ?? 1;
     }
+    this.sharedLeases = this.leaseStamp;
     this.shared = {
       stamp: this.liveStamp,
       sectors,
       constituents,
-      contracts,
+      contracts: this.contractViews(),
       exchangeIds: this.exchanges.map((e) => e.id),
+      scales,
     };
     return this.shared;
+  }
+
+  /** The lease stamp the shared parts' contracts were built at. */
+  private sharedLeases = -1;
+
+  /** The live carried contracts as a block sees them, each carry as it is now. */
+  private contractViews(): Record<string, ContractView> {
+    const contracts: Record<string, ContractView> = {};
+    for (const s of this.stocks) {
+      if (isCarried(s))
+        contracts[s.symbol] = {
+          underlying: s.underlying!,
+          expiry: s.expiry!,
+          carry: this.carryOf(s),
+          multiplier: s.multiplier ?? 1,
+        };
+    }
+    return contracts;
   }
 
   /**
@@ -443,9 +518,20 @@ export class Market {
     return Math.round((this.fair.get(symbol) ?? spec.startPrice) / tick) * tick;
   }
 
-  /** Where a symbol trades now: the mid on its first live venue, else its fair value. */
-  markOf(symbol: string): number {
-    return this.venuesOf(symbol)[0]?.book(symbol).mid() ?? this.fair.get(symbol) ?? this.stock(symbol).startPrice;
+  /**
+   * Where a symbol trades now: the mid on its first live venue that is open at `now`, else its fair value. A symbol
+   * on venues of one session (every stock, pair and future) reads its first live venue, as it always did; spot metal
+   * reads Thamesford's book while Sundar is shut. Without `now`, or with no listing venue open, the first live venue.
+   */
+  markOf(symbol: string, now?: number): number {
+    return this.midNow(symbol, now) ?? this.fair.get(symbol) ?? this.stock(symbol).startPrice;
+  }
+
+  /** The mid on the first live venue listing a symbol that is open at `now`; with none open, the first live venue's. */
+  midNow(symbol: string, now?: number): number | null {
+    const venues = this.venuesOf(symbol);
+    const open = now === undefined ? undefined : venues.find((e) => e.isOpen(now));
+    return (open ?? venues[0])?.book(symbol).mid() ?? null;
   }
 
   /** The live venues that list a symbol, in the content's order. */
@@ -562,7 +648,7 @@ export class Market {
   private carried(s: StockSpec, now: number): number {
     const under = this.fair.get(s.underlying ?? '') ?? s.startPrice;
     const years = Math.max(0, (s.expiry ?? now) - now) / MS_PER_YEAR;
-    return under * (1 + (s.carry ?? 0) * years);
+    return under * (1 + this.carryOf(s) * years);
   }
 
   /** A cross's fair value: the product of its legs', scaled to its points. Draws nothing. */
@@ -609,6 +695,15 @@ export class Market {
       if (s.jumpsPerSecond > 0 && random.chance((s.jumpsPerSecond * dt) / 1000)) next += s.jumpSize * random.normal();
       this.anchor.set(s.symbol, anchor + common);
       this.fair.set(s.symbol, Math.max(1, next));
+      if (s.reads) this.read(s);
+    }
+    // Each lease wanders back toward its own rate, on the desk's stream. A desk without leases draws nothing for them.
+    for (const s of this.leased.get(desk) ?? []) {
+      const l = s.lease!;
+      const now = this.leases.get(s.symbol) ?? l.rate;
+      const next = now + l.hourlyVol * Math.sqrt(hours) * random.normal() - (now - l.rate) * l.reversionPerHour * hours;
+      this.leases.set(s.symbol, next);
+      this.leaseStamp++;
     }
   }
 
@@ -686,7 +781,17 @@ export class Market {
       lastSample: this.lastSample,
       // A market with no currency but the dollar saves as it did before currencies, to the byte.
       ...(this.rates.size > 0 ? { rates: Object.fromEntries([...this.rates].map(([c, r]) => [c, r.mid])) } : {}),
+      // A market whose leased desks are all shut saves as it did before leases, to the byte.
+      ...(this.leasesLive()
+        ? { leases: Object.fromEntries(this.leases), reads: Object.fromEntries(this.lastRead) }
+        : {}),
     };
+  }
+
+  /** Whether a desk with a lease or a read is open: then the leases and the reads move, and are saved. */
+  private leasesLive(): boolean {
+    for (const s of this.instruments) if ((s.lease || s.reads) && this.openDesks.has(deskOf(s))) return true;
+    return false;
   }
 
   load(saved: SavedMarket): void {
@@ -719,5 +824,8 @@ export class Market {
       const rate = this.rates.get(c);
       if (rate) rate.mid = mid;
     }
+    for (const [m, l] of Object.entries(saved.leases ?? {})) if (this.leases.has(m)) this.leases.set(m, l);
+    for (const [m, r] of Object.entries(saved.reads ?? {})) if (this.lastRead.has(m)) this.lastRead.set(m, r);
+    this.leaseStamp++;
   }
 }

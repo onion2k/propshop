@@ -35,7 +35,18 @@ export {
   replayAt,
   startOf,
 } from './experiment';
-export type { BeatenRace, Measures, Moment, MomentDraft, MomentSource, RaceTally, Setup } from './experiment';
+export type {
+  BeatenRace,
+  Ledger,
+  Measures,
+  Moment,
+  MomentDraft,
+  MomentSource,
+  RaceTally,
+  RunOptions,
+  Setup,
+  Traded,
+} from './experiment';
 export {
   BLOCKS,
   EXAMPLE_SOURCE,
@@ -51,12 +62,14 @@ export type {
   BlockSpec,
   Fill,
   HandIntent,
+  Indicative,
   OpenOrder,
   ParamSpec,
   Params,
   SeenDepth,
   SeenLevel,
   SeenPrint,
+  SeenQuote,
 } from './strategy';
 export { BEST, TAPE_VIEW } from './strategy';
 export type { BlockSetting, GapEpisode, HandResult, PendingHand, RiskSettings, Halt, Wire } from './firm';
@@ -75,9 +88,12 @@ export {
 } from './firm';
 export type { Tip, Fine } from './darkweb';
 export type { Published } from './news';
+export { DESK_FEED_LENGTH, MAX_DESK_NEWS_PER_DAY } from './news';
 export type { HistoryPoint } from './market';
 export type { Level, Quote } from './orderbook';
 export { REFUSED_CROSSED } from './orderbook';
+export type { Fix } from './exchange';
+export { MAX_FIXES, REFUSED_IN_FIX } from './exchange';
 export type { UpgradeKind, UpgradeOffer } from './upgrades';
 export { DEFAULT_RULES } from './types';
 export type {
@@ -92,6 +108,9 @@ export type {
   MarginSpec,
   CurrencySpec,
   RolloverSpec,
+  StorageSpec,
+  DeskNewsSpec,
+  DeskNewsTemplate,
   ExchangeSpec,
   LocationSpec,
   NetworkSpec,
@@ -127,6 +146,7 @@ export {
   currencyOf,
   decimalsOf,
   rolloverDays,
+  storageDays,
   toHome,
   deskOf,
   kindOf,

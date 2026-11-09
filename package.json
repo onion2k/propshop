@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot"
+    "check": "prettier --check . --log-level warn && npm run --silent typecheck && eslint . && vitest run --reporter dot && npm run --silent floors",
+    "floors": "FLOORS=1 vitest run test/speed.test.ts --reporter dot"
   },
   "dependencies": {
     "react": "^19.2.0",

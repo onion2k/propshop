@@ -4,7 +4,10 @@
 // back the exact state at any tick, and two runs from one start see the same world (the sim's chance is in
 // streams the firm cannot reach).
 
+import { MS_PER_MINUTE } from './clock';
+import type { Fix } from './exchange';
 import { Game, TICK_MS, type GameEvent, type SavedGame, type Tally } from './game';
+import { valueOf } from './instrument';
 import type { BlockSetting } from './firm';
 import type { OpenOrder } from './strategy';
 import type { Content } from './types';
@@ -78,17 +81,62 @@ export interface Measures {
   fees: number;
   /** Orders a dealer looked at and refused (last look); absent in a measure from before the dealer. */
   refused?: number;
+  /** What was bought and sold at what prices, the fixes and what was held at the end; only for a run that keeps one. */
+  ledger?: Ledger;
+}
+
+/** A symbol's buying and selling in a run, in units, and in price points times units. */
+export interface Traded {
+  bought: number;
+  sold: number;
+  buyValue: number;
+  sellValue: number;
+  /** The mid where each fill was told, times its units, summed: what the same units were worth at the mid. */
+  buyMid: number;
+  sellMid: number;
+}
+
+/**
+ * A run's book of prices, for an experiment that measures a price rather than a race: each symbol traded, the mid of
+ * each watched symbol at the run's start, every fix in the window, and what was held at the end with its value at the
+ * mark (cents).
+ */
+export interface Ledger {
+  traded: Record<string, Traded>;
+  startMid: Record<string, number | null>;
+  fixes: (Fix & { venue: string })[];
+  held: Record<string, { qty: number; value: number }>;
+  /** The firm's cash at the run's start and at the end, cents. */
+  cash: { start: number; end: number };
+}
+
+/** What a run keeps beyond the measures every run has. */
+export interface RunOptions {
+  /** Keep a `Ledger`. */
+  ledger?: boolean;
 }
 
 /**
  * The world at the experiment's start: a new game with these desks open, at the open, stepped on to `startAt` (an
  * absolute time). A desk draws from its own stream, so opening one leaves the stocks' morning as it was.
  */
-export function startOf(content: Content, seed: number, startAt: number, desks: readonly string[] = []): SavedGame {
+export function startOf(
+  content: Content,
+  seed: number,
+  startAt: number,
+  desks: readonly string[] = [],
+  warmMs?: number,
+): SavedGame {
   const g = new Game(content, seed);
   for (const d of desks) g.openDesk(d);
   g.skipToOpen();
   if (startAt < g.now) throw new Error(`startAt ${startAt} is before the open at ${g.now}`);
+  // A window later in the week: the firm is idle, and the days before it are stepped a minute at a time (as a skip
+  // over closed hours is) up to `warmMs` before the start, so the books are full again and the page waits seconds.
+  if (warmMs !== undefined) {
+    for (const b of g.firm.blocks) b.enabled = false;
+    while (g.now < startAt - warmMs) g.step(Math.min(MS_PER_MINUTE, startAt - warmMs - g.now));
+  }
   while (g.now < startAt) g.step();
   return g.save();
 }
@@ -116,8 +164,16 @@ export class Run {
   private readonly beaten: BeatenRace[] = [];
   private readonly baseline: number;
   private readonly names: Map<string, string>;
+  private readonly ledger: Ledger | null;
 
-  constructor(content: Content, start: SavedGame, setup: Setup, windowMs: number, moments?: MomentSource) {
+  constructor(
+    content: Content,
+    start: SavedGame,
+    setup: Setup,
+    windowMs: number,
+    moments?: MomentSource,
+    options: RunOptions = {},
+  ) {
     if (windowMs <= 0) throw new Error('A run needs a window');
     if (windowMs > MAX_WINDOW_MS) throw new Error(`A window of ${windowMs} ms is longer than ${MAX_WINDOW_MS}`);
     this.start = start;
@@ -130,6 +186,15 @@ export class Run {
     this.endAt = this.startAt + windowMs;
     this.baseline = this.net();
     this.names = new Map(this.game.competitors.map((c) => [c.id, c.name]));
+    this.ledger = options.ledger
+      ? {
+          traded: {},
+          startMid: Object.fromEntries(setup.watched.map((s) => [s, this.game.market.midNow(s, this.startAt)])),
+          fixes: [],
+          held: {},
+          cash: { start: this.game.firm.cash, end: this.game.firm.cash },
+        }
+      : null;
     this.game.on((e) => this.events.push(e));
   }
 
@@ -144,6 +209,7 @@ export class Run {
       this.events = [];
       g.step();
       for (const e of this.events) if (e.kind === 'fill') this.fill(e.fill);
+      if (this.ledger) this.book(this.ledger);
       for (const o of g.firm.tickResolved) this.race(o);
       if (this.source) {
         for (const m of this.source(g, this.events, g.firm.tickResolved)) {
@@ -153,6 +219,35 @@ export class Run {
       }
     }
     return this.finished;
+  }
+
+  /** The tick's fills at their prices and the mid where each was told, and any fix the tick reached. */
+  private book(ledger: Ledger): void {
+    const g = this.game;
+    for (const e of this.events) {
+      if (e.kind !== 'fill') continue;
+      const f = e.fill;
+      const t = (ledger.traded[f.symbol] ??= { bought: 0, sold: 0, buyValue: 0, sellValue: 0, buyMid: 0, sellMid: 0 });
+      const mid = g.market.markOf(f.symbol, g.now);
+      if (f.side === 'buy') {
+        t.bought += f.size;
+        t.buyValue += f.price * f.size;
+        t.buyMid += mid * f.size;
+      } else {
+        t.sold += f.size;
+        t.sellValue += f.price * f.size;
+        t.sellMid += mid * f.size;
+      }
+    }
+    for (const v of g.market.exchanges) {
+      const last = v.fixes[v.fixes.length - 1];
+      if (!last || last.at <= this.startAt || last.at > g.now) continue;
+      for (let i = v.fixes.length - 1; i >= 0 && v.fixes[i]!.at === last.at; i--) {
+        const f = v.fixes[i]!;
+        if (!ledger.fixes.some((x) => x.venue === v.id && x.at === f.at && x.symbol === f.symbol))
+          ledger.fixes.push({ ...f, venue: v.id });
+      }
+    }
   }
 
   private fill(f: { block: string; realised: number; fee: number }): void {
@@ -175,7 +270,20 @@ export class Run {
       byBlock: Object.fromEntries(Object.entries(this.byBlock).map(([k, v]) => [k, { ...v }])),
       fees: this.fees,
       refused: this.refused,
+      ...(this.ledger ? { ledger: this.held(this.ledger) } : {}),
     };
+  }
+
+  /** The ledger as it stands, with what the firm holds now and its value at the mark. */
+  private held(ledger: Ledger): Ledger {
+    const g = this.game;
+    const held: Ledger['held'] = {};
+    for (const [symbol, pos] of g.firm.positions) {
+      if (pos.qty === 0) continue;
+      const value = valueOf(g.market.scales.get(symbol) ?? 1, pos.qty, g.market.markOf(symbol, g.now));
+      held[symbol] = { qty: pos.qty, value: Math.round(value) };
+    }
+    return structuredClone({ ...ledger, held, cash: { start: ledger.cash.start, end: g.firm.cash } });
   }
 
   private net(): number {

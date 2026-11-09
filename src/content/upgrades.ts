@@ -231,6 +231,19 @@ export const COMPETITORS: CompetitorSpec[] = [
     watches: ['fx'],
     blocks: [{ id: 'triangle', params: { threshold: 1, lots: 20, venue: 0 } }],
   },
+  {
+    // The metals desk's rival, there once the desk opens: a rack at Thamesford, resting into the fix when its
+    // indicative is off the future's. It watches the metals alone. The firm the player meets in the call. A draft name.
+    id: 'aldgate',
+    name: 'Aldgate Metals',
+    location: 'colo-thamesford',
+    network: 'fibre',
+    computer: 'rack',
+    minEdge: 0,
+    desk: 'metals',
+    watches: ['metals'],
+    blocks: [{ id: 'fixArb', params: { threshold: 4, lots: 4 } }],
+  },
 ];
 
 export const STARTING_CASH = 200 * K;

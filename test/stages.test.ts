@@ -3,6 +3,7 @@ import {
   CONTENT,
   LESSONS,
   featureStage,
+  placed,
   STAGES,
   introSteps,
   lessonStage,
@@ -89,6 +90,10 @@ describe('shows', () => {
     ['desk:fx', 4],
     ['block:triangle', 4],
     ['block:carry', 4],
+    ['desk:metals', 5],
+    ['block:curve', 5],
+    ['block:fixArb', 5],
+    ['block:crossPairs', 5],
   ];
   it.each(table)('%s opens at stage %i and not before', (feature, at) => {
     for (let stage = 1; stage <= 5; stage++) expect(shows(feature, stage as 1)).toBe(stage >= at);
@@ -101,12 +106,22 @@ describe('shows', () => {
     }
   });
 
-  it('places every desk the content has before the last stage, so none opens by default in free play', () => {
-    // An unnamed desk would fall to the last stage and open in free play: each is named in the table instead.
+  it('places every desk the content has by name, so none opens by falling to the default', () => {
+    // An unnamed desk would fall to the last stage and open in free play before its page was built: each is named in
+    // the table instead. The metals desk is named at the last stage on purpose (plans/desk-metals.md 6e), after the
+    // stage that teaches pairs, which its miner-and-the-metal block builds on.
     const store = createStore(CONTENT, null, 1);
     const desks = store.game.market.desks;
-    expect(desks).toEqual(['futures', 'fx']);
-    for (const d of desks) expect(featureStage(`desk:${d}`)).toBeLessThan(5);
+    expect(desks).toEqual(['futures', 'fx', 'metals']);
+    for (const d of desks) expect(placed(`desk:${d}`), d).toBe(true);
+    expect(placed('desk:nowhere')).toBe(false);
+    expect(featureStage('desk:metals')).toBe(5);
+  });
+
+  it('opens the metals desk after every stocks lesson is done, and not before', () => {
+    const before = done(...S1, ...S2, ...S3, 'hand', 'used');
+    expect(shows('desk:metals', stageOf(before))).toBe(false);
+    expect(shows('desk:metals', stageOf(done(...S1, ...S2, ...S3, ...S4)))).toBe(true);
   });
 
   it('gives each stage after the first intro cards', () => {

@@ -162,7 +162,12 @@ describe('a store made mid-day', () => {
 
   it('records a night with the reason and runs nothing when it has no pins', () => {
     const runner = new FakeRunner();
-    const store = midDay(5 * 60 * 60 * 1000 + 59 * MS_PER_MINUTE, runner); // past every pin time but the close
+    // Past every pin time but the close: a minute after the day's last pin, wherever its headline falls.
+    const g = new Game(CONTENT, 21);
+    g.skipToOpen();
+    const last = Math.max(...pinTimes(g).map((p) => p.at));
+    const open = Math.floor(g.now / MS_PER_DAY) * MS_PER_DAY + MARKET_OPEN;
+    const store = midDay(last - open + MS_PER_MINUTE, runner);
     upTo(store, dayStart(store) + MARKET_CLOSE - TICK_MS);
     while (store.getTests().nights.length === 0) {
       store.game.step(TICK_MS);

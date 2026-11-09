@@ -13,6 +13,7 @@ import {
 } from './clock';
 import { DarkWeb, HEAT_FINE_LINE, type Fine, type SavedDarkWeb, type Tip } from './darkweb';
 import {
+  DELIVERY_BLOCK,
   Firm,
   type BlockSetting,
   type GapEpisode,
@@ -34,13 +35,16 @@ import {
   isCarried,
   listedOn,
   rolloverDays,
+  storageDays,
   inHome,
   toHome,
   valueOf,
 } from './instrument';
+import type { Fix } from './exchange';
 import type { Level } from './orderbook';
+import type { Indicative } from './strategy/types';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
-import { News, type Published, type SavedNews } from './news';
+import { DeskNews, News, type Published, type SavedDeskNews, type SavedNews } from './news';
 import { Random, deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
 import {
@@ -136,6 +140,11 @@ export interface DayReport {
    * currency position at 17:00.
    */
   rollover?: number;
+  /**
+   * Storage on metal held long and the lease on metal held short, at 17:00 that day, in cents (negative is paid):
+   * written in and counted in `pnl` and `equityAtClose` as the rollover is. Absent where no metal was held then.
+   */
+  storage?: number;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -178,6 +187,8 @@ export interface SavedGame {
   equityAtRulesChange?: Record<string, number>;
   /** The desks open besides the stocks; absent in a save from before desks, and where none is. */
   desks?: string[];
+  /** Each desk's own news, by desk, once it has run; absent before, and in every save from before it. */
+  deskNews?: Record<string, SavedDeskNews>;
 }
 
 /** The day's tallies, from the open. */
@@ -255,6 +266,8 @@ export interface Snapshot {
     mark: number | null;
     unrealised: number;
     decimals: number;
+    /** Of it, what a contract held into expiry delivered: absent where none was. */
+    delivered?: number;
   }[];
   /**
    * Each currency besides the dollar the firm may hold, while a pair that prices it is live: the amount in its minor
@@ -318,9 +331,18 @@ export interface Snapshot {
       /** Dollar cents a pip of one lot is worth at the rate now, so a fee in cents can be read in pips. */
       pointValue: number;
     };
+    /** A metal: the ounces in a lot, and its lease rate now, a year. */
+    metal?: { ounces: number; lease: number };
     exchanges: {
       id: string;
-      seen: { bid: number | null; ask: number | null; bidSize: number; askSize: number } | null;
+      /** The quote as the firm sees it, through its data latency; in a fix's call, the indicative it has seen. */
+      seen: {
+        bid: number | null;
+        ask: number | null;
+        bidSize: number;
+        askSize: number;
+        indicative?: Indicative;
+      } | null;
       last: number | null;
       depth: { bids: Level[]; asks: Level[] };
     }[];
@@ -335,13 +357,30 @@ export interface Snapshot {
       basis: number;
       /** Cents a contract asks to open and to keep, at fair value. */
       margin: { initial: number; maintenance: number } | null;
+      /** Whether one held at expiry is delivered as its underlying, not settled in cash. */
+      delivery: boolean;
     };
   }[];
   /** The margin the firm's margined positions ask, cents, at their marks; absent while it holds none. */
   margin?: { initial: number; maintenance: number };
-  /** The venues, each with its fee; `dealer` where it takes a last look at an order before it fills it. */
-  exchanges: { id: string; name: string; city: string; feePerShare: number; dealer: boolean }[];
+  /**
+   * The venues, each with its fee; `dealer` where it takes a last look at an order before it fills it. A venue with
+   * fixes has `fixes`: the times of day they are at, the moment the fix whose call is running uncrosses (`call`, null
+   * outside a call) and its log, oldest first.
+   */
+  exchanges: {
+    id: string;
+    name: string;
+    city: string;
+    feePerShare: number;
+    dealer: boolean;
+    auctions?: number[];
+    call?: number | null;
+    fixes?: Fix[];
+  }[];
   news: Published[];
+  /** Each open desk's own headlines (the metals' supply news), newest first, each with its desk. */
+  deskNews: (Published & { desk: string })[];
   dark: { unlocked: boolean; offers: Tip[]; bought: Tip[]; fines: Fine[] };
   competitors: { id: string; name: string; latency: Record<string, number>; fills: number; pnl: number }[];
   /** For the microscope: every firm's messages on the wire, and each exchange's belief per symbol. */
@@ -388,6 +427,8 @@ export class Game {
   streams: Streams;
   readonly market: Market;
   readonly news: News;
+  /** Each desk's own news, stepped while its desk is open. */
+  readonly deskNews: DeskNews[];
   readonly dark: DarkWeb;
   readonly firm: Firm;
   /** The rivals: the stocks' from the start, and each open desk's, which joined when it opened. */
@@ -433,6 +474,9 @@ export class Game {
       this.market.desks,
     );
     this.news = new News(content.news, content.stocks);
+    this.deskNews = (content.deskNews ?? [])
+      .filter((d) => this.market.desks.includes(d.desk))
+      .map((d) => new DeskNews(d));
     this.dark = new DarkWeb();
     this.owned = new Set([content.start.location, content.start.network, content.start.computer]);
     this.firm = new Firm(
@@ -502,6 +546,12 @@ export class Game {
   step(dt = TICK_MS): void {
     this.now += dt;
     this.news.step(this.now, this.market, this.streams.world);
+    for (const n of this.deskNews) {
+      if (!this.market.isDeskOpen(n.desk)) continue;
+      const stream = this.streams.desks[n.desk];
+      if (!stream) throw new Error(`No world stream for the ${n.desk} desk`);
+      n.step(this.now, this.market, stream);
+    }
     const { closedVenues } = tick(this.now, dt, this.market, this.firms(), this.streams, this.news.feed());
     this.dark.step(this.now, this.firm, this.news, this.streams.dark);
     for (const f of this.firm.tickFills) {
@@ -515,6 +565,8 @@ export class Game {
     this.contracts(closedVenues);
     const roll = this.content.rollover;
     if (roll && this.market.fx.size > 0 && crossed(this.now, dt, roll.at)) this.rollover(roll);
+    const store = this.content.storage;
+    if (store && this.market.leases.size > 0 && crossed(this.now, dt, store.at)) this.storage(store);
     for (const o of this.firm.tickResolved) {
       if (!o.ioc) continue;
       if (o.filled >= o.size) this.today.races.won++;
@@ -552,9 +604,15 @@ export class Game {
     if (this.now >= this.market.nextExpiry) {
       for (const c of this.market.expired(this.now)) {
         const price = this.market.settlementPrice(c.symbol);
+        // A contract delivers its units of the underlying, in the underlying's own lots.
+        const lot = c.underlying !== undefined ? (this.market.stock(c.underlying).multiplier ?? 1) : 1;
         const delivery =
           c.settlement === 'delivery' && c.underlying !== undefined
-            ? { underlying: c.underlying, units: c.multiplier ?? 1, scale: this.market.scales.get(c.underlying) ?? 1 }
+            ? {
+                underlying: c.underlying,
+                units: (c.multiplier ?? 1) / lot,
+                scale: this.market.scales.get(c.underlying) ?? 1,
+              }
             : null;
         for (const f of this.firms()) f.expire(c.symbol, price, delivery);
       }
@@ -567,7 +625,7 @@ export class Game {
   rollover(roll: NonNullable<Content['rollover']>): void {
     const days = rolloverDays(this.now);
     if (days === 0) return;
-    const markOf = (symbol: string) => this.market.markOf(symbol);
+    const markOf = (symbol: string) => this.market.markOf(symbol, this.now);
     for (const f of this.firms()) {
       const credited = f.rollover(days, markOf, this.market.yearly, roll.spread, roll.basis);
       if (f === this.firm && credited.length > 0) this.reportRollover(credited);
@@ -590,6 +648,33 @@ export class Game {
       pnl: last.pnl + dollars,
       equityAtClose: last.equityAtClose + dollars,
       rollover: (last.rollover ?? 0) + dollars,
+    };
+  }
+
+  /**
+   * Storage and the lease, for every firm: metal held long pays storage, metal held short its lease, on the nights the
+   * day carries. The player's goes into that day's report and P&L, as the rollover does.
+   */
+  storage(store: NonNullable<Content['storage']>): void {
+    const days = storageDays(this.now);
+    if (days === 0) return;
+    const markOf = (symbol: string) => this.market.markOf(symbol, this.now);
+    for (const f of this.firms()) {
+      const charged = f.storage(days, this.market.leases, markOf, store.rate, store.basis);
+      if (f === this.firm && charged !== 0) this.reportStorage(charged);
+    }
+  }
+
+  /** The player's storage and lease into the report of the day it was charged on, its P&L and its equity at the close. */
+  private reportStorage(cents: number): void {
+    const i = this.days.length - 1;
+    const last = this.days[i];
+    if (!last || last.day !== calendar(this.now).day) return;
+    this.days[i] = {
+      ...last,
+      pnl: last.pnl + cents,
+      equityAtClose: last.equityAtClose + cents,
+      storage: (last.storage ?? 0) + cents,
     };
   }
 
@@ -906,10 +991,14 @@ export class Game {
     const positions: Snapshot['positions'] = [];
     for (const [symbol, pos] of firm.positions) {
       if (pos.qty === 0) continue;
-      const mark = this.market.venuesOf(symbol)[0]?.book(symbol).mid() ?? null;
+      const mark = this.market.midNow(symbol, now);
       const value = mark === null ? 0 : valueOf(this.market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost);
       // A pair's is in its quote currency: in dollars at the rate now.
       const pair = this.market.fx.get(symbol);
+      // What was delivered, as far as it is still held: the same way as the position, and no more than it.
+      const given = firm.blockPositions.get(DELIVERY_BLOCK)?.get(symbol) ?? 0;
+      const delivered =
+        Math.sign(given) === Math.sign(pos.qty) ? Math.sign(given) * Math.min(Math.abs(given), Math.abs(pos.qty)) : 0;
       positions.push({
         symbol,
         qty: pos.qty,
@@ -917,6 +1006,7 @@ export class Game {
         mark,
         unrealised: pair ? toHome(pair.quote, value, this.market.rates) : value,
         decimals: this.decimals(symbol),
+        ...(delivered !== 0 ? { delivered } : {}),
       });
     }
     const unrealised = firm.unrealised(this.market, now);
@@ -982,6 +1072,9 @@ export class Game {
         dayChange: this.dayChange(s.symbol),
         decimals: this.decimals(s.symbol),
         ...this.pairOf(s),
+        ...(s.kind === 'metal'
+          ? { metal: { ounces: s.multiplier ?? 1, lease: this.market.leases.get(s.symbol) ?? 0 } }
+          : {}),
         exchanges: this.market.venuesOf(s.symbol).map((e) => ({
           id: e.id,
           seen: e.quoteAsOf(s.symbol, now - firm.dataLatency(e.id)),
@@ -998,8 +1091,15 @@ export class Game {
         city: e.spec.city,
         feePerShare: e.spec.feePerShare,
         dealer: e.spec.lastLook !== undefined,
+        ...(e.spec.auctions
+          ? { auctions: e.spec.auctions.map((a) => a.at), call: e.callAt(now), fixes: e.fixes.map((f) => ({ ...f })) }
+          : {}),
       })),
       news: [...this.news.published].reverse(),
+      deskNews: this.deskNews
+        .filter((n) => this.market.isDeskOpen(n.desk))
+        .flatMap((n) => n.published.map((h) => ({ ...h, desk: n.desk })))
+        .sort((a, b) => b.at - a.at),
       dark: {
         unlocked: this.dark.unlocked,
         offers: this.dark.offers,
@@ -1052,9 +1152,10 @@ export class Game {
       underlying: s.underlying!,
       expiry: s.expiry!,
       multiplier: s.multiplier ?? 1,
-      carry: s.carry!,
+      carry: this.market.carryOf(s),
       basis: fair - (this.market.fair.get(s.underlying!) ?? fair),
       margin: s.margin ? { initial: value * s.margin.initial, maintenance: value * s.margin.maintenance } : null,
+      delivery: s.settlement === 'delivery',
     };
   }
 
@@ -1190,6 +1291,10 @@ export class Game {
         : {}),
       market: this.market.save(),
       news: this.news.save(),
+      // A game whose desks' news never ran saves as it did before it, to the byte.
+      ...(this.deskNews.some((n) => n.started)
+        ? { deskNews: Object.fromEntries(this.deskNews.filter((n) => n.started).map((n) => [n.desk, n.save()])) }
+        : {}),
       dark: this.dark.save(),
       firm: this.firm.save(),
       firmInfra: {
@@ -1230,6 +1335,10 @@ export class Game {
     for (const d of s.desks ?? []) if (g.market.desks.includes(d)) g.market.openDesk(d);
     g.market.load(s.market);
     g.news.load(s.news);
+    for (const n of g.deskNews) {
+      const saved = s.deskNews?.[n.desk];
+      if (saved) n.load(saved);
+    }
     g.dark.load(s.dark);
     const firm = Firm.load(s.firm, infrastructureFrom(content, s.firmInfra));
     // A save from before a block existed has no setting for it: the default stands in, off. The rivals keep
@@ -1286,6 +1395,7 @@ export class Game {
       firm: s.firm,
       competitors: s.competitors,
       news: s.news,
+      ...(s.deskNews ? { deskNews: s.deskNews } : {}),
     });
     let h = 2166136261;
     for (let i = 0; i < text.length; i++) {

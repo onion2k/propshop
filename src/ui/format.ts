@@ -1,5 +1,7 @@
 // Numbers as the player reads them. Money and prices come in as cents.
 
+import { calendar, formatTime } from '../sim';
+
 export function money(cents: number, signed = false): string {
   // Whole cents first: a float's dust after the split once printed as "$25.100".
   const whole = Math.round(cents);
@@ -18,10 +20,24 @@ export function moneyShort(cents: number, signed = false): string {
   return money(cents, signed);
 }
 
-/** A price in its points, written to the instrument's places: cents for a stock (two), pips for a pair (four or two). */
+/**
+ * A price in its points, written to the instrument's places: cents for a stock (two), pips for a pair (four or two),
+ * and never fewer than two, so gold's ten-cent points read as dollars and cents ("2400.10"). Ungrouped, as the
+ * tables' columns are narrow; `dollarPrice` writes one as money, "$2,400.10".
+ */
 export function price(points: number | null, decimals = 2): string {
   if (points === null) return '—';
-  return (points / 10 ** decimals).toFixed(decimals);
+  return (points / 10 ** decimals).toFixed(Math.max(2, decimals));
+}
+
+/** A dollar price in its points as money: gold's 24001 at one place is "$2,400.10". */
+export function dollarPrice(points: number, decimals = 2): string {
+  return money(pointsInCents(points, decimals));
+}
+
+/** A dollar price's points in cents: a stock's point is a cent, gold's ten. */
+export function pointsInCents(points: number, decimals = 2): number {
+  return points * 10 ** (2 - decimals);
 }
 
 /** What the player typed as a price, in the instrument's points: "1.0851" at four places is 10851. */
@@ -59,4 +75,10 @@ export function ms(value: number): string {
 
 export function shares(n: number): string {
   return n.toLocaleString('en-US');
+}
+
+/** When a contract expires, as the top bar writes a time: "Fri wk 1 16:00". */
+export function expiryLabel(at: number): string {
+  const c = calendar(at);
+  return `${c.weekday} wk ${c.week} ${formatTime(at).slice(0, 5)}`;
 }
