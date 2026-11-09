@@ -15,6 +15,7 @@ export {
 } from './game';
 export type {
   GameEvent,
+  NextMoment,
   SavedGame,
   SavedGameV1,
   Snapshot,

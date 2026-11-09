@@ -2,9 +2,10 @@
 
 import { useSyncExternalStore } from 'react';
 import { SPEEDS, formatSpan, formatTime, type Snapshot } from '../sim';
+import { WATCH_WORDS } from '../content';
 import { money, moneyShort } from './format';
 import { Term } from './Glossary';
-import { RUNNING_SHORT, type Store } from './store';
+import { RUNNING_SHORT, type Store, type WatchState } from './store';
 
 export function TopBar({
   s,
@@ -23,7 +24,9 @@ export function TopBar({
   const until = s.nextChange - s.now;
   const running = useSyncExternalStore(store.subscribe, store.getRunning, store.getRunning);
   // A device that cannot step the asked speed in a frame's budget runs slower; the bar says what it reaches.
-  const short = s.speed > 0 && running < s.speed * RUNNING_SHORT;
+  const watch = useSyncExternalStore(store.subscribe, store.getWatchState, store.getWatchState);
+  const asked = watch.on ? watch.speed : s.speed;
+  const short = asked > 0 && running < asked * RUNNING_SHORT;
   return (
     <header className="topbar">
       <div className="brand">
@@ -48,10 +51,28 @@ export function TopBar({
       </div>
       <div className="speed" role="group" aria-label="Speed" data-tut="speed">
         {SPEEDS.map((sp) => (
-          <button key={sp} type="button" className={s.speed === sp ? 'on' : ''} onClick={() => store.setSpeed(sp)}>
+          <button
+            key={sp}
+            type="button"
+            className={!watch.on && s.speed === sp ? 'on' : ''}
+            onClick={() => store.setSpeed(sp)}
+          >
             {sp === 0 ? '⏸' : `${sp}×`}
           </button>
         ))}
+        <button
+          type="button"
+          className={watch.on ? 'on' : ''}
+          aria-pressed={watch.on}
+          title={WATCH_WORDS.title}
+          onClick={() => store.setWatching(!watch.on)}
+        >
+          {WATCH_WORDS.button}
+        </button>
+        {/* Holds its room whether or not watch is on, so the row does not reflow when it is switched. */}
+        <span className="watching muted" data-testid="watching">
+          {watch.on ? <WatchLine now={s.now} watch={watch} /> : '\u00a0'}
+        </span>
         {short && (
           <span className="running muted" title="This device cannot step the asked speed in time">
             running {Math.max(1, Math.round(running))}×
@@ -94,6 +115,20 @@ export function TopBar({
         <Stat label="Heat" value={`${Math.round(s.heat)} / ${s.heatLine}`} tone={s.heat >= s.heatLine ? -1 : 0} />
       </div>
     </header>
+  );
+}
+
+function WatchLine({ now, watch }: { now: number; watch: WatchState }) {
+  const m = watch.next;
+  if (watch.slow === 'headline') return <>{WATCH_WORDS.watchingHeadline}</>;
+  if (watch.slow === 'moment' && watch.watched) return <>{WATCH_WORDS.watchingMoment(watch.watched)}</>;
+  if (!m) return <>{WATCH_WORDS.nothing}</>;
+  const term = WATCH_WORDS.termOf[m.kind];
+  return (
+    <>
+      {term ? <Term id={term}>{m.label}</Term> : m.label}
+      {WATCH_WORDS.until(formatSpan(Math.max(0, m.at - now)))}
+    </>
   );
 }
 

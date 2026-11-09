@@ -58,7 +58,7 @@ export const TUTORIAL: TutorialStep[] = [
     title: 'Time',
     text:
       'The market opens at 09:30 and closes at 16:00, five days a week. Simulated time runs as fast as you ' +
-      'like: these buttons set it. Skip to the open now, then set 10× and watch the prices start to move.',
+      'like: these buttons set it, and “watch” runs fast and slows for the moments worth seeing. Skip to the open now, then set 10× and watch the prices start to move.',
     page: 'market',
     target: 'speed',
     waitFor: { check: (s) => s.open && s.speed >= 10, waiting: 'Waiting for the open at 10× or faster.' },

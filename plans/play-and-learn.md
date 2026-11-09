@@ -1,6 +1,6 @@
 # Playing and learning: the nine points, specified
 
-State: specified 2026-11-09 in plan mode and agreed; parts A, B and C built 2026-11-09, part D next. Each part is built by the `builder`
+State: specified 2026-11-09 in plan mode and agreed; parts A to D built 2026-11-09, part E next. Each part is built by the `builder`
 agent, tests first, then checked and looked at headless, committed and pushed on its own before the next starts.
 What was seen in the look through the game, and the first ideas, are in this file's history (`2519aa1`).
 
@@ -249,3 +249,34 @@ card outlined. Two things put right: at 375 the longer sentences ran to three li
 so the slot holds three there (57 px, one line from 720); and a firm's closed rounds are now bounded
 (`MAX_CLOSED_ROUNDS`), since the game takes only the player's. Not seen in a browser: a real delivery, margin call or
 closed round arising from play (the sim tests hold those).
+
+## Result: part D
+
+Built 2026-11-09 by the builder. `test/watch.test.ts` was written first and failed whole on the missing exports
+(`nextMoment`, `src/ui/watch.ts`, `setWatching`); the UI tests in `test/ui.test.tsx` "Part D" were written after the
+working and passed at once (one wrong time of day in my own test, put right).
+
+- **Sim.** `Game.nextMoment()` and `NextMoment` (`{ at, kind: 'open' | 'close' | 'fix' | 'expiry', label }`), a read; the
+  fix search looks four days ahead over venues of open desks, weekdays only, where the venue is open at the fix.
+  Not on the snapshot: the store asks the game as it runs and keeps a `WatchState` for the bar.
+- **Store.** `watchSpeed` (`src/ui/watch.ts`), `setWatching` / `getWatching` / `getWatchState`; `pump` runs a watched
+  frame in segments and `runTicks` cuts its chunks to land on a lead or a tail's end. Headlines are heard through
+  `game.on`. The choice is `propshop.watch.v1`, the game speed set to 300.
+- **Page.** A "watch" button (`aria-pressed`), a `.watching` slot that keeps its room, `WATCH_WORDS`, glossary
+  `watch-mode` (fix and expiry linked), a clause in the tutorial's Time card.
+
+Deviations: the choice lives in its own storage key and not in the save (the save has no room for a mode without a
+format change; the game speed is 300 so an old reader sees the top speed). A desk's own headline (`deskNews`) is not a
+`news` event and does not slow watch. The tail after a moment is known only from the log's last open or close after a
+reload. The bar's "running short" is measured against the speed watch is asking for.
+
+Not checked: the look at 375 and 1280 wide (the slot is 17 em wide and may wrap at 375), a real run in a browser, a real
+headline slowing the run (tests put the event on the log), a real fix or expiry run through the page.
+
+Reviewed after the hand-back (2026-11-09): watched headless through the open at 1280 and 375. From 300× it landed on
+the open's lead (09:29:55), ran at 1× for the fifteen seconds, then went back up and named the next moment ("The
+Thamesford fix in 29m 48s"); a real headline slowed it 52 ms of simulated time after it landed. No overflow, no
+console errors. One thing put right: at 375 the top bar changed height by 2 to 8 px as the line and the "running"
+note wrapped differently and a glossary term made the line taller; the line now has one height and, under 720 px, a
+row of its own, and the bar measured the same height (212 px at 375, 110 at 1280) off, in a lead, fast and at 1×.
+Not seen in a browser: a fix or an expiry watched through (the store tests hold the close and the open).

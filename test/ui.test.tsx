@@ -2428,3 +2428,55 @@ describe('Part C: moments marked, on the page', () => {
     }
   });
 });
+
+describe('Part D: watch mode, on the page', () => {
+  const setup = () => {
+    const store = createStore(CONTENT, null, 3);
+    store.setTutorial({ state: 'done' });
+    store.setReveal(true);
+    return store;
+  };
+
+  it('has a watch button that is pressed while watching, and the others are not', () => {
+    const store = setup();
+    render(<App store={store} />);
+    const button = screen.getByRole('button', { name: 'watch' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(button);
+    expect(store.getWatching()).toBe(true);
+    expect(screen.getByRole('button', { name: 'watch' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '300×' })).not.toHaveClass('on');
+    fireEvent.click(screen.getByRole('button', { name: '10×' }));
+    expect(store.getWatching()).toBe(false);
+    expect(screen.getByRole('button', { name: 'watch' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('says what is next and how far off, keeps its slot, and says what is watched when slow', () => {
+    const store = setup();
+    render(<App store={store} />);
+    const slot = screen.getByTestId('watching');
+    expect(slot.textContent.trim()).toBe('');
+    act(() => store.setWatching(true));
+    expect(screen.getByTestId('watching')).toBe(slot);
+    expect(slot).toHaveTextContent(/^The open in /);
+    // Two seconds before the open: the lead.
+    act(() => {
+      while (store.game.now < MARKET_OPEN - 2000)
+        store.game.step(Math.min(60_000, MARKET_OPEN - 2000 - store.game.now));
+      store.publish();
+    });
+    expect(slot).toHaveTextContent('Watching: the open');
+    // A headline's tail, later in the day.
+    act(() => {
+      store.game.step(60_000 * 20);
+      (store.game as unknown as { emit(e: object): void }).emit({
+        kind: 'news',
+        at: store.game.now,
+        headline: { id: 'x', at: store.game.now, text: 'x' },
+      });
+      store.game.version++;
+      store.publish();
+    });
+    expect(slot).toHaveTextContent('Watching: a headline');
+  });
+});

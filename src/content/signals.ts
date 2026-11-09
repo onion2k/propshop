@@ -430,3 +430,21 @@ export const MOMENT_WORDS = {
   /** The slot's label for a reader of the page. */
   label: 'Something just happened',
 } as const;
+
+/**
+ * Watch mode's line in the top bar. `next` and `watching` take the moment's own plain label ("The close") and its
+ * span ("3m 0s"); a moment's kind says which glossary entry its words link to. Drafts, for the author to edit.
+ */
+export const WATCH_WORDS = {
+  button: 'watch',
+  /** Why the button is there, for its tooltip. */
+  title: 'Run fast through the quiet and slow down for the open, the close, a fix, an expiry and after a headline.',
+  until: (span: string) => ` in ${span}`,
+  watchingMoment: (label: string) => `Watching: ${label.replace(/^The /, 'the ')}`,
+  watchingHeadline: 'Watching: a headline',
+  /** Nothing ahead to name (never, in practice). */
+  nothing: 'Nothing scheduled',
+  term: 'watch-mode',
+  /** The glossary entry each kind of moment links to, where there is one. */
+  termOf: { open: null, close: null, fix: 'fix', expiry: 'expiry' } as const,
+} as const;

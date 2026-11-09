@@ -16,6 +16,7 @@ import {
   pinTimes,
   variants as makeVariants,
   type DayReport,
+  type NextMoment,
   type Pin,
   type SavedGame,
   type Snapshot,
@@ -39,6 +40,7 @@ import {
   type NightRunner,
   type Tests,
 } from './nights';
+import { WATCH_KEY, WATCH_LEAD, WATCH_SPEED, watchSpeed } from './watch';
 
 /** How often a new snapshot is handed to React, in wall ms, and how often the game is saved. */
 const PUBLISH_EVERY = 100;
@@ -70,6 +72,19 @@ export type Tutorial = { state: 'fresh' } | { state: 'at'; step: number } | { st
 /** Which lessons are done, and the simulated time each was. One object per change, so React can compare it. */
 export type Progress = Readonly<Record<string, number>>;
 
+/** What watch mode is doing, for the top bar: `on`, why it is slow (if it is), and the next public moment. */
+export interface WatchState {
+  on: boolean;
+  slow: 'moment' | 'headline' | null;
+  /** The speed it is asking for now (the top one or 1x); the bar's "running short" is measured against it. */
+  speed: number;
+  next: NextMoment | null;
+  /** The label of the moment being watched while slow for one: the coming one in its lead, the last in its tail. */
+  watched: string | null;
+}
+
+const NOT_WATCHING: WatchState = { on: false, slow: null, speed: 0, next: null, watched: null };
+
 export interface Store {
   getSnapshot: () => Snapshot;
   getProgress: () => Progress;
@@ -96,6 +111,12 @@ export interface Store {
   game: Game;
   // Actions, so components never touch the game.
   setSpeed: (speed: Speed) => void;
+  /** Watch mode: the top speed through the quiet, 1x around the public moments and after a headline. */
+  setWatching: (on: boolean) => void;
+  /** True while watch mode is on and the sim is at the watch speed (a pause or another speed ends it). */
+  getWatching: () => boolean;
+  /** One object per change, for `useSyncExternalStore`. */
+  getWatchState: () => WatchState;
   skipToOpen: () => void;
   /** The nights' tests: one object per change, for `useSyncExternalStore`. */
   getTests: () => Tests;
@@ -189,6 +210,35 @@ export function createStore(
   let saveSeq = 0;
   let lastPump: number | null = null;
   let held = false;
+  // Watch mode. The choice is the player's, kept beside the save; it holds only while the sim is at the watch speed,
+  // so a pause, another speed or the tutorial's own setting ends it without the store being told.
+  let watching = storage?.getItem(WATCH_KEY) === '1';
+  let watchState: WatchState = NOT_WATCHING;
+  /** The last public moment that has come, and the last headline to land: the tails are measured from these. */
+  let lastMoment: number | null = null;
+  let lastHeadline: number | null = null;
+  let lastLabel: string | null = null;
+  let watchNext: NextMoment | null = null;
+  let watchSpeedNow = 0;
+  const watchOn = () => watching && game.speed === WATCH_SPEED;
+  /** Read what the log already holds, and hear headlines as they land. */
+  const attachWatch = () => {
+    lastMoment = null;
+    lastHeadline = null;
+    lastLabel = null;
+    watchNext = null;
+    for (const e of game.log) {
+      if (e.kind === 'news') lastHeadline = e.at;
+      else if (e.kind === 'open' || e.kind === 'close') {
+        lastMoment = e.at;
+        lastLabel = e.kind === 'open' ? 'The open' : 'The close';
+      }
+    }
+    game.on((e) => {
+      if (e.kind === 'news') lastHeadline = e.at;
+    });
+  };
+  attachWatch();
   const listeners = new Set<() => void>();
 
   // The night's tests. The pins are the current day's alone and live in memory; the nights are kept in storage.
@@ -415,13 +465,32 @@ export function createStore(
     }
   };
 
-  /** Run `wanted` ticks (within the deadline if there is one), stopping where a pin is due, and pin it. */
-  const runTicks = (wanted: number, deadline?: number): number => {
+  /** The watch speed now, from the sim's public schedule and the headlines heard. Reads; draws nothing. */
+  const decide = () => {
+    const next = game.nextMoment();
+    if (watchNext && game.now >= watchNext.at) {
+      lastMoment = watchNext.at;
+      lastLabel = watchNext.label;
+    }
+    watchNext = next;
+    return watchSpeed(game.now, next, lastMoment, lastHeadline);
+  };
+
+  /**
+   * Run `wanted` ticks (within the deadline if there is one), stopping where a pin is due, and pin it. With
+   * `holdSpeed` (watch mode) it also cuts its chunks to land where the watch speed changes, and returns when it does.
+   */
+  const runTicks = (wanted: number, deadline?: number, holdSpeed?: number): number => {
     let done = 0;
     while (done < wanted) {
       ensureSchedule();
       takePins();
       let n = Math.min(deadline === undefined ? wanted : CHUNK, wanted - done);
+      if (holdSpeed !== undefined) {
+        const d = decide();
+        if (d.speed !== holdSpeed) break;
+        n = Math.min(n, CHUNK, Math.max(1, Math.ceil((d.until - game.now) / TICK_MS)));
+      }
       const due = pending();
       if (due && due.at > game.now) n = Math.min(n, Math.max(1, Math.ceil((due.at - game.now) / TICK_MS)));
       if (!isMarketOpen(game.now)) n = Math.min(n, Math.max(1, Math.ceil((nextOpen(game.now) - game.now) / TICK_MS)));
@@ -443,8 +512,37 @@ export function createStore(
       if (!game.market.isDeskOpen(d) && shows(`desk:${d}`, stageNow())) game.openDesk(d);
   };
 
+  /** The watch state for the bar: a new object only when something in it changed. */
+  const refreshWatch = () => {
+    let next: WatchState = NOT_WATCHING;
+    if (watchOn()) {
+      const d = decide();
+      const inLead = watchNext !== null && game.now >= watchNext.at - WATCH_LEAD;
+      next = {
+        on: true,
+        slow: d.slow,
+        speed: d.speed,
+        next: watchNext,
+        watched: d.slow === 'moment' ? (inLead ? watchNext!.label : lastLabel) : null,
+      };
+    }
+    const a = watchState;
+    if (
+      a.on === next.on &&
+      a.slow === next.slow &&
+      a.speed === next.speed &&
+      a.next?.at === next.next?.at &&
+      a.next?.label === next.next?.label &&
+      a.watched === next.watched
+    )
+      return;
+    watchState = next;
+    for (const l of listeners) l();
+  };
+
   const publish = () => {
     openDesks();
+    refreshWatch();
     if (game.version === publishedVersion) return;
     // A step the page took itself (a test, a jump) is seen here: the open's pin and the close's night.
     ensureSchedule();
@@ -523,11 +621,38 @@ export function createStore(
       const frameStart = clock?.();
       if (lastPump !== null && !held) {
         const dt = Math.min(1000, wallNow - lastPump);
-        const wanted = Math.min(MAX_TICKS_PER_ADVANCE, Math.floor((dt * game.speed) / TICK_MS));
-        const done = runTicks(wanted, frameStart === undefined ? undefined : frameStart + BUDGET_MS);
-        // What was asked and not run is dropped, not owed: a slow device runs slower, it does not catch up later.
-        const reached = dt > 0 ? (done * TICK_MS) / dt : running;
-        running = game.speed === 0 ? 0 : running + (reached - running) * Math.min(1, dt / 500);
+        const deadline = frameStart === undefined ? undefined : frameStart + BUDGET_MS;
+        if (watchOn()) {
+          // Watch mode: the wall time is spent in segments, each at the speed it is worth there, so the sim lands on
+          // a lead rather than overshooting it. What a segment asks and does is counted in ticks, for the bar.
+          let wall = dt;
+          let asked = 0;
+          let did = 0;
+          let at = WATCH_SPEED as number;
+          for (let guard = 0; wall > 0 && asked < MAX_TICKS_PER_ADVANCE && guard < 64; guard++) {
+            const d = decide();
+            at = d.speed;
+            const wanted = Math.min(MAX_TICKS_PER_ADVANCE - asked, Math.floor((wall * d.speed) / TICK_MS));
+            if (wanted <= 0) break;
+            const done = runTicks(wanted, deadline, d.speed);
+            did += done;
+            asked += wanted;
+            wall -= (done * TICK_MS) / d.speed;
+            if (deadline !== undefined && clock!() >= deadline) break;
+            if (done === 0 && decide().speed === d.speed) break;
+          }
+          const share = asked > 0 ? Math.min(1, did / asked) : 1;
+          // A change of speed is taken at its word, as a button press is; the average then catches up.
+          if (watchSpeedNow !== at) running = at * share;
+          watchSpeedNow = at;
+          running += (at * share - running) * Math.min(1, dt / 500);
+        } else {
+          const wanted = Math.min(MAX_TICKS_PER_ADVANCE, Math.floor((dt * game.speed) / TICK_MS));
+          const done = runTicks(wanted, deadline);
+          // What was asked and not run is dropped, not owed: a slow device runs slower, it does not catch up later.
+          const reached = dt > 0 ? (done * TICK_MS) / dt : running;
+          running = game.speed === 0 ? 0 : running + (reached - running) * Math.min(1, dt / 500);
+        }
       }
       // The main-thread fallback gets what the frame has left, and only in closed hours.
       if (!held && nightRunner.pump) {
@@ -591,6 +716,9 @@ export function createStore(
       storage?.removeItem(PROGRESS_KEY);
       storage?.removeItem(TUTORIAL_KEY);
       game = new Game(content, newSeed);
+      watching = false;
+      writeWatch(storage, false);
+      attachWatch();
       // The night's tests go with the game they tested.
       nightRunner.cancel();
       active = null;
@@ -614,7 +742,25 @@ export function createStore(
     setSpeed: act((s) => {
       game.setSpeed(s);
       running = s;
+      if (watching) {
+        watching = false;
+        writeWatch(storage, false);
+      }
     }),
+    setWatching(on) {
+      watching = on;
+      writeWatch(storage, on);
+      if (on) {
+        game.setSpeed(WATCH_SPEED);
+        running = WATCH_SPEED;
+        watchSpeedNow = 0;
+      }
+      publish();
+      // The bar's pressed state and line follow the choice even where the sim's version did not change.
+      refreshWatch();
+    },
+    getWatching: watchOn,
+    getWatchState: () => watchState,
     skipToOpen: act(() => game.skipToOpen()),
     setBlock: act((id, change) => game.setBlock(id, change)),
     buyUpgrade: act((kind, id) => game.buyUpgrade(kind, id)),
@@ -626,6 +772,15 @@ export function createStore(
     stepTicks: act((n) => void runTicks(n)),
   };
   return store;
+}
+
+function writeWatch(storage: Storage | null, on: boolean): void {
+  try {
+    if (on) storage?.setItem(WATCH_KEY, '1');
+    else storage?.removeItem(WATCH_KEY);
+  } catch {
+    // Storage can be full or forbidden; watch mode still holds on screen.
+  }
 }
 
 function loadOrNew(content: Content, raw: string | null, seed: number): Game {

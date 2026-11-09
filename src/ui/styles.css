@@ -145,6 +145,24 @@ button.link {
 .speed .skip {
   margin-left: 8px;
 }
+.speed .watching {
+  align-self: center;
+  font-size: 12px;
+  white-space: nowrap;
+  min-width: 17em;
+  /* A glossary term in the line is a button, taller than the words: the line keeps one height with or without it. */
+  height: 1.5em;
+  line-height: 1.5em;
+}
+/* On a phone the line takes a row of its own, last, so the buttons beside it wrap the same with or without it. */
+@media (max-width: 719px) {
+  .speed .watching {
+    order: 1;
+    flex-basis: 100%;
+    min-width: 0;
+    line-height: 1.5;
+  }
+}
 .speed .running {
   align-self: center;
   font-size: 12px;

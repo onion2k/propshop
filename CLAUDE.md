@@ -74,6 +74,16 @@ measure; they hold nothing.
   starts a page at the save's time, so a reload replays nothing), the highest of `MOMENT_RANK`, the latest in its
   rank, a kind at most once a `MOMENT_GAP_MS` of simulated time, held `MOMENT_HOLD_MS` of wall time, a feature the
   stage hides spent and not marked. The words are `MOMENT_WORDS` (`signals.ts`).
+- **Watch mode** (a speed beside 1× to 300×): `game.nextMoment()` (`game.ts`) is a pure read of the public schedule
+  (the stocks' open or close, a fix of an open desk's venue, none at the weekend, the soonest expiry of the live
+  contracts of open desks) and nothing drawn; `src/ui/watch.ts` is `watchSpeed(now, next, lastMoment, lastHeadline)`,
+  pure: 300× through the quiet, 1× from `WATCH_LEAD` (5 s) before a moment to `WATCH_TAIL` (10 s) after it and after a
+  `news` event, never ahead of a headline. The store (`setWatching`, `getWatching`, `getWatchState`) keeps the choice
+  under `propshop.watch.v1` and sets the game's speed to 300 (so a save and an old reader see the top speed); it holds
+  only while the game is at 300, so a pause or another speed ends it. In `pump` the wall time is spent in segments,
+  each at the speed it is worth there, and `runTicks` (given the speed it holds) cuts its chunk to land on a lead or a
+  tail's end and returns when the answer changes; the budget, the pins and the night's pump are as before. The top
+  bar's `.watching` slot keeps its room; its words are `WATCH_WORDS`, glossary `watch-mode`.
 - **Rivals as characters:** `Fill.against` is the other side's owner (from `Trade.buyer`/`seller`, through
   `Firm.onTrade`), and `Fill.resting` marks a fill of a resting order that the other side crossed to take (never at a
   fix). In `Game.step`, a resting fill against a named rival (the crowd, `bg`, and the firm's own `firm` are not) is
@@ -192,6 +202,9 @@ For anything new, check what it does:
 - **the same morning:** an experiment's two runs see the same fair values and headlines; the crowd answers
   each firm's orders, so the books differ, and the result page says so.
 - **a slow firm:** latency of twenty ticks sees the past and arrives late; a colocated one is one tick.
+- **watch mode:** closed hours run at 300× to the open's lead (skip to open as before); two moments inside one tail
+  stay at 1× through both; a desk not open has no fix or expiry moments; held, nothing advances; the night's tests
+  get the frame's leftover budget as always.
 - **the night's tests:** they run in closed hours, after the close, over the three pins of the day just traded;
   skipping to the open does not wait for them, and the results arrive labelled with their day. A reload mid-day
   loses that day's pins (they are in memory only), and the night says why. A setup changed mid-day: the baseline
@@ -212,6 +225,9 @@ The figures behind each line are in `docs/measured.md`, with their dates.
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
   cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 38,800 to 39,000 ticks a
   second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 35,000.
+- **Watch mode's lead and tail:** `WATCH_LEAD` 5 s and `WATCH_TAIL` 10 s are drafts. A headline of a desk (`deskNews`,
+  not a `news` event) does not slow it; a reload forgets a tail that was running (only the log's last open or close
+  is known).
 - **Layout shift:** held by hand. A section, desk heading, venue row or balance appearing is appended below what is there; a block card's record line has fixed height. What changes as the market runs keeps its room (fixed P&L columns, the
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked

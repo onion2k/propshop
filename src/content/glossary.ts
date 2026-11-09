@@ -809,6 +809,17 @@ export const GLOSSARY: GlossaryEntry[] = [
       'thing, though. The miner has its own news and its own costs, and it moves with the stock market too, so ' +
       'the gap between them opens and closes. Pairs across desks trades the miner against the metal on that gap.',
   },
+  {
+    id: 'watch-mode',
+    term: 'Watch mode',
+    short: 'A speed that runs fast through the quiet and slows to 1× around the moments worth seeing.',
+    long:
+      'Pick watch and the game runs at the top speed while little is happening, then drops to real time five ' +
+      'seconds before a time everyone can see coming (the open, the close, a fix, a contract’s expiry) and ' +
+      'stays there for ten seconds after it. It also drops to real time for ten seconds after a headline lands. ' +
+      'It never slows before a headline: when news is coming is not something the market tells you, so watch ' +
+      'cannot either. The line beside the speeds says what is next, and what is being watched while it is slow.',
+  },
 ];
 
 export function glossary(id: string): GlossaryEntry | undefined {

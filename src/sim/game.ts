@@ -7,6 +7,7 @@ import {
   MS_PER_MINUTE,
   calendar,
   isMarketOpen,
+  isWeekday,
   nextClose,
   nextOpen,
   type Calendar,
@@ -73,6 +74,18 @@ export type Speed = (typeof SPEEDS)[number];
 export const MAX_TICKS_PER_ADVANCE = 15000;
 /** When jumping over closed hours, how big a step the sim takes. */
 const JUMP_STEP = MS_PER_MINUTE;
+
+/** A public time the game is heading for: the stocks' open or close, a fix, or a contract's expiry. */
+export interface NextMoment {
+  /** Simulated ms; always after now. */
+  at: number;
+  kind: 'open' | 'close' | 'fix' | 'expiry';
+  /** What to call it, plainly: "The close", "The Thamesford fix", "GCZ6 expiry". */
+  label: string;
+}
+
+/** How many days ahead `nextMoment` looks for a fix: a weekend and a day over. */
+const FIX_LOOK_DAYS = 4;
 
 export type GameEvent =
   | { kind: 'fill'; at: number; fill: Fill }
@@ -1003,6 +1016,36 @@ export class Game {
   /** The next moment a venue opens, strictly after now, on its own hours. */
   nextOpenOf(venue: string): number {
     return this.market.venue(venue).nextOpen(this.now);
+  }
+
+  /**
+   * The next public time, strictly after now: the stocks' open (closed) or close (open), a fix of a venue of an open
+   * desk (none at the weekend, nor where the venue is shut at the fix) and the soonest expiry among the live contracts
+   * of open desks. It is the schedule alone, worked out from the clock and the listing: no headline, tip or anything
+   * drawn from a stream is in it, it draws nothing and changes nothing. Null if there is nothing (never, in practice).
+   */
+  nextMoment(): NextMoment | null {
+    const now = this.now;
+    let best: NextMoment = isMarketOpen(now)
+      ? { at: nextClose(now), kind: 'close', label: 'The close' }
+      : { at: nextOpen(now), kind: 'open', label: 'The open' };
+    const day0 = Math.floor(now / MS_PER_DAY);
+    for (const e of this.market.exchanges) {
+      const auctions = e.spec.auctions;
+      if (!auctions) continue;
+      for (let day = day0; day <= day0 + FIX_LOOK_DAYS; day++) {
+        if (!isWeekday(day)) continue;
+        for (const a of auctions) {
+          const at = day * MS_PER_DAY + a.at;
+          if (at > now && at < best.at && e.isOpen(at)) best = { at, kind: 'fix', label: `The ${e.spec.city} fix` };
+        }
+      }
+    }
+    for (const s of this.market.stocks) {
+      if (s.expiry !== undefined && s.expiry > now && s.expiry < best.at)
+        best = { at: s.expiry, kind: 'expiry', label: `${s.symbol} expiry` };
+    }
+    return best;
   }
 
   /** Jump to a minute before the next open, in coarse steps, so overnight news lands and prices in on the way. */
