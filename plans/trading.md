@@ -1,7 +1,7 @@
 # From a high-frequency sim to a trading sim
 
-State: parts 1 to 5 built, 1 to 4 on 2026-11-08 and 5 on 2026-11-09; the futures desk's lead check unmet, by
-Chris's choice (part 4). Next: Chris sets the floor and the gate for desks open (part 5½, built), then the metals desk.
+State: parts 1 to 5½ built, 1 to 4 on 2026-11-08, 5 and 5½ on 2026-11-09; the futures desk's lead check unmet, by
+Chris's choice (part 4). Next: the metals desk (part 6), not yet specified.
 
 ## Context
 
@@ -230,13 +230,15 @@ its own. Part 1 must change nothing a player sees.
       open (part 5½). From the Eastholm rack the triangle earns about 1,070 a day on the book and 470 with the
       dealer, from home nothing; the dealer refuses 14% of the rack's orders and none from home. The pairs jump
       now and then to get there, which the plan did not say; Chris kept them (2026-11-09).
-- [ ] **5½. The step rate with desks open** (`plans/desk-speed.md`, before the metals desk): found 2026-11-09, the
+- [x] **5½. The step rate with desks open** (`plans/desk-speed.md`, before the metals desk): found 2026-11-09, the
       futures desk open runs at about 65,000 ticks a second, the currencies about 55,000, both about 46,000,
       against the floor of 75,000 with none open (figures and profile in `docs/measured.md`). Chris chose to finish
       the currencies desk first. Check: the floor with every built desk open, and a gate that opens them.
       Specified 2026-11-09 as exact cuts only, then decide; built the same day: with both desks open about 38,000
       to 50,000 ticks a second (none 69,500 to 78,600, same machine and load), a game day at top speed about 450 s
-      against 285 with none, the game unchanged to the bit. The floor and the gate wait on Chris.
+      against 285 with none, the game unchanged to the bit. Chris chose a gate (2026-11-09), a test in
+      `test/game.test.ts` that opens every built desk and holds 40,000 as a tripwire (it read 59,000 alone and
+      50,000 under the whole suite); the floor with none open stays at 75,000.
 - [ ] **6. Metals desk** (`plans/desk-metals.md`).
 - [ ] **7. Options desk** (`plans/desk-options.md`).
 - [ ] **8. The firm across desks** (`plans/firm-desks.md`).

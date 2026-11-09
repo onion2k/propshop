@@ -129,3 +129,7 @@ firms already); anything in the crowd's turns or draws (the crowd is 18% of a ti
 blocks' own reading, which is the rest of the firms' 40%. One difference a player's script could see: a narrowed
 view now stands on the full view, so `Object.keys` or a spread of `view` in a script shows only `symbols` (reading
 any field is as before).
+
+Chris chose a gate, 2026-11-09: `steps fast enough with every built desk open` in `test/game.test.ts` opens every
+desk the content has (`market.desks`) on the floor test's setup and holds 40,000 ticks a second. Three runs alone
+read 58,900 to 59,000 (the floor test beside it 100,900 to 102,500); under the whole of `npm run check`, 50,000.

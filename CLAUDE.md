@@ -27,9 +27,10 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
 
 `npm run check` is the only gate, and there is no pre-commit hook: run it by hand before a commit. It holds
 formatting (Prettier), types (`tsc`, both configs), lint (ESLint, which also keeps `src/sim` free of React, the
-DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one performance floor is a test,
-`steps fast enough for the top speed` in `test/game.test.ts` (75,000 ticks a second), which fails under load
-(see `docs/measured.md`). The harnesses above measure; they hold nothing.
+DOM and `src/content`) and the unit tests. No gate keeps a baseline: the performance floors are two tests in
+`test/game.test.ts`, `steps fast enough for the top speed` (no desk open, 75,000 ticks a second) and `steps fast
+enough with every built desk open` (40,000), which fail under load (see `docs/measured.md`). The harnesses above
+measure; they hold nothing.
 
 ## Layout
 
@@ -165,9 +166,8 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 - **Frames, the frame budget and the stalls** (a pin, the close, a save): measured headless with Playwright,
   borrowed from `~/projects/artshape-game-template` (there is none here), held by nothing. A worker would lift
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
-  cannot be throttled, so the night's length on a phone is a guess. The step-rate floor holds with no desk open:
-  the futures desk open is about 65,000 ticks a second, the currencies about 55,000, both about 46,000, and no gate
-  sees it (`plans/trading.md`, the performance part).
+  cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 50,000 to 59,000 ticks a
+  second (2026-11-09), a game day at top speed about 450 s against 285 with none; the gate is a tripwire at 40,000.
 - **Layout shift:** held by hand. What changes as the market runs keeps its room (fixed P&L columns, the
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked
