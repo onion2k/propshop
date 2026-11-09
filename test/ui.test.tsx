@@ -792,7 +792,9 @@ describe('Cover', () => {
     const dialog = screen.getByRole('dialog', { name: 'Propshop' });
     expect(screen.getByRole('heading', { name: 'Propshop' })).toBeInTheDocument();
     expect(
-      screen.getByText('Trading by machine, in large numbers, on tiny edges, as fast as physics allows.'),
+      screen.getByText(
+        "Run a small trading firm, on stocks and then futures, where the fast firm eats the slow one's lunch.",
+      ),
     ).toBeInTheDocument();
     const img = dialog.querySelector('img');
     expect(img).not.toBeNull();

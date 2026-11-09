@@ -1,7 +1,7 @@
 # From a high-frequency sim to a trading sim
 
-State: questions answered 2026-11-08 (below); the order of the desks agreed. Next: the futures desk's own plan,
-`plans/desk-futures.md`, made on `opus` in plan mode.
+State: parts 1 to 4 built 2026-11-08; the futures desk's lead check unmet, by Chris's choice (part 4). Next: Chris
+plays the futures desk, then the currencies desk's own plan, `plans/desk-fx.md`, made on `opus` in plan mode.
 
 ## Context
 
@@ -221,8 +221,10 @@ its own. Part 1 must change nothing a player sees.
       settlement, the margin call, the contract lifecycle (list, trade, expire, settle in cash or deliver), the
       bounded list of live contracts, P&L by desk, save version 3. Check: hand-made tests of a future through
       a settlement, a margin call and an expiry; a version 2 save loads to the same future.
-- [ ] **4. Futures desk** (`plans/desk-futures.md`): as above. Check: the desk's plan's own, and the PACE
-      harness says the lead is worth the microwave.
+- [x] **4. Futures desk** (`plans/desk-futures.md`, built 2026-11-08): as above. Check: the desk's plan's own, and
+      the PACE harness says the lead is worth the microwave. The second is not met: a rack and microwave beat home
+      by about 780 a day against microwave's 120,000, and Chris chose to leave the stocks' books as they are
+      (2026-11-08). "The roll" is dropped as an experiment; its block and lesson teach it.
 - [ ] **5. Currencies desk** (`plans/desk-fx.md`).
 - [ ] **6. Metals desk** (`plans/desk-metals.md`).
 - [ ] **7. Options desk** (`plans/desk-options.md`).
@@ -232,7 +234,8 @@ its own. Part 1 must change nothing a player sees.
 
 Parts 1 to 3 are the foundation and go in order. Part 5 needs parts 1 and 2 only (no margin beyond leverage,
 no expiry), so it can be built beside part 3. Parts 4, 6 and 7 go in order. Part 9's README and CLAUDE.md lines
-move with each part that changes them; the tagline moves with part 4, when there is a second desk to name.
+move with each part that changes them; the tagline moves with part 4, when there is a second desk to name (moved
+2026-11-09: the cover's own line, no longer the glossary's "High-frequency trading").
 
 ## Risks
 

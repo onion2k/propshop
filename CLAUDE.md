@@ -170,4 +170,5 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 
 ## Plans
 
-The agreed plan for the first slice is `plans/first-slice.md`.
+The roadmap being built is `plans/trading.md` (one firm, desks opened in turn); each desk has its own
+`plans/desk-<name>.md`. `plans/first-slice.md` and the rest are the record of what was built before it.

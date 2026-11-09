@@ -41,6 +41,11 @@ http://localhost:5181.
   the quote before you, by how many milliseconds and by name. A scorecard
   counts your races by exchange beside your latency to each, so what a
   millisecond is worth can be read off it.
+- **A futures desk, later.** Once a better seat is learnt, a future on the
+  index opens on a fourth venue, the Prairie Board, far inland. Its crowd
+  is quicker, so it moves first and the stocks follow; what that lead is
+  worth depends on your line to it. A contract is held on margin, settled
+  in cash every night, and expires each Friday, so it has to be rolled.
 - **Eight strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day

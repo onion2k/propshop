@@ -1,9 +1,9 @@
 // The cover: the picture, the title and tagline on a dark panel, and Start. A click anywhere, Enter or Space starts.
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { glossary } from '../content';
 import cover from '../cover.webp';
 
-const TAGLINE = glossary('hft')?.short ?? '';
+// Its own line since the futures desk, the game's second: no longer the glossary's "High-frequency trading".
+const TAGLINE = "Run a small trading firm, on stocks and then futures, where the fast firm eats the slow one's lunch.";
 
 export function Cover({ onStart }: { onStart: () => void }) {
   const start = useRef<HTMLButtonElement>(null);
