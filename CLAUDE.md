@@ -42,7 +42,8 @@ measure; they hold nothing.
   uses, and is what a remote API would later stand behind.
 - `src/ui/` is React components with no game logic. `src/main.tsx` wires
   the two together and runs the sim loop; `src/ui/Root.tsx` shows the cover
-  first, then the experiments list, both with the sim held; Free play opens `App` with everything shown.
+  first, then the experiments list (grouped by desk), both with the sim held; its two doors open `App`: Run the firm
+  (`setReveal(false)`, staged) and Free play (`setReveal(true)`, everything shown).
   `ExperimentPage.tsx` runs an experiment's two runs itself, under the same frame budget as the store.
   The free-play save is kept packed (`src/ui/savefile.ts`: gzip and base64 behind `gz:`, packed in
   `src/save.worker.ts`) and unpacked before the store is made; a plain JSON save still reads.
@@ -83,7 +84,7 @@ measure; they hold nothing.
   opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again, and Free play sets
   it). `experiments.ts` is the four experiments: seed, desks open, window, setup, changes, the moments worth replaying,
   and the result sentence written from the two runs' numbers. The browser keeps `propshop.experiments.v1`,
-  the ones done.
+  `{ done, called }`: the ones done and whether the first guess was right.
 - `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, `experiments.test.ts` for the
   experiments' seeds, and `ui.test.tsx` for the UI.
 

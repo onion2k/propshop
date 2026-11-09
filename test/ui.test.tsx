@@ -830,7 +830,7 @@ describe('Cover', () => {
     expect(screen.getByRole('heading', { name: 'Propshop' })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Run a small trading firm, on stocks and then futures, where the fast firm eats the slow one's lunch.",
+        "Run a small trading firm on stocks, then futures, currencies and metals, where the fast firm eats the slow one's lunch.",
       ),
     ).toBeInTheDocument();
     const img = dialog.querySelector('img');
@@ -928,6 +928,33 @@ describe('Root', () => {
     }
     expect(EXPERIMENTS).toHaveLength(7);
     expect(screen.getByRole('button', { name: 'Free play' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run the firm' })).toBeInTheDocument();
+  });
+
+  it('groups the seven under four desk headings, in the order the desks open', () => {
+    const store = createStore(CONTENT, null, 25);
+    render(<Root store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    const heads = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(heads).toEqual(['Stocks', 'Futures', 'Currencies', 'Metals']);
+    const group = (name: string) => within(screen.getByRole('group', { name }));
+    expect(group('Stocks').getAllByRole('listitem')).toHaveLength(3);
+    expect(group('Futures').getAllByRole('listitem')).toHaveLength(1);
+    expect(group('Currencies').getAllByRole('listitem')).toHaveLength(1);
+    expect(group('Metals').getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('Run the firm opens the app staged, with the show-everything switch off and no Desk page', () => {
+    const store = createStore(CONTENT, memory(), 28);
+    store.setReveal(true);
+    render(<Root store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(screen.getByText(/Start in a spare room with one block/)).toBeInTheDocument();
+    expect(screen.getByText('The same firm, with everything shown.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Run the firm' }));
+    expect(store.getReveal()).toBe(false);
+    expect(screen.getByRole('button', { name: 'Experiments' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Desk/ })).toBeNull();
   });
 
   it('Free play opens the app with every stage open, and a way back to the list', () => {
@@ -954,10 +981,56 @@ describe('Root', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     fireEvent.click(screen.getByRole('button', { name: /A tiny one/ }));
     await toResult('Change nothing', /About the same/);
-    expect(JSON.parse(storage.data.get(EXPERIMENTS_KEY)!)).toEqual({ done: ['tiny'] });
+    expect(JSON.parse(storage.data.get(EXPERIMENTS_KEY)!)).toEqual({ done: ['tiny'], called: { tiny: true } });
     fireEvent.click(screen.getByRole('button', { name: 'Back to experiments' }));
-    expect(within(screen.getByRole('button', { name: /A tiny one/ })).getByText('Done')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('button', { name: /A tiny one/ })).getByText('Done: you called it'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('You called 1 of the 1 you guessed.')).toBeInTheDocument();
+    // A re-run with a wrong guess leaves the record.
+    fireEvent.click(screen.getByRole('button', { name: /A tiny one/ }));
+    await toResult('Change nothing', /^Better/);
+    expect(JSON.parse(storage.data.get(EXPERIMENTS_KEY)!)).toEqual({ done: ['tiny'], called: { tiny: true } });
+  }, 90_000);
+
+  it('records a wrong first guess, and says so on the card and in the score', async () => {
+    const storage = memory();
+    const store = createStore(CONTENT, storage, 29);
+    render(<Root store={store} storage={storage} experiments={[tiny()]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(screen.getByText('Not done')).toBeInTheDocument();
+    expect(screen.queryByText(/You called/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /A tiny one/ }));
+    await toResult('Change nothing', /^Better/);
+    expect(JSON.parse(storage.data.get(EXPERIMENTS_KEY)!)).toEqual({ done: ['tiny'], called: { tiny: false } });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to experiments' }));
+    expect(screen.getByText('Done: you guessed wrong')).toBeInTheDocument();
+    expect(screen.getByText('You called 0 of the 1 you guessed.')).toBeInTheDocument();
   }, 60_000);
+
+  it('reads an old { done } value as Done, with no score, and ignores a called that is not booleans', () => {
+    const storage = memory();
+    storage.setItem(EXPERIMENTS_KEY, JSON.stringify({ done: ['tiny'] }));
+    const store = createStore(CONTENT, storage, 30);
+    const { unmount } = render(<Root store={store} storage={storage} experiments={[tiny()]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(within(screen.getByRole('button', { name: /A tiny one/ })).getByText('Done')).toBeInTheDocument();
+    expect(screen.queryByText(/You called/)).toBeNull();
+    unmount();
+    storage.setItem(EXPERIMENTS_KEY, JSON.stringify({ done: ['tiny'], called: { tiny: 'yes' } }));
+    render(<Root store={store} storage={storage} experiments={[tiny()]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(within(screen.getByRole('button', { name: /A tiny one/ })).getByText('Done')).toBeInTheDocument();
+    expect(screen.queryByText(/You called/)).toBeNull();
+  });
+
+  it('shows the top bar as a trading sim, not an HFT sim', () => {
+    const store = createStore(CONTENT, null, 33);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    expect(screen.getByText('a trading sim')).toBeInTheDocument();
+    expect(screen.queryByText('HFT')).toBeNull();
+  });
 });
 
 describe('ExperimentPage', () => {

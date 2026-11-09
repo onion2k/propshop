@@ -2,8 +2,9 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import cover from '../cover.webp';
 
-// Its own line since the futures desk, the game's second: no longer the glossary's "High-frequency trading".
-const TAGLINE = "Run a small trading firm, on stocks and then futures, where the fast firm eats the slow one's lunch.";
+// Its own line, naming the four desks: no longer the glossary's "High-frequency trading".
+const TAGLINE =
+  "Run a small trading firm on stocks, then futures, currencies and metals, where the fast firm eats the slow one's lunch.";
 
 export function Cover({ onStart }: { onStart: () => void }) {
   const start = useRef<HTMLButtonElement>(null);

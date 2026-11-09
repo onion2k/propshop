@@ -234,7 +234,8 @@ export function ExperimentPage({
 }: {
   experiment: Experiment;
   onBack: () => void;
-  onDone: (id: string) => void;
+  /** Called once a second run finishes, with whether the player's guess was right. */
+  onDone: (id: string, right: boolean) => void;
   onNext?: () => void;
   /** The wall clock the frame budget is held against. */
   clock?: () => number;
@@ -255,16 +256,16 @@ export function ExperimentPage({
     setupB: { change: Change } | null;
     lastPublish: number;
   }>({ start: null, a: null, b: null, active: null, setupB: null, lastPublish: -Infinity });
-  const latest = useRef({ onDone, clock, experiment });
+  const latest = useRef({ onDone, clock, experiment, guess });
   useEffect(() => {
-    latest.current = { onDone, clock, experiment };
+    latest.current = { onDone, clock, experiment, guess };
   });
 
   useEffect(() => {
     const sync = () => setSides({ a: engine.current.a, b: engine.current.b });
     const work = () => {
       const e = engine.current;
-      const { clock: now, experiment: x, onDone: done } = latest.current;
+      const { clock: now, experiment: x, onDone: done, guess: said } = latest.current;
       const deadline = now() + BUDGET_MS;
       const which = e.active;
       if (which) {
@@ -301,7 +302,8 @@ export function ExperimentPage({
           if (which === 'a') setPhase('pick');
           else {
             setPhase('result');
-            done(x.id);
+            const first = e.a?.run.measures();
+            done(x.id, !!first && said === answerOf(first, side.run.measures()));
           }
           sync();
         }

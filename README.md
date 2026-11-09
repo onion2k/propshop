@@ -17,8 +17,8 @@ http://localhost:5181.
   same morning again. The two runs sit side by side, the answer is measured
   from them, and the moments that decided it replay a hundred times slower
   on a map of every message on the wire. Seven so far: the headline, a few
-  miles, the free option, the lead, last look, the fix and delivery. The open week below is
-  **Free play**.
+  miles, the free option, the lead, last look, the fix and delivery. The list ends with two doors to the one game: **Run the firm**,
+  which opens a stage at a time as you learn it, and **Free play**, the open week with everything shown.
 - **A market, not a price feed.** Fourteen fictional stocks in six sectors
   and an index over twelve of them trade on three fictional exchanges, each with its
   own price-time order book fed by a crowd of background traders. Stocks

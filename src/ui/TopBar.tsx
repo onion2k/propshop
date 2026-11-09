@@ -28,9 +28,7 @@ export function TopBar({
     <header className="topbar">
       <div className="brand">
         <h1>Propshop</h1>
-        <span className="muted">
-          an <Term id="hft">HFT</Term> sim
-        </span>
+        <span className="muted">a trading sim</span>
       </div>
       <div className="clock">
         <span className="day">

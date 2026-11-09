@@ -3,25 +3,42 @@
 // free-play sim runs only in Free play; the cover, the list and an experiment hold it still.
 import { useEffect, useState } from 'react';
 import { EXPERIMENTS, type Experiment } from '../content/experiments';
+import { DESK_NAMES } from '../content/stages';
 import { App } from './App';
 import { Cover } from './Cover';
 import { ExperimentPage } from './ExperimentPage';
 import type { Storage, Store } from './store';
 
-/** Which experiments are done: `{ done: ids }`. */
+/** Which experiments are done, and whether the first guess was right: `{ done: ids, called: { id: right } }`. */
 export const EXPERIMENTS_KEY = 'propshop.experiments.v1';
 
 type Where = { at: 'cover' } | { at: 'list' } | { at: 'free' } | { at: 'experiment'; id: string };
 
-function loadDone(storage: Storage | null): string[] {
+interface Kept {
+  done: string[];
+  /** Only for the experiments finished since the guess was kept; an older one has none. */
+  called: { [id: string]: boolean };
+}
+
+function loadRecord(storage: Storage | null): Kept {
   try {
     const raw = storage?.getItem(EXPERIMENTS_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
-    const done = typeof parsed === 'object' && parsed !== null ? (parsed as { done?: unknown }).done : undefined;
-    return Array.isArray(done) ? done.filter((d): d is string => typeof d === 'string') : [];
+    const o = typeof parsed === 'object' && parsed !== null ? (parsed as { done?: unknown; called?: unknown }) : {};
+    const done = Array.isArray(o.done) ? o.done.filter((d): d is string => typeof d === 'string') : [];
+    const called: { [id: string]: boolean } = {};
+    if (typeof o.called === 'object' && o.called !== null && !Array.isArray(o.called)) {
+      for (const [id, v] of Object.entries(o.called)) if (typeof v === 'boolean') called[id] = v;
+    }
+    return { done, called };
   } catch {
-    return [];
+    return { done: [], called: {} };
   }
+}
+
+/** The desk an experiment belongs to: its first desk besides the stocks', or the stocks. */
+function deskOf(e: Experiment): string {
+  return e.desks?.[0] ?? 'stocks';
 }
 
 export function Root({
@@ -35,7 +52,8 @@ export function Root({
   experiments?: readonly Experiment[];
 }) {
   const [where, setWhere] = useState<Where>({ at: 'cover' });
-  const [done, setDone] = useState<string[]>(() => loadDone(storage));
+  const [record, setRecord] = useState<Kept>(() => loadRecord(storage));
+  const { done, called } = record;
   const free = where.at === 'free';
   useEffect(() => {
     store.hold(!free);
@@ -43,12 +61,13 @@ export function Root({
   // Held at once, before the first effect runs, so no frame slips through.
   if (!free) store.hold(true);
 
-  const markDone = (id: string) => {
+  // The first finish of an experiment is the one kept: a second go knows the answer.
+  const markDone = (id: string, right: boolean) => {
     if (done.includes(id)) return;
-    const next = [...done, id];
-    setDone(next);
+    const next = { done: [...done, id], called: { ...called, [id]: right } };
+    setRecord(next);
     try {
-      storage?.setItem(EXPERIMENTS_KEY, JSON.stringify({ done: next }));
+      storage?.setItem(EXPERIMENTS_KEY, JSON.stringify(next));
     } catch {
       // Storage can be full or forbidden; the mark still shows on screen.
     }
@@ -83,35 +102,74 @@ export function Root({
       );
     }
   }
+  const openRun = () => {
+    store.setReveal(false);
+    setWhere({ at: 'free' });
+  };
   const openFree = () => {
     store.setReveal(true);
     setWhere({ at: 'free' });
   };
+  const guessed = Object.values(called);
+  const rightCount = guessed.filter(Boolean).length;
+  const statusOf = (id: string) =>
+    !done.includes(id)
+      ? 'Not done'
+      : id in called
+        ? called[id]
+          ? 'Done: you called it'
+          : 'Done: you guessed wrong'
+        : 'Done';
+  const desks = Object.keys(DESK_NAMES).filter((d) => experiments.some((e) => deskOf(e) === d));
   return (
     <main className="experiments-list">
       <h1>Experiments</h1>
       <p className="muted">
         Run a short window of a trading morning, change one thing, guess what it does, and run the same window again.
       </p>
-      <ul>
-        {experiments.map((e) => (
-          <li key={e.id}>
-            <button type="button" className="exp-card" onClick={() => setWhere({ at: 'experiment', id: e.id })}>
-              <strong>{e.title}</strong>
-              <span className="muted">{e.teaches}</span>
-              <span className={`exp-done ${done.includes(e.id) ? 'on' : ''}`}>
-                {done.includes(e.id) ? 'Done' : 'Not done'}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p>
-        <button type="button" onClick={openFree}>
-          Free play
-        </button>{' '}
-        <span className="muted small">The open week, with everything shown.</span>
-      </p>
+      {guessed.length > 0 && (
+        <p className="exp-score">
+          You called {rightCount} of the {guessed.length} you guessed.
+        </p>
+      )}
+      {desks.map((d) => (
+        <div key={d} role="group" aria-labelledby={`exp-desk-${d}`} className="exp-group">
+          <h2 id={`exp-desk-${d}`}>{DESK_NAMES[d]}</h2>
+          <ul>
+            {experiments
+              .filter((e) => deskOf(e) === d)
+              .map((e) => (
+                <li key={e.id}>
+                  <button type="button" className="exp-card" onClick={() => setWhere({ at: 'experiment', id: e.id })}>
+                    <strong>{e.title}</strong>
+                    <span className="muted">{e.teaches}</span>
+                    <span
+                      className={`exp-done ${done.includes(e.id) ? 'on' : ''} ${called[e.id] === false ? 'missed' : ''}`}
+                    >
+                      {statusOf(e.id)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+      <div className="exp-doors">
+        <div>
+          <button type="button" className="on" onClick={openRun}>
+            Run the firm
+          </button>
+          <p className="muted small">
+            Start in a spare room with one block. The game opens a stage at a time, as you learn it.
+          </p>
+        </div>
+        <div>
+          <button type="button" onClick={openFree}>
+            Free play
+          </button>
+          <p className="muted small">The same firm, with everything shown.</p>
+        </div>
+      </div>
     </main>
   );
 }

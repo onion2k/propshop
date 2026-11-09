@@ -1217,6 +1217,25 @@ code {
   display: grid;
   gap: 8px;
 }
+.exp-group h2 {
+  font-size: 15px;
+  margin: 16px 0 0;
+}
+.exp-score {
+  font-weight: 700;
+}
+.exp-doors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.exp-doors p {
+  margin: 6px 0 0;
+}
+.exp-doors button {
+  width: 100%;
+}
 .exp-card {
   display: grid;
   gap: 4px;
@@ -1234,6 +1253,10 @@ code {
 }
 .exp-done.on::before {
   content: '✓ ';
+}
+/* Done, but the first guess was wrong: the tick stays, the green does not. */
+.exp-done.missed {
+  color: inherit;
 }
 .exp-step {
   margin: 12px 0;
@@ -1363,7 +1386,8 @@ code {
   .experiment {
     padding: 12px;
   }
-  .exp-cols {
+  .exp-cols,
+  .exp-doors {
     grid-template-columns: 1fr;
   }
   .exp-stats {

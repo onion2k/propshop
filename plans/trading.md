@@ -2,7 +2,8 @@
 
 State: parts 1 to 6 built, 1 to 4 on 2026-11-08, 5 to 6 on 2026-11-09; the futures desk's lead check unmet, by
 Chris's choice (part 4), and the metals desk's fix-against-the-minute check too (part 6). Next: the options desk
-(part 7), to be specified.
+(part 7), to be specified. Before it, the way in (`plans/way-in.md`); what the game still wants as a game and
+as a lesson is noted in `plans/play-and-learn.md`.
 
 ## Context
 
