@@ -3,7 +3,8 @@
 State: specified 2026-11-09 on Opus, in plan mode, and agreed; built 2026-11-09, 5a to 5d, by the `builder` agent
 on Opus at Chris's word, a part at a time (results below). Its checks are met but two: the floor with the desk open
 is part 5½'s, and the night harness was not run with the desk open. The pairs' jumps (5d) were not in the plan:
-the builder added them to meet the tuning check, and they wait on Chris. See `plans/trading.md`, part 5, and the foundation in
+the builder added them to meet the tuning check, and Chris kept them (2026-11-09). A headline that moves the dollar
+is the better source of the cross's lag, later. See `plans/trading.md`, part 5, and the foundation in
 `plans/instruments.md` and `plans/sessions.md`. Chris chose (2026-11-09): balances by currency, a last look that
 refuses when the dealer's price has moved against it, and the desk at stage 4.
 

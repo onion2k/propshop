@@ -1,8 +1,7 @@
 # From a high-frequency sim to a trading sim
 
 State: parts 1 to 5 built, 1 to 4 on 2026-11-08 and 5 on 2026-11-09; the futures desk's lead check unmet, by
-Chris's choice (part 4). Next: Chris plays the currencies desk and says whether its pairs keep their jumps; then
-part 5½, the step rate with desks open, before the metals desk.
+Chris's choice (part 4). Next: part 5½, the step rate with desks open, before the metals desk.
 
 ## Context
 
@@ -230,7 +229,7 @@ its own. Part 1 must change nothing a player sees.
       a dealer with last look, the desk at stage 4. Check: the desk's plan's own, met but the floor with the desk
       open (part 5½). From the Eastholm rack the triangle earns about 1,070 a day on the book and 470 with the
       dealer, from home nothing; the dealer refuses 14% of the rack's orders and none from home. The pairs jump
-      now and then to get there, which the plan did not say: Chris to keep or drop.
+      now and then to get there, which the plan did not say; Chris kept them (2026-11-09).
 - [ ] **5½. The step rate with desks open** (`plans/desk-speed.md`, before the metals desk): found 2026-11-09, the
       futures desk open runs at about 65,000 ticks a second, the currencies about 55,000, both about 46,000,
       against the floor of 75,000 with none open (figures and profile in `docs/measured.md`). Chris chose to finish
