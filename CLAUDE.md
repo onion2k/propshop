@@ -65,6 +65,15 @@ measure; they hold nothing.
   player's own test and the main-thread runner. The store pins the live game three times a day (the open, a
   minute before the day's largest scheduled headline, 14:30; `MAX_DAY_PINS`) in memory only, and at the close
   hands the pins to the runner. The browser keeps `propshop.tests.v1`, the last `MAX_NIGHTS` nights' results.
+- **Moments** (`src/ui/Moments.tsx`, one line in a fixed-height slot under the top bar, `aria-live="polite"`): the
+  sim tells two more events, `delivery` (the player's firm only, from `Firm.expire`, which now returns what it
+  delivered) and `round` (`Firm.takeRounds`; the triangle, once its fills have touched all three pairs since the
+  block was last flat, netting what they moved at home at their moments' rates, fees out; `stats.arbRoundTrips` is
+  counted there, and only for the triangle). The round in progress is saved as an optional `rounds`. The snapshot
+  gains `racesWon`. `src/ui/momentChoice.ts` is the pure chooser: of the events since last looked (`openMemory`
+  starts a page at the save's time, so a reload replays nothing), the highest of `MOMENT_RANK`, the latest in its
+  rank, a kind at most once a `MOMENT_GAP_MS` of simulated time, held `MOMENT_HOLD_MS` of wall time, a feature the
+  stage hides spent and not marked. The words are `MOMENT_WORDS` (`signals.ts`).
 - **Rivals as characters:** `Fill.against` is the other side's owner (from `Trade.buyer`/`seller`, through
   `Firm.onTrade`), and `Fill.resting` marks a fill of a resting order that the other side crossed to take (never at a
   fix). In `Game.step`, a resting fill against a named rival (the crowd, `bg`, and the firm's own `firm` are not) is
@@ -207,6 +216,9 @@ The figures behind each line are in `docs/measured.md`, with their dates.
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked
   at headless by hand, at 375 and 1280 wide.
+- **The moments:** the ranking, the minute and the hold (`momentChoice.ts`) and the words are drafts; the look of
+  the line at 375 and 1280 wide is not gated. The triangle's round counts the fills of its three pairs, not a
+  measured edge, and a rival's is counted but never told. The stock `arbitrage` block's rounds are not counted.
 - **The mark-out:** one second after a taken quote, against the exchange's mid; a draft, held by the replay and save
   tests, not by a figure for what a rival's take is worth.
 - **The experiments' answers:** `test/experiments.test.ts` holds what each briefing promises (the headline in the

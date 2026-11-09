@@ -86,7 +86,14 @@ export type GameEvent =
   | { kind: 'halt'; at: number; reason: string; until: number }
   | { kind: 'rules'; at: number; exchange: string; rules: ExchangeRules }
   | { kind: 'regulator'; at: number; note: string; heat: number }
-  | { kind: 'margin'; at: number; symbols: string[] };
+  | { kind: 'margin'; at: number; symbols: string[] }
+  /**
+   * A contract the firm held to expiry was delivered as its underlying: `symbol` is the underlying, `units` its lots
+   * (negative where the firm was short), `value` the cents it was worth at the final price.
+   */
+  | { kind: 'delivery'; at: number; symbol: string; units: number; value: number }
+  /** An arbitrage block's round closed (the triangle's three legs filled): what it netted at home, cents, fees out. */
+  | { kind: 'round'; at: number; block: string; net: number };
 
 /** A point of the day so far: the firm's equity and each block's net (realised less fees), cents. */
 export interface IntradayPoint {
@@ -424,6 +431,8 @@ export interface Snapshot {
   }[];
   /** Today's quotes taken off the firm by each named rival, so far (the figure fills in a second after each). */
   takenToday: Record<string, { count: number; cents: number }>;
+  /** The immediate-or-cancel races the firm has won today, so far: the moment of the first is marked. */
+  racesWon: number;
   /** For the microscope: every firm's messages on the wire, and each exchange's belief per symbol. */
   wire: Wire[];
   beliefs: Record<string, Record<string, number>>;
@@ -604,6 +613,7 @@ export class Game {
       this.today.fees += f.fee;
       if (f.resting) this.noteTaken(f);
     }
+    for (const r of this.firm.takeRounds()) this.emit({ kind: 'round', at: this.now, block: r.block, net: r.net });
     if (this.today.markouts && this.today.markouts.length > 0) this.settleMarkouts(false);
     this.contracts(closedVenues);
     const roll = this.content.rollover;
@@ -657,7 +667,18 @@ export class Game {
                 scale: this.market.scales.get(c.underlying) ?? 1,
               }
             : null;
-        for (const f of this.firms()) f.expire(c.symbol, price, delivery);
+        for (const f of this.firms()) {
+          const left = f.expire(c.symbol, price, delivery);
+          // Only the player's deliveries are told; a rival's is its own business.
+          if (left && f === this.firm)
+            this.emit({
+              kind: 'delivery',
+              at: this.now,
+              symbol: left.underlying,
+              units: left.units,
+              value: left.value,
+            });
+        }
       }
       const gone = this.market.refreshContracts(this.now);
       for (const f of this.firms()) f.onClose(gone);
@@ -1221,6 +1242,7 @@ export class Game {
         };
       }),
       takenToday: Object.fromEntries(Object.entries(this.today.takenBy ?? {}).map(([name, t]) => [name, { ...t }])),
+      racesWon: this.today.races.won,
       wire: [this.firm, ...this.competitors].flatMap((f) => f.inFlight()),
       beliefs: Object.fromEntries(
         this.market.exchanges.map((e) => [

@@ -2,7 +2,7 @@
 // centre and the rival that trades from it, and the stocks' rivals kept out of the pairs. See plans/desk-fx.md.
 import { CONTENT } from '../src/content';
 import { FX_DESK } from '../src/content/fx';
-import { Game, MS_PER_HOUR, MS_PER_MINUTE, TICK_MS, type SavedGame } from '../src/sim';
+import { Game, type GameEvent, MS_PER_HOUR, MS_PER_MINUTE, TICK_MS, type SavedGame } from '../src/sim';
 import { infrastructureFrom } from '../src/sim/upgrades';
 import { blockById, paramsFrom, type Fill, type Intent, type MarketView, type SeenQuote } from '../src/sim/strategy';
 
@@ -442,4 +442,136 @@ describe('a gap in a pair', () => {
     for (const e of euro)
       expect(e.edge).toBe(Math.round((e.bid - e.ask - cost(e.buyOn) - cost(e.sellOn)) * 1000) / 1000);
   }, 120_000);
+});
+
+describe('a closed triangle as a moment', () => {
+  /** The currencies desk open, the player's blocks off, and the clock mid-session, so a leg can be booked by hand. */
+  function fxGame(seed = 4): Game {
+    const g = new Game(CONTENT, seed);
+    g.openDesk(FX_DESK);
+    for (const b of g.firm.blocks) b.enabled = false;
+    g.stepTicks(20);
+    return g;
+  }
+  /** One leg of the triangle booked as a fill of the block (the firm's own booking, as an exchange's trade would). */
+  function leg(g: Game, symbol: string, side: 'buy' | 'sell', price: number, size: number, block = 'triangle'): void {
+    const book = (
+      g.firm as unknown as { book(o: object, p: number, n: number, at: number, taker: boolean): void }
+    ).book.bind(g.firm);
+    book({ localId: 1, block, exchange: BOOK, symbol, side, filled: 0 }, price, size, g.now, true);
+  }
+  /** The three legs of a rich cross: sell the cross, buy both legs. */
+  function rich(g: Game, n = 10): void {
+    leg(g, 'EURJPY', 'sell', 16276, n);
+    leg(g, 'EURUSD', 'buy', 10850, n);
+    leg(g, 'USDJPY', 'buy', 15000, Math.round(n * 1.085));
+  }
+  const rounds = (g: Game) => g.log.filter((e) => e.kind === 'round');
+
+  it('emits a round when the third leg fills, with what the three legs netted at home, and counts it', () => {
+    const g = fxGame();
+    const seen: GameEvent[] = [];
+    g.on((e) => seen.push(e));
+    leg(g, 'EURJPY', 'sell', 16276, 10);
+    leg(g, 'EURUSD', 'buy', 10850, 10);
+    g.step();
+    expect(rounds(g)).toHaveLength(0);
+    leg(g, 'USDJPY', 'buy', 15000, 11);
+    expect(g.firm.stats.arbRoundTrips).toBe(1);
+    g.step();
+    const r = seen.filter((e) => e.kind === 'round');
+    expect(r).toHaveLength(1);
+    const e = r[0]!;
+    expect(e.block).toBe('triangle');
+    expect(Number.isInteger(e.net)).toBe(true);
+    expect(g.firm.stats.arbRoundTrips).toBe(1);
+  });
+
+  it('counts a round once, then the next one on its own, and leaves other blocks out', () => {
+    const g = fxGame();
+    rich(g);
+    g.step();
+    rich(g);
+    g.step();
+    expect(rounds(g)).toHaveLength(2);
+    expect(g.firm.stats.arbRoundTrips).toBe(2);
+    leg(g, 'EURUSD', 'buy', 10850, 1, 'carry');
+    leg(g, 'USDJPY', 'buy', 15000, 1, 'carry');
+    leg(g, 'EURJPY', 'buy', 16276, 1, 'carry');
+    g.step();
+    expect(rounds(g)).toHaveLength(2);
+  });
+
+  it('is not a round when a lone leg is put back, and the losses of that wait for the next whole one', () => {
+    const g = fxGame();
+    leg(g, 'EURUSD', 'buy', 10850, 10);
+    leg(g, 'EURUSD', 'sell', 10849, 10);
+    g.step();
+    expect(rounds(g)).toHaveLength(0);
+    rich(g);
+    g.step();
+    expect(rounds(g)).toHaveLength(1);
+    const e = rounds(g)[0]!;
+    // The undone leg cost the block nothing in the round: the block was flat, so the count started again.
+    const clean = fxGame();
+    rich(clean);
+    clean.step();
+    const c = rounds(clean)[0]!;
+    expect(e.net).toBe(c.net);
+  });
+
+  it('keeps no more events than the log holds, a round among them', () => {
+    const g = fxGame();
+    for (let i = 0; i < 100; i++) {
+      rich(g);
+      g.step();
+    }
+    expect(g.log.length).toBeLessThanOrEqual(200);
+    expect(rounds(g).length).toBeGreaterThan(0);
+  });
+
+  it('replays the same events and equity for one seed', () => {
+    const run = () => {
+      const g = fxGame(6);
+      rich(g);
+      g.stepTicks(50);
+      rich(g);
+      g.stepTicks(50);
+      return g;
+    };
+    const a = run();
+    const b = run();
+    expect(rounds(a)).toHaveLength(2);
+    expect(JSON.stringify(rounds(b))).toBe(JSON.stringify(rounds(a)));
+    expect(b.fingerprint()).toBe(a.fingerprint());
+    expect(b.firm.equity(b.market, b.now)).toBe(a.firm.equity(a.market, a.now));
+  });
+
+  it('loads from the tick before, two legs in, to the same future and the same round', () => {
+    const a = fxGame(7);
+    leg(a, 'EURJPY', 'sell', 16276, 10);
+    leg(a, 'EURUSD', 'buy', 10850, 10);
+    a.step();
+    const back = Game.load(CONTENT, JSON.parse(JSON.stringify(a.save())) as SavedGame);
+    expect(JSON.stringify(back.save())).toBe(JSON.stringify(a.save()));
+    const told: string[][] = [[], []];
+    [a, back].forEach((g, i) => g.on((e) => e.kind === 'round' && told[i]!.push(JSON.stringify(e))));
+    for (const g of [a, back]) {
+      // A tick first: a loaded firm learns the pairs on its first step, as a running game's does before any fill.
+      g.step();
+      leg(g, 'USDJPY', 'buy', 15000, 11);
+      g.stepTicks(30);
+    }
+    expect(told[0]).toHaveLength(1);
+    expect(told[1]).toEqual(told[0]);
+    expect(back.fingerprint()).toBe(a.fingerprint());
+    expect(back.firm.stats.arbRoundTrips).toBe(1);
+  });
+
+  it('loads a save from before the round count, with no state for it', () => {
+    const a = fxGame(8);
+    const saved = JSON.parse(JSON.stringify(a.save())) as SavedGame;
+    expect(saved.firm.rounds).toBeUndefined();
+    expect(Game.load(CONTENT, saved).firm.stats.arbRoundTrips).toBe(0);
+  });
 });

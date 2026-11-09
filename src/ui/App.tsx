@@ -13,6 +13,7 @@ import { FirstWeekPanel, lessonsLeft } from './FirstWeekPanel';
 import { LabPanel } from './LabPanel';
 import { GoContext } from './Go';
 import { LearnContext, LearnPanel } from './Glossary';
+import { Moments } from './Moments';
 import { MarketPanel } from './MarketPanel';
 import { OverviewPanel } from './OverviewPanel';
 import { Microscope } from './Microscope';
@@ -120,6 +121,7 @@ export function App({ store }: { store: Store }) {
     <LearnContext.Provider value={learn}>
       <GoContext.Provider value={{ go: goPlace, can: canGo }}>
         <TopBar s={s} store={store} micro={micro} onMicro={openMicro} microscope={shows('microscope', stage)} />
+        <Moments s={s} stage={stage} />
         {fresh && <Welcome store={store} />}
         {tutorial.state === 'at' && (
           <TutorialCard s={s} store={store} tutorial={tutorial} page={page} setPage={goPage} />

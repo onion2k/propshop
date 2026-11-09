@@ -2357,3 +2357,74 @@ function tabLabel(tab: string): string {
     learn: 'Learn',
   }[tab]!;
 }
+
+describe('Part C: moments marked, on the page', () => {
+  const told = (store: ReturnType<typeof createStore>, e: GameEventLike) => {
+    act(() => {
+      (store.game as unknown as { emit(e: GameEventLike): void }).emit(e);
+      store.game.version++;
+      store.publish();
+    });
+  };
+  type GameEventLike = { kind: string; at: number } & Record<string, unknown>;
+  const everything = (seed = 3) => {
+    const store = createStore(CONTENT, null, seed);
+    store.setTutorial({ state: 'done' });
+    store.setReveal(true);
+    return store;
+  };
+  const line = () => screen.getByRole('group', { name: 'Something just happened' });
+
+  it('shows an event as one line with its figure, a glossary term and a link that takes you there', () => {
+    const store = everything();
+    render(<App store={store} />);
+    expect(line().textContent).toBe('');
+    told(store, { kind: 'halt', at: store.game.now + 1, reason: 'down $5,000 on the day', until: store.game.now + 9 });
+    expect(line()).toHaveTextContent('Halted: down $5,000 on the day');
+    expect(within(line()).getByRole('button', { name: 'Risk limits' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Risk limits' })).toBeNull();
+    fireEvent.click(within(line()).getByRole('button', { name: 'Show me' }));
+    // The halt's place is the Strategy page, with the risk panel outlined.
+    expect(document.querySelector('[data-tut="risk"]')).not.toBeNull();
+    expect(document.querySelector('[data-tut="risk"]')).toHaveClass('tut-target');
+  });
+
+  it('keeps its slot through a moment and without one, and is polite to a reader', () => {
+    const store = everything();
+    render(<App store={store} />);
+    const slot = line();
+    expect(slot).toHaveAttribute('aria-live', 'polite');
+    expect(slot.className).toContain('moments');
+    told(store, { kind: 'margin', at: store.game.now + 1, symbols: ['GCZ'] });
+    expect(line()).toBe(slot);
+  });
+
+  it('does not mark a delivery at a stage that hides the metals desk, nor replay what came before the page', () => {
+    const store = createStore(CONTENT, null, 3);
+    store.setTutorial({ state: 'done' });
+    const before = store.game.now;
+    told(store, { kind: 'halt', at: before, reason: 'old', until: before + 1 });
+    render(<App store={store} />);
+    expect(line().textContent).toBe('');
+    told(store, { kind: 'delivery', at: store.game.now + 1, symbol: 'XAU', units: 2, value: 100_00 });
+    expect(line().textContent).toBe('');
+    told(store, { kind: 'halt', at: store.game.now + 2, reason: 'new', until: store.game.now + 9 });
+    expect(line()).toHaveTextContent('Halted: new');
+  });
+
+  it('puts the line away after its hold, in wall time', () => {
+    vi.useFakeTimers();
+    try {
+      const store = everything();
+      render(<App store={store} />);
+      told(store, { kind: 'unlock', at: store.game.now + 1, what: 'darkweb' });
+      expect(line()).toHaveTextContent('The dark web is open');
+      act(() => {
+        vi.advanceTimersByTime(7000);
+      });
+      expect(line().textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

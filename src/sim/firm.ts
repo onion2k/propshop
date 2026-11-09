@@ -166,6 +166,25 @@ export const REJECT_EXPOSURE = 'over the exposure limit';
 export const REJECT_MARGIN = 'not enough margin';
 /** The block a delivered contract's underlying is booked to. */
 export const DELIVERY_BLOCK = 'delivery';
+/** The blocks whose whole round is told to the game: the triangle, three legs on three pairs. */
+const ROUND_BLOCKS: ReadonlySet<string> = new Set(['triangle']);
+/** The distinct symbols a triangle's fills must have touched, since the block was last flat, to be a whole round. */
+const ROUND_LEGS = 3;
+/** The closed rounds a firm keeps until the game takes them: the game takes the player's each tick, a rival's never. */
+const MAX_CLOSED_ROUNDS = 16;
+
+/** What a delivered contract left the firm holding: the underlying, in its lots (negative for a short), and its value. */
+export interface Delivered {
+  underlying: string;
+  units: number;
+  value: number;
+}
+
+/** A round in progress: what its fills netted at home, in cents, and the symbols they touched. At most `ROUND_LEGS`. */
+interface RoundState {
+  net: number;
+  legs: string[];
+}
 export const REJECT_FLOOD = 'over the orders a second the computer can send';
 
 /** Why a hand order was refused at the click. */
@@ -275,6 +294,8 @@ export interface SavedFirm {
   blockPositions: Record<string, Record<string, number>>;
   /** What each block paid on average for what it holds in a currency pair; absent with none, as before 5d. */
   blockCosts?: Record<string, Record<string, number>>;
+  /** Each round block's round in progress; absent with none, as in every save from before rounds were told. */
+  rounds?: Record<string, RoundState>;
   realised: number;
   feesPaid: number;
   finesPaid: number;
@@ -320,6 +341,10 @@ export class Firm {
    * pair; gone when the block is flat in it.
    */
   readonly blockCosts = new Map<string, Map<string, number>>();
+  /** The round each round block (the triangle) has begun and not closed: one entry a block at most. */
+  private readonly rounds = new Map<string, RoundState>();
+  /** Rounds closed since the game last took them (`takeRounds`): the game tells them, the firm does not. */
+  private closedRounds: { block: string; net: number }[] = [];
   realised = 0;
   feesPaid = 0;
   finesPaid = 0;
@@ -618,6 +643,13 @@ export class Firm {
       this.credit(pair.base, signed * pair.units);
       this.credit(pair.quote, -valueOf(scale, signed, price));
       this.cash -= fee;
+      if (ROUND_BLOCKS.has(order.block)) {
+        const flow =
+          toHome(pair.base, signed * pair.units, this.rates) +
+          toHome(pair.quote, -valueOf(scale, signed, price), this.rates) -
+          fee;
+        this.noteRound(order.block, order.symbol, flow);
+      }
       if (pair.quote !== HOME) realised = toHome(pair.quote, realised, this.rates);
     } else if (this.margins.has(order.symbol)) this.cash += realised - fee;
     else this.cash -= valueOf(scale, signed, price) + fee;
@@ -646,6 +678,34 @@ export class Firm {
       against === undefined ? fill : { ...fill, against, ...(!taker && !fix ? { resting: true as const } : {}) },
     );
     if (this.fills.length > FILL_LOG) this.fills.splice(0, this.fills.length - FILL_LOG);
+  }
+
+  /**
+   * A round block's fill: its flow, in dollar cents, joins the round in progress. A round closes when its fills have
+   * touched all the legs, the missing one put in by the block's own scratch counting; it nets what those fills moved
+   * at home at the rates of their moments, fees out. A block that goes flat before that, a lone leg put back, begins
+   * again. Nothing here draws from a stream.
+   */
+  private noteRound(block: string, symbol: string, flow: number): void {
+    const r = this.rounds.get(block) ?? { net: 0, legs: [] };
+    r.net += flow;
+    if (!r.legs.includes(symbol)) r.legs.push(symbol);
+    const mine = this.blockPositions.get(block);
+    const flat = !mine || [...mine.values()].every((q) => q === 0);
+    if (r.legs.length >= ROUND_LEGS) {
+      this.closedRounds.push({ block, net: r.net });
+      if (this.closedRounds.length > MAX_CLOSED_ROUNDS) this.closedRounds.shift();
+      this.stats.arbRoundTrips++;
+      this.rounds.delete(block);
+    } else if (flat) this.rounds.delete(block);
+    else this.rounds.set(block, r);
+  }
+
+  /** The rounds closed since last asked, oldest first; asking empties the list. */
+  takeRounds(): { block: string; net: number }[] {
+    const out = this.closedRounds;
+    this.closedRounds = [];
+    return out;
   }
 
   /** A block's average cost in a pair after a fill: averaged while it adds, kept while it reduces, reset past flat. */
@@ -1104,14 +1164,18 @@ export class Firm {
    * A contract's expiry: its last variation at the final price, and the position closed; delivered, the holder then
    * holds `quantity × multiplier` units of the underlying at that price, paid for.
    */
-  expire(symbol: string, price: number, delivery: { underlying: string; units: number; scale: number } | null): void {
+  expire(
+    symbol: string,
+    price: number,
+    delivery: { underlying: string; units: number; scale: number } | null,
+  ): Delivered | null {
     this.settle(symbol, price);
     const pos = this.positions.get(symbol);
     const qty = pos?.qty ?? 0;
     this.positions.delete(symbol);
     this.heldSeen = null;
     for (const mine of this.blockPositions.values()) mine.delete(symbol);
-    if (!delivery || qty === 0) return;
+    if (!delivery || qty === 0) return null;
     const units = qty * delivery.units;
     const held = this.positions.get(delivery.underlying) ?? { qty: 0, avgCost: 0 };
     const total = held.qty + units;
@@ -1121,7 +1185,9 @@ export class Firm {
     const mine = this.blockPositions.get(DELIVERY_BLOCK) ?? new Map<string, number>();
     mine.set(delivery.underlying, (mine.get(delivery.underlying) ?? 0) + units);
     this.blockPositions.set(DELIVERY_BLOCK, mine);
-    this.cash -= valueOf(delivery.scale, units, price);
+    const value = valueOf(delivery.scale, units, price);
+    this.cash -= value;
+    return { underlying: delivery.underlying, units, value: Math.round(Math.abs(value)) };
   }
 
   /**
@@ -1555,6 +1621,9 @@ export class Firm {
       ...(this.blockCosts.size > 0
         ? { blockCosts: Object.fromEntries([...this.blockCosts].map(([b, m]) => [b, Object.fromEntries(m)])) }
         : {}),
+      ...(this.rounds.size > 0
+        ? { rounds: Object.fromEntries([...this.rounds].map(([b, r]) => [b, { net: r.net, legs: [...r.legs] }])) }
+        : {}),
       realised: this.realised,
       feesPaid: this.feesPaid,
       finesPaid: this.finesPaid,
@@ -1591,6 +1660,7 @@ export class Firm {
     for (const [k, v] of Object.entries(s.positions)) f.positions.set(k, { ...v });
     for (const [b, m] of Object.entries(s.blockPositions)) f.blockPositions.set(b, new Map(Object.entries(m)));
     for (const [b, m] of Object.entries(s.blockCosts ?? {})) f.blockCosts.set(b, new Map(Object.entries(m)));
+    for (const [b, r] of Object.entries(s.rounds ?? {})) f.rounds.set(b, { net: r.net, legs: [...r.legs] });
     f.realised = s.realised;
     f.feesPaid = s.feesPaid;
     f.finesPaid = s.finesPaid;

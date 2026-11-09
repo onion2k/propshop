@@ -1,6 +1,6 @@
 # Playing and learning: the nine points, specified
 
-State: specified 2026-11-09 in plan mode and agreed; parts A and B built 2026-11-09, part C next. Each part is built by the `builder`
+State: specified 2026-11-09 in plan mode and agreed; parts A, B and C built 2026-11-09, part D next. Each part is built by the `builder`
 agent, tests first, then checked and looked at headless, committed and pushed on its own before the next starts.
 What was seen in the look through the game, and the first ideas, are in this file's history (`2519aa1`).
 
@@ -203,3 +203,49 @@ quotes taken, about $3,318, on a day that lost $4,355); no overflow, no console 
 right: "Took this week" counted today twice after the close, since the day's tally is kept until the next open;
 `rivalRows` now adds today only while the market is open, with a test. Left as built: "Who they are" sits below the
 latency grid, not above it as the plan said.
+
+## Result: part C
+
+Built 2026-11-09 by the builder. The sim tests (`test/metals.test.ts` "delivery as a moment", `test/fxblocks.test.ts` "a
+closed triangle as a moment") were written first and failed on the missing events (nine failing, one passing: the save
+without the round state). The chooser's tests (`test/moments.test.ts`) and the page tests (`test/ui.test.tsx` "Part C")
+were written after the working and passed at once.
+
+- **Sim.** `GameEvent` gains `delivery` (`symbol` the underlying, `units` its lots, negative for a short, `value`
+  cents) and `round` (`block`, `net` cents). `Firm.expire` returns what it delivered and the game emits it for the
+  player's firm only. The `triangle` is stateless, so the firm tells the round: each fill of a round block joins
+  `rounds`, a per-block `{ net, legs }` (net being the fill's base and quote flows at home, fees out); when the fills
+  have touched all three pairs the round closes (`closedRounds`, taken by the game each tick through `takeRounds`, so a
+  test can book a leg between ticks) and `stats.arbRoundTrips` counts it; a block that goes flat first (a lone leg put
+  back) starts again. Nothing draws from a stream. The snapshot gains `racesWon` (today's `races.won`), a read.
+- **Page.** `momentChoice.ts` (pure), `Moments.tsx`, `MOMENT_WORDS` (`signals.ts`), CSS under `.moments`, `App.tsx`. The
+  concepts link to existing glossary entries (`margin-call`, `insider`, `risk-limits`, `delivery`,
+  `triangular-arbitrage`, `latency`); none was added. Places are `GO_TARGETS`: `firm` (market), `risk` and `strategy`
+  (strategy page), the Dark web tab.
+- **Held by.** Same-seed replay and a save from the tick before, for a delivery (long) and for a round (two legs in);
+  the chooser's rank, 300× latest-of-highest, the minute, the hold, the stage, the race of the day, the reload.
+
+Deviations from the plan, and why:
+
+- **"Unlock"** is the one `unlock` event the sim has (the dark web); no stage or desk opening is an event, and none was
+  invented. A race won is not an event either: the chooser reads `racesWon` from the snapshot, new once a day.
+- **Only the triangle's rounds** are counted and told. The stock `arbitrage` block closes its round by going flat on
+  two exchanges and could be counted the same way; left, since it would fire many times a minute for little to teach.
+- **A round's net** is the three legs' flows at home, not a realised P&L (a triangle's legs stay open as positions
+  until the opposite triangle). It carries the rate drift between legs; it is a figure for the line, not an edge.
+- **A moment late is let go,** not queued: one that arrives in the hold of a higher or equal rank is dropped.
+- **The fingerprints pinned in `test/instruments.test.ts` ("both desks open") moved**, as a consequence of counting
+  `arbRoundTrips` (saved) and saving a round in progress, the triangle being on in that test; every other figure there
+  is the same and, with those two cleared, the old fingerprints return (checked for the first set). They were rewritten.
+- **The slot's role is `group`,** not `status`: the top bar already has the one `status` the tests and readers find.
+
+Not checked: the look at 375 and 1280 wide (no browser here), whether the line's fixed height holds a long sentence at
+375, console errors in a browser, a real run of a margin call or a metals delivery through the page (the page tests
+inject events).
+
+Reviewed after the hand-back (2026-11-09): each kind looked at headless at 1280 and 375 by putting its event on the
+log through `window.propshop`; no overflow, no console errors, "Show me" from a halt lands on Strategy with the risk
+card outlined. Two things put right: at 375 the longer sentences ran to three lines in a two-line slot and were cut,
+so the slot holds three there (57 px, one line from 720); and a firm's closed rounds are now bounded
+(`MAX_CLOSED_ROUNDS`), since the game takes only the player's. Not seen in a browser: a real delivery, margin call or
+closed round arising from play (the sim tests hold those).

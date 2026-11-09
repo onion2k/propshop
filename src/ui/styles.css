@@ -1714,3 +1714,37 @@ code {
 .offer-rest {
   margin: 2px 0;
 }
+
+/* Part C: the moments line under the top bar. Its slot keeps its height with or without a moment on it. */
+.moments {
+  padding: 0 16px;
+  /* Three lines at a phone's width (the longest sentence with its term and link, measured at 375), one from 720. */
+  height: 4.4em;
+  line-height: 1.4;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+.moments .moment {
+  margin: 0;
+  color: var(--accent);
+}
+@media (min-width: 720px) {
+  .moments {
+    height: 1.9em;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .moments .moment {
+    animation: moment-in 200ms ease-out;
+  }
+  @keyframes moment-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

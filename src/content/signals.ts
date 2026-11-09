@@ -405,3 +405,28 @@ export const OVERVIEW_COMING_WORDS = {
     'After the first close, Trends and Comparisons appear below, with the days charted and last night’s tests. Signals follow once the reports show something worth a look.',
   signals: 'Signals appear below once the reports show something worth a look, after a few closes.',
 } as const;
+
+/**
+ * The line under the top bar when something happens that the player should see once: a margin call, a fine, a halt,
+ * a delivery, a closed round, the day's first race won, an unlock. One sentence a kind with its figure; the figures
+ * arrive already worded (money as dollars), the way the other tables here take them. Drafts, for the author to edit.
+ */
+export const MOMENT_WORDS = {
+  margin: (symbols: string) =>
+    `Margin call: the firm fell below the maintenance margin and was flattened in ${symbols}. It trades on.`,
+  fine: (cents: string, reason: string) => `The regulator fined you ${cents}: ${reason}.`,
+  halt: (reason: string) => `Halted: ${reason}. Resting orders are pulled and nothing trades until the halt ends.`,
+  /** `units` is the count of the underlying's lots, `long` whether the firm was long the contract. */
+  delivery: (units: number, symbol: string, value: string, long: boolean) =>
+    long
+      ? `Delivered: ${units} ${units === 1 ? 'lot' : 'lots'} of ${symbol}, ${value}, now held as spot and paying storage.`
+      : `Delivered against you: short ${units} ${units === 1 ? 'lot' : 'lots'} of ${symbol}, ${value}, now a short in spot and paying the lease.`,
+  round: (net: string, gain: boolean) =>
+    `Triangle closed: three legs filled, ${net} ${gain ? 'ahead' : 'behind'} after fees.`,
+  race: 'First race won today: your order arrived first and filled.',
+  unlock: 'The dark web is open. Tips are for sale there, and the regulator is watching who buys.',
+  /** The link's text, where the place can be gone to. */
+  link: 'Show me',
+  /** The slot's label for a reader of the page. */
+  label: 'Something just happened',
+} as const;

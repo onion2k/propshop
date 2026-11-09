@@ -88,6 +88,10 @@ http://localhost:5181.
   everything at once.
 - **A guided first week.** Ten things to see, grouped by stage, ticked off
   by the game as each happens, with what it meant revealed after.
+- **Moments marked.** A margin call, a fine, a halt, a delivery, a closed
+  triangle, the day's first race won and the dark web opening each put one
+  line under the top bar for a few seconds, with its figure, the concept it
+  is, and a link to the place on the page.
 - **A report every close,** by block, by stock and by race, with a chart of
   the days.
 - **A glossary** behind every underlined term: order books, the spread,

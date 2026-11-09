@@ -1,6 +1,15 @@
 import { CONTENT } from '../src/content';
 import { GC, METALS_DESK, METAL_SERIES, METAL_VENUES, SPOT, STORAGE, SUPPLY_NEWS } from '../src/content/metals';
-import { Game, MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, MS_PER_YEAR, TICK_MS, type SavedGame } from '../src/sim';
+import {
+  Game,
+  type GameEvent,
+  MS_PER_DAY,
+  MS_PER_HOUR,
+  MS_PER_MINUTE,
+  MS_PER_YEAR,
+  TICK_MS,
+  type SavedGame,
+} from '../src/sim';
 import { isOpenIn } from '../src/sim/session';
 import type { Content } from '../src/sim/types';
 
@@ -243,6 +252,69 @@ describe('delivery', () => {
     expect(cash - g.firm.cash).toBeCloseTo(100 * final, 0);
     expect(final).toBeGreaterThan(20000);
   });
+});
+
+describe('delivery as a moment', () => {
+  /** A game one second before the near gold future's expiry, the player holding `qty` of it. */
+  function toDelivery(qty: number, seed = 3): Game {
+    const g = metalsGame(METALS, seed);
+    run(g, at(4, 13.5 * H) - 1000, 60_000);
+    const near = g.market.live('GC')[0]!;
+    g.firm.positions.set(near, { qty, avgCost: g.market.settlementPrice(near) });
+    return g;
+  }
+
+  it('emits one delivery event for the player, with the metal, its lots and its value', () => {
+    const g = toDelivery(2);
+    const seen: GameEvent[] = [];
+    g.on((e) => seen.push(e));
+    g.step(1000);
+    const d = seen.filter((e) => e.kind === 'delivery');
+    expect(d).toHaveLength(1);
+    const e = d[0]!;
+    expect(e.symbol).toBe('XAU');
+    expect(e.units).toBe(2);
+    const held = g.firm.positions.get('XAU')!;
+    expect(Math.abs(e.value - 2 * g.market.scales.get('XAU')! * held.avgCost)).toBeLessThanOrEqual(1);
+    expect(g.log.some((x) => x.kind === 'delivery')).toBe(true);
+  }, 120_000);
+
+  it('says a short delivered with a negative count, and emits nothing for a flat holding', () => {
+    const short = toDelivery(-3);
+    const a: GameEvent[] = [];
+    short.on((e) => a.push(e));
+    short.step(1000);
+    const e = a.filter((x) => x.kind === 'delivery')[0]!;
+    expect(e.units).toBe(-3);
+    expect(e.value).toBeGreaterThan(0);
+    const flat = toDelivery(0);
+    const b: GameEvent[] = [];
+    flat.on((x) => b.push(x));
+    flat.step(1000);
+    expect(b.some((x) => x.kind === 'delivery')).toBe(false);
+  }, 120_000);
+
+  it('replays the same events and equity for one seed, and a save from the tick before loads to the same future', () => {
+    const a = toDelivery(2, 5);
+    const b = toDelivery(2, 5);
+    const ea: string[] = [];
+    const eb: string[] = [];
+    a.on((e) => e.kind === 'delivery' && ea.push(JSON.stringify(e)));
+    b.on((e) => e.kind === 'delivery' && eb.push(JSON.stringify(e)));
+    const saved = JSON.parse(JSON.stringify(a.save())) as SavedGame;
+    const back = Game.load(METALS, saved);
+    const ec: string[] = [];
+    back.on((e) => e.kind === 'delivery' && ec.push(JSON.stringify(e)));
+    run(a, a.now + 5000, 1000);
+    run(b, b.now + 5000, 1000);
+    run(back, back.now + 5000, 1000);
+    expect(ea).toHaveLength(1);
+    expect(eb).toEqual(ea);
+    expect(ec).toEqual(ea);
+    expect(b.fingerprint()).toBe(a.fingerprint());
+    expect(back.fingerprint()).toBe(a.fingerprint());
+    expect(b.firm.equity(b.market, b.now)).toBe(a.firm.equity(a.market, a.now));
+  }, 120_000);
 });
 
 describe('settlement', () => {

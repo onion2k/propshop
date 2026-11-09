@@ -32,16 +32,21 @@ const NO_METALS: Content = {
 };
 
 const BLOCKS_ON = ['momentum', 'basisArb', 'leadLag', 'carry', 'triangle'];
+// The fingerprints of the three sets moved on 2026-11-09 with plans/play-and-learn.md part C, on purpose and only for
+// that: the triangle's rounds are counted at last (`stats.arbRoundTrips`, saved) and a round in progress is saved, so
+// the save differs. Every figure beside the fingerprint is the same, and with those two cleared the fingerprints are
+// the old ones (checked for the first set: '5a409e9e' and '473e9068'; before, metals closed was '9326e341' and
+// '4f30cd6d', metals open '23255924' and 'f3320a6b').
 const EXPECTED_DESKS_OPEN: unknown[] = [
-  [1, '5a409e9e', 481, 498, [119, 0, 100, 0, 79]],
-  [2, '473e9068', 261, 314, [64, 0, 113, 0, 137]],
+  [1, 'e4cbd177', 481, 498, [119, 0, 100, 0, 79]],
+  [2, '72fe6fcc', 261, 314, [64, 0, 113, 0, 137]],
 ];
 
 // The two below moved on 2026-11-09 when Hudson stopped listing the spot (6c's amendment to 6b), every other figure the
 // same: closed 'd7fa5a46' and 'cecb8650', open 'beafb15' and '5c3e6bd3' before.
 const EXPECTED_METALS_CLOSED: unknown[] = [
-  [1, '9326e341', 481, 498, [119, 0, 100, 0, 79]],
-  [2, '4f30cd6d', 261, 314, [64, 0, 113, 0, 137]],
+  [1, 'e2cafc0', 481, 498, [119, 0, 100, 0, 79]],
+  [2, '24803de7', 261, 314, [64, 0, 113, 0, 137]],
 ];
 // Moved on 2026-11-09 with the desk's blocks and its rival (plans/desk-metals.md 6d): the firm is given the three blocks,
 // off, and Aldgate Metals joins as the desk opens, so the save carries both (without the rival, 'a650dd47' and
@@ -49,8 +54,8 @@ const EXPECTED_METALS_CLOSED: unknown[] = [
 // Moved again on 2026-11-09 with 6f, every other figure the same: the metals' crowd trades in lots of one (the books
 // and their logs differ), and Aldgate's fixArb asks 4 bp (its saved parameters). Before, 'b0c0774' and 'b4c4cf9f'.
 const EXPECTED_METALS_OPEN: unknown[] = [
-  [1, '23255924', 481, 498, [119, 0, 100, 0, 79]],
-  [2, 'f3320a6b', 261, 314, [64, 0, 113, 0, 137]],
+  [1, '2d38b623', 481, 498, [119, 0, 100, 0, 79]],
+  [2, '2b0b4a3d', 261, 314, [64, 0, 113, 0, 137]],
 ];
 
 describe('instruments, folded in from stocks', () => {
