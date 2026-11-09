@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { CONTENT } from '../src/content';
+import { CONTENT, glossary } from '../src/content';
 import { TICK_MS, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
@@ -13,6 +13,7 @@ import { EXPERIMENTS_KEY } from '../src/ui/Root';
 import { MARKET_OPEN } from '../src/sim/clock';
 import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
 import { TESTS_KEY, type Night } from '../src/ui/nights';
+import { money } from '../src/ui/format';
 
 /** The page switcher under the top bar. */
 function goTo(page: 'Overview' | 'Market' | 'Desk' | 'Strategy' | 'Reports') {
@@ -28,6 +29,21 @@ function memory(): Storage & { data: Map<string, string> } {
     removeItem: (k) => void data.delete(k),
   };
 }
+
+describe('the Strategy page', () => {
+  it("links every block's name to a glossary entry, the desks' blocks included", () => {
+    const store = createStore(CONTENT, null, 2);
+    store.setReveal(true);
+    store.game.openDesk('futures');
+    store.game.openDesk('fx');
+    store.publish();
+    render(<App store={store} />);
+    goTo('Strategy');
+    const linked = [...document.querySelectorAll('.strategy summary strong button.term')].map((b) => b.textContent);
+    for (const name of ['Lead-lag', 'Triangular arbitrage', 'Carry', 'Basis arbitrage', 'Roll'])
+      expect(linked).toContain(name);
+  });
+});
 
 describe('App', () => {
   it('renders the clock and advances it when the store is pumped', () => {
@@ -526,6 +542,25 @@ describe('MarketPanel: the gap', () => {
     );
   });
 
+  it('writes a gap in a currency pair in pips, the fees turned into pips', () => {
+    const f = fixture();
+    f.s.exchanges.find((e) => e.id === f.a)!.feePerShare = 0.25;
+    // A pip of a lot is ten cents: two quarter-cent fees are a twentieth of a pip.
+    f.s.stocks[0] = {
+      ...f.s.stocks[0]!,
+      decimals: 4,
+      pair: { base: 'EUR', quote: 'USD', lot: 1000, cross: null, pointValue: 10 },
+    };
+    f.s.gaps = [
+      { symbol: f.sym, buyOn: f.a, sellOn: f.b, ask: 4132, bid: 4133, edge: 0.95, firstSeen: 1000, lastSeen: 1000 },
+    ];
+    show(f);
+    expect(document.querySelector('.gap-line')!.textContent).toContain(
+      `buy on ${f.a} at 0.4132, sell on ${f.b} at 0.4133 · 1 pip, 0.95 pips after both taker fees`,
+    );
+    expect(document.querySelector('.gap-row')!.textContent).toContain('+0.95 pips');
+  });
+
   it('shows no gap line when the view is not crossed, and still marks the best bid and ask', () => {
     const f = fixture({ bSeen: { bid: 4129, ask: 4136 } });
     show(f);
@@ -880,7 +915,7 @@ describe('Root', () => {
     expect(store.game.now).toBeGreaterThan(t0);
   });
 
-  it('lists the four experiments and Free play', () => {
+  it('lists the five experiments and Free play', () => {
     const store = createStore(CONTENT, null, 25);
     render(<Root store={store} />);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
@@ -889,7 +924,7 @@ describe('Root', () => {
       expect(screen.getByRole('button', { name: new RegExp(e.title) })).toBeInTheDocument();
       expect(screen.getByText(e.teaches)).toBeInTheDocument();
     }
-    expect(EXPERIMENTS).toHaveLength(4);
+    expect(EXPERIMENTS).toHaveLength(5);
     expect(screen.getByRole('button', { name: 'Free play' })).toBeInTheDocument();
   });
 
@@ -1134,8 +1169,8 @@ describe('stages', () => {
     expect(screen.getAllByRole('tab')).toHaveLength(7);
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    // The ten stock blocks and, everything shown, the futures desk's three.
-    expect(listedBlocks()).toHaveLength(13);
+    // The ten stock blocks and, everything shown, the futures desk's three and the currencies desk's two.
+    expect(listedBlocks()).toHaveLength(15);
     // A reload.
     cleanup();
     const again = createStore(CONTENT, storage, 36);
@@ -1162,7 +1197,7 @@ describe('stages', () => {
     expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    expect(listedBlocks()).toHaveLength(13);
+    expect(listedBlocks()).toHaveLength(15);
   });
 
   it('criterion 8: the first week lists lessons by stage, and names the stages not open yet', () => {
@@ -1176,6 +1211,23 @@ describe('stages', () => {
     expect(headings[1]).toMatch(/Stage 2: A better seat · opens as you go/);
     const titles = [...document.querySelectorAll('.lesson-head strong')].map((e) => e.textContent);
     expect(titles).toEqual(['Find what earns from home', 'Buy a better seat']);
+  });
+});
+
+describe('the First week, with the desks open', () => {
+  it("gives the currencies desk's four lessons a section of their own at stage 4, beside the futures desk's", () => {
+    const storage = memory();
+    storage.setItem(STAGES_KEY, JSON.stringify({ seen: 4 }));
+    const done = ['home', 'seat', 'gap', 'race', 'cost', 'maker', 'noise'];
+    storage.setItem(PROGRESS_KEY, JSON.stringify(Object.fromEntries(done.map((l) => [l, 1]))));
+    const store = createStore(CONTENT, storage, 34);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    goTo('Reports');
+    const section = screen.getByRole('region', { name: 'The currencies desk' });
+    const titles = [...section.querySelectorAll('.lesson-head strong')].map((e) => e.textContent);
+    expect(titles).toEqual(['Count in pips', 'Close a triangle', 'Be refused', 'Earn the rollover']);
+    expect(screen.getByRole('region', { name: 'The futures desk' })).toBeInTheDocument();
   });
 });
 
@@ -1408,5 +1460,198 @@ describe('the futures desk on the page', () => {
     goTo('Market');
     expect(screen.queryByText(/^future on IDX/)).toBeNull();
     expect(store.game.competitors.map((c) => c.name)).not.toContain('Prairie Partners');
+  });
+});
+
+describe('the currencies desk on the page', () => {
+  /** Everything shown, so the desk is open, a few seconds into the morning so the pairs have prices. */
+  function freePlay(seed: number) {
+    const store = createStore(CONTENT, null, seed);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    act(() => {
+      store.skipToOpen();
+      for (let i = 0; i < 70_000 / TICK_MS; i++) store.game.step();
+      store.publish();
+    });
+    return store;
+  }
+  const row = (symbol: string) =>
+    [...document.querySelectorAll('.watchlist tbody tr')].find(
+      (r) => r.querySelector('strong')?.textContent === symbol,
+    )!;
+
+  it('lists each pair with what it is and its price to its own places, and the picked pair throughout', () => {
+    const store = freePlay(70);
+    render(<App store={store} />);
+    goTo('Market');
+    const eurusd = row('EURUSD');
+    expect(eurusd.querySelector('.col-sector')!.textContent).toBe('euro in dollars');
+    expect(eurusd.querySelector('.bid')!.textContent).toMatch(/^1\.0\d{3}$/);
+    expect(eurusd.querySelector('.ask')!.textContent).toMatch(/^1\.0\d{3}$/);
+    expect(eurusd.lastElementChild!.textContent).toMatch(/^(—|[+-]\d\.\d{4})$/);
+    expect(row('USDJPY').querySelector('.bid')!.textContent).toMatch(/^1\d\d\.\d\d$/);
+    expect(row('EURJPY').querySelector('.col-sector')!.textContent).toBe('cross of EUR/USD and USD/JPY');
+    fireEvent.click(eurusd);
+    const head = document.querySelector('.stock-head')!;
+    expect(head.textContent).toMatch(/fair 1\.0\d{3}/);
+    expect(head.textContent).toMatch(/currency pair/);
+    const quotes = [...document.querySelectorAll('.quotes tbody tr')];
+    expect(quotes.length).toBe(2);
+    for (const q of quotes) expect(q.querySelector('.bid')!.textContent).toMatch(/^(—|1\.0\d{3})$/);
+    expect(document.querySelector('.quotes tbody .col-spread')!.textContent).toMatch(/^(—|\d+ pips?)$/);
+  }, 60_000);
+
+  it("shows the firm's balances by currency, each with its dollar value, in the Overview and the firm panel", () => {
+    const store = freePlay(71);
+    act(() => {
+      store.game.firm.balances.set('EUR', 123_456);
+      store.game.firm.balances.set('JPY', -50_000);
+      store.game.step();
+      store.publish();
+    });
+    const s = store.getSnapshot();
+    const dollars = (c: string) => s.balances.find((b) => b.currency === c)!.dollars;
+    render(<App store={store} />);
+    const ov = document.querySelector('.ov-balances')!;
+    expect(ov.textContent).toContain('EUR 1,234.56');
+    expect(ov.textContent).toContain(`(${money(dollars('EUR'))})`);
+    expect(ov.textContent).toContain('JPY -50,000');
+    expect(ov.textContent).toContain(`(${money(dollars('JPY'))})`);
+    goTo('Market');
+    const firm = document.querySelector('.firm .balances')!;
+    expect(firm.textContent).toContain('EUR 1,234.56');
+    expect(firm.textContent).toContain(money(dollars('JPY')));
+  }, 60_000);
+
+  it('reads a refused order as refused in the orders list and its race', () => {
+    const store = createStore(CONTENT, null, 72);
+    store.publish();
+    const base = store.getSnapshot();
+    const s: Snapshot = {
+      ...base,
+      orders: [
+        {
+          localId: 1,
+          exchange: 'ASHFORD',
+          exchangeOrderId: 1,
+          symbol: 'EURUSD',
+          side: 'buy',
+          price: 10853,
+          size: 2,
+          filled: 0,
+          ioc: true,
+          status: 'refused',
+          reason: 'refused by the dealer after 5 ms',
+          block: 'triangle',
+          sentAt: 1000,
+          seenAt: 900,
+          arrivedAt: 1035,
+          ackAt: 1075,
+          beatenBy: [],
+          fee: 0,
+          realised: 0,
+          avgFill: null,
+          slippage: null,
+        },
+      ],
+    };
+    render(<FirmPanel s={s} />);
+    const li = document.querySelector('.orders li')!;
+    expect(li.querySelector('.order-line')!.textContent).toMatch(/· refused/);
+    expect(li.querySelector('.race-words')!.textContent).toContain('Refused by the dealer after 5 ms.');
+  });
+
+  it("offers the triangle's venue as a choice, and sets it", () => {
+    const store = freePlay(73);
+    render(<App store={store} />);
+    goTo('Strategy');
+    const venue = screen.getByLabelText<HTMLSelectElement>('Triangular arbitrage Venue');
+    expect(venue.tagName).toBe('SELECT');
+    expect([...venue.options].map((o) => o.textContent)).toEqual(['the book', 'the dealer']);
+    fireEvent.change(venue, { target: { value: '1' } });
+    expect(store.game.firm.blocks.find((b) => b.id === 'triangle')!.params.venue).toBe(1);
+    // A numeric parameter stays a slider.
+    expect(screen.getByLabelText<HTMLInputElement>('Triangular arbitrage Minimum gap').type).toBe('range');
+  }, 60_000);
+
+  it('opens the desk at stage 4, its pairs and its two blocks, and not at stage 3', () => {
+    const at = (lessons: string[], seen: number) => {
+      const storage = memory();
+      storage.setItem(STAGES_KEY, JSON.stringify({ seen }));
+      storage.setItem(PROGRESS_KEY, JSON.stringify(Object.fromEntries(lessons.map((l) => [l, 1]))));
+      const store = createStore(CONTENT, storage, 74);
+      store.setTutorial({ state: 'done' });
+      return store;
+    };
+    const stage2 = ['home', 'seat', 'gap', 'race', 'cost'];
+    render(<App store={at(stage2, 3)} />);
+    goTo('Market');
+    expect(screen.queryByText('EURUSD')).toBeNull();
+    goTo('Strategy');
+    expect(listedBlocks()).not.toContain('Triangular arbitrage');
+    cleanup();
+    const four = at([...stage2, 'maker', 'noise'], 4);
+    render(<App store={four} />);
+    goTo('Market');
+    expect(screen.getByText('EURUSD')).toBeInTheDocument();
+    goTo('Strategy');
+    expect(listedBlocks()).toEqual(expect.arrayContaining(['Triangular arbitrage', 'Carry']));
+    expect(four.game.competitors.map((c) => c.name)).toContain('Kestrel Currency');
+  }, 60_000);
+
+  it('writes the rollover and the currencies desk into the day report', () => {
+    const store = createStore(CONTENT, null, 75);
+    store.setTutorial({ state: 'done' });
+    act(() => {
+      store.game.days.push({
+        day: 0,
+        week: 1,
+        weekday: 'Mon',
+        pnl: 1000,
+        equityAtClose: 1000,
+        byBlock: {},
+        bySymbol: {},
+        races: { won: 0, beaten: 0, missed: 0 },
+        fees: 0,
+        fines: 0,
+        headlines: [],
+        latency: {},
+        rivals: [],
+        byDesk: { stocks: { fills: 1, realised: 0, fees: 1 }, fx: { fills: 3, realised: 0, fees: 1 } },
+        rollover: 49,
+      });
+      store.game.step();
+      store.publish();
+    });
+    render(<App store={store} />);
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+    const report = document.querySelector('.report')!;
+    expect(report.textContent).toContain('Currencies');
+    expect(report.querySelector('.rollover')!.textContent).toMatch(/Rollover.*\+\$0\.49/);
+  });
+});
+
+describe('the currencies desk in the glossary', () => {
+  it('has an entry, short and long, for each concept the desk shows', () => {
+    for (const id of [
+      'currency-pair',
+      'base-quote',
+      'pip',
+      'lot',
+      'cross-rate',
+      'triangular-arbitrage',
+      'dealer',
+      'last-look',
+      'rollover',
+      'home-currency',
+    ]) {
+      const g = glossary(id);
+      expect(g, id).toBeDefined();
+      expect(g!.short.length).toBeGreaterThan(10);
+      expect(g!.long.length).toBeGreaterThan(100);
+    }
+    expect(glossary('carry')!.long).toMatch(/currency/);
   });
 });

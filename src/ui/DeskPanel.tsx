@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { BEST, formatTime, type OrderStory, type Snapshot } from '../sim';
 import { CONTENT } from '../content';
 import { Chart } from './Chart';
-import { money, ms, price, shares } from './format';
+import { money, ms, pointsFrom, price, priceStep, shares } from './format';
 import { Term } from './Glossary';
 import { Race } from './Race';
 import type { Store } from './store';
@@ -16,13 +16,13 @@ const SHOWN = 5;
 const DEFAULT_SIZE = 5000;
 
 /** The slippage line's words for one order: the touch at the click, at the arrival, the fill, and the difference. */
-export function slippageLine(o: OrderStory): string {
-  if (o.status === 'rejected') return 'no fill, so no slippage.';
+export function slippageLine(o: OrderStory, decimals = 2): string {
+  if (o.status === 'rejected' || o.status === 'refused') return 'no fill, so no slippage.';
   const click = o.clickTouch ?? null;
   const parts = [
-    `touch at your click ${price(click)}`,
-    `at arrival ${price(o.arrivalTouch ?? null)}`,
-    o.avgFill === null ? 'no fill yet' : `filled at ${price(Math.round(o.avgFill))}`,
+    `touch at your click ${price(click, decimals)}`,
+    `at arrival ${price(o.arrivalTouch ?? null, decimals)}`,
+    o.avgFill === null ? 'no fill yet' : `filled at ${price(Math.round(o.avgFill), decimals)}`,
   ];
   const slip = o.slippage;
   let verdict = '';
@@ -54,14 +54,14 @@ export function DeskPanel({ s, store }: { s: Snapshot; store: Store }) {
 
   const send = () => {
     if (!stock) return;
-    const cents = Math.round(Number(limit) * 100);
+    const points = pointsFrom(limit, stock.decimals);
     const result = store.hand({
       symbol: stock.symbol,
       side,
       size: Number(size),
       exchange,
       type,
-      ...(type === 'limit' ? { price: cents, ...(postOnly ? { postOnly: true } : {}) } : {}),
+      ...(type === 'limit' ? { price: points, ...(postOnly ? { postOnly: true } : {}) } : {}),
     });
     setRefusal(result.ok ? null : result.reason);
   };
@@ -79,10 +79,11 @@ export function DeskPanel({ s, store }: { s: Snapshot; store: Store }) {
           <div className="stock-head">
             <strong>{stock.symbol}</strong> <span className="muted">{stock.name}</span>
             <span className="muted right">
-              <span className="num bid">{price(stock.bid)}</span> / <span className="num ask">{price(stock.ask)}</span>
+              <span className="num bid">{price(stock.bid, stock.decimals)}</span> /{' '}
+              <span className="num ask">{price(stock.ask, stock.decimals)}</span>
             </span>
           </div>
-          <Chart history={stock.history} exchanges={stock.exchanges.map((e) => e.id)} />
+          <Chart history={stock.history} exchanges={stock.exchanges.map((e) => e.id)} decimals={stock.decimals} />
         </>
       )}
       <form
@@ -157,8 +158,8 @@ export function DeskPanel({ s, store }: { s: Snapshot; store: Store }) {
               <span className="small muted">Price</span>
               <input
                 type="number"
-                min={0.01}
-                step={0.01}
+                min={priceStep(stock?.decimals)}
+                step={priceStep(stock?.decimals)}
                 value={limit}
                 onChange={(e) => setLimit(e.target.value)}
                 aria-label="Limit price"
@@ -205,21 +206,30 @@ export function DeskPanel({ s, store }: { s: Snapshot; store: Store }) {
         </p>
       ) : (
         <ul className="orders">
-          {handOrders.map((o) => (
-            <li key={o.localId} data-id={o.localId}>
-              <div className="order-line">
-                <span className="muted num">{formatTime(o.sentAt)}</span>{' '}
-                <span className={o.side === 'buy' ? 'bid' : 'ask'}>{o.side}</span>{' '}
-                <span className="num">{shares(o.size)}</span> {o.symbol} on {o.exchange} at{' '}
-                <span className="num">{price(o.price)}</span>
-                <span className="muted">{o.ioc ? ' · market' : ' · limit'}</span>
-              </div>
-              <Race o={o} names={s.names} now={s.now} />
-              <div className="slippage small">
-                <Term id="slippage">Slippage</Term>: {slippageLine(o)}
-              </div>
-            </li>
-          ))}
+          {handOrders.map((o) => {
+            const places = s.stocks.find((x) => x.symbol === o.symbol)?.decimals;
+            return (
+              <li key={o.localId} data-id={o.localId}>
+                <div className="order-line">
+                  <span className="muted num">{formatTime(o.sentAt)}</span>{' '}
+                  <span className={o.side === 'buy' ? 'bid' : 'ask'}>{o.side}</span>{' '}
+                  <span className="num">{shares(o.size)}</span> {o.symbol} on {o.exchange} at{' '}
+                  <span className="num">{price(o.price, places)}</span>
+                  <span className="muted">{o.ioc ? ' · market' : ' · limit'}</span>
+                  {o.status === 'refused' && (
+                    <span className="down">
+                      {' '}
+                      · <Term id="last-look">refused</Term>
+                    </span>
+                  )}
+                </div>
+                <Race o={o} names={s.names} now={s.now} decimals={places} />
+                <div className="slippage small">
+                  <Term id="slippage">Slippage</Term>: {slippageLine(o, places)}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       <p className="muted small">

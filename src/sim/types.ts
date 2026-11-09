@@ -51,6 +51,37 @@ export interface InstrumentSpec {
   carry?: number;
   /** At expiry, paid in cash, or delivered as its underlying. Absent, cash. */
   settlement?: 'cash' | 'delivery';
+  /** The currency its price is counted in, the quote's for a pair; absent, the dollar. */
+  currency?: string;
+  /** A currency pair (`kind: 'fx'`): the currency one unit of it buys. */
+  base?: string;
+  /**
+   * A cross rate: its fair value is the product of these two pairs' (the first's quote the second's base), scaled
+   * to its own points, worked out each tick and drawing nothing.
+   */
+  cross?: readonly [string, string];
+}
+
+/** A currency the firm may hold a balance in. The dollar is the firm's own, its home currency, kept as cash. */
+export interface CurrencySpec {
+  id: string;
+  name: string;
+  /** Minor units in one: a hundred cents, a hundred euro cents, one yen (the yen has nothing smaller). */
+  minor: number;
+  /** The pair that prices it in dollars; absent for the dollar. */
+  pair?: string;
+  /** Its interest rate a year, a share, for rollover. */
+  rate: number;
+}
+
+/** When the currencies roll over, and what the venues keep of it. */
+export interface RolloverSpec {
+  /** Ms past midnight, each weekday. */
+  at: number;
+  /** A share a year the venue keeps whichever way the position faces. */
+  spread: number;
+  /** Days in the year the rates are counted on. */
+  basis: number;
 }
 
 /** What a margined instrument asks the firm to hold against it, as shares of a contract's value. */
@@ -94,6 +125,11 @@ export interface ExchangeSpec {
   desk?: string;
   /** Its hours; absent, the stocks' (09:30 to 16:00, Monday to Friday), worked out by the clock. */
   session?: SessionSpec;
+  /**
+   * A dealer's last look: a firm's order that would take its price is held `holdMs`, then filled at the price it
+   * met unless the dealer's belief has moved more than `refuseTicks` of the grid past it, when it is refused.
+   */
+  lastLook?: { holdMs: number; refuseTicks: number };
 }
 
 export interface LocationSpec {
@@ -182,6 +218,8 @@ export interface CompetitorSpec {
   blocks?: { id: string; params?: Record<string, number> }[];
   /** A desk's rival joins the game when that desk opens; absent, from the start. */
   desk?: string;
+  /** The desks whose instruments it watches; absent, the stocks', and its own desk's if it has one. */
+  watches?: string[];
 }
 
 /** The character of a trading day: multipliers on the market's own behaviour. */
@@ -219,6 +257,12 @@ export interface FactorSpec {
 /** Everything the content hands the sim. */
 export interface Content {
   stocks: StockSpec[];
+  /** The other desks' own instruments (not contracts in a series), there and closed until their desk opens. */
+  instruments?: InstrumentSpec[];
+  /** The currencies besides the dollar's balances are kept in, and the dollar itself; absent, the dollar alone. */
+  currencies?: CurrencySpec[];
+  /** Rollover for currency positions; absent, none. */
+  rollover?: RolloverSpec;
   /** Contract series, listed as time passes; absent, none. */
   series?: ContractSeriesSpec[];
   exchanges: ExchangeSpec[];

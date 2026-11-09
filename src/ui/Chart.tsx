@@ -3,6 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { HistoryPoint } from '../sim';
+import { price } from './format';
 
 const COLOURS: Record<string, string> = { HARBOR: '#5ec8ff', LAKESIDE: '#ffb454', PACIFIC: '#c58cff' };
 export function exchangeColour(id: string): string {
@@ -13,10 +14,13 @@ export function Chart({
   history,
   exchanges,
   minutes = 5,
+  decimals = 2,
 }: {
   history: HistoryPoint[];
   exchanges: string[];
   minutes?: number;
+  /** The places the axis writes a price to: the instrument's. */
+  decimals?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -52,7 +56,7 @@ export function Chart({
     hi += pad;
     const x = (t: number) => ((t - from) / (last.at - from || 1)) * (w - 44);
     const y = (v: number) => h - 4 - ((v - lo) / (hi - lo)) * (h - 8);
-    // Grid: a line per whole cent, where there is room for it.
+    // Grid: a line per price point (a cent, or a pip), where there is room for it.
     const span = Math.ceil(hi) - Math.floor(lo);
     const every = span > 12 ? Math.ceil(span / 6) : 1;
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -65,7 +69,7 @@ export function Chart({
       ctx.moveTo(0, y(c));
       ctx.lineTo(w - 44, y(c));
       ctx.stroke();
-      ctx.fillText((c / 100).toFixed(2), w - 40, y(c) + 3);
+      ctx.fillText(price(c, decimals), w - 40, y(c) + 3);
     }
     const line = (get: (p: HistoryPoint) => number | null, colour: string, width: number) => {
       ctx.strokeStyle = colour;
@@ -86,6 +90,6 @@ export function Chart({
     };
     line((p) => p.fair, 'rgba(255,255,255,0.25)', 1);
     for (const e of exchanges) line((p) => p.mids[e] ?? null, exchangeColour(e), 1.5);
-  }, [history, exchanges, minutes]);
+  }, [history, exchanges, minutes, decimals]);
   return <canvas ref={ref} className="chart" role="img" aria-label="Price chart" />;
 }

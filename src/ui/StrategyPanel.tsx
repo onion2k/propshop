@@ -16,6 +16,11 @@ const TERM_FOR: Record<string, string> = {
   pairs: 'pairs',
   indexArb: 'index-arb',
   newsReaction: 'news',
+  triangle: 'triangular-arbitrage',
+  carry: 'carry',
+  leadLag: 'lead-lag',
+  basisArb: 'basis',
+  roll: 'roll',
 };
 
 /** `stage` is the stage in force; a block that is on is shown whatever the stage, so nothing running is hidden. */
@@ -58,23 +63,42 @@ export function StrategyPanel({ s, store, stage = 5 }: { s: Snapshot; store: Sto
             </summary>
             <p className="explain">{b.spec.explain}</p>
             {b.spec.id === SCRIPT_ID && <ScriptEditor s={s} setting={setting} store={store} />}
-            {b.spec.params.map((p) => (
-              <label key={p.key} className="param">
-                <span className="param-name">
-                  {p.name} <span className="num">{setting.params[p.key]}</span> <span className="muted">{p.unit}</span>
-                </span>
-                <input
-                  type="range"
-                  min={p.min}
-                  max={p.max}
-                  step={p.step}
-                  value={setting.params[p.key] ?? p.default}
-                  onChange={(e) => store.setBlock(b.spec.id, { params: { [p.key]: Number(e.target.value) } })}
-                  aria-label={`${b.spec.name} ${p.name}`}
-                />
-                <span className="muted small">{p.explain}</span>
-              </label>
-            ))}
+            {b.spec.params.map((p) =>
+              p.choices ? (
+                <label key={p.key} className="param">
+                  <span className="param-name">{p.name}</span>
+                  <select
+                    value={setting.params[p.key] ?? p.default}
+                    onChange={(e) => store.setBlock(b.spec.id, { params: { [p.key]: Number(e.target.value) } })}
+                    aria-label={`${b.spec.name} ${p.name}`}
+                  >
+                    {p.choices.map((label, i) => (
+                      <option key={label} value={p.min + i * p.step}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="muted small">{p.explain}</span>
+                </label>
+              ) : (
+                <label key={p.key} className="param">
+                  <span className="param-name">
+                    {p.name} <span className="num">{setting.params[p.key]}</span>{' '}
+                    <span className="muted">{p.unit}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={p.min}
+                    max={p.max}
+                    step={p.step}
+                    value={setting.params[p.key] ?? p.default}
+                    onChange={(e) => store.setBlock(b.spec.id, { params: { [p.key]: Number(e.target.value) } })}
+                    aria-label={`${b.spec.name} ${p.name}`}
+                  />
+                  <span className="muted small">{p.explain}</span>
+                </label>
+              ),
+            )}
           </details>
         );
       })}

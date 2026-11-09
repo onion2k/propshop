@@ -6,6 +6,7 @@ import {
   BLOCKS,
   blockById,
   clampParam,
+  paramChangeLabel,
   paramsFrom,
   type Game,
   type Measures,
@@ -157,7 +158,7 @@ export function changeToVariant(change: Change, setup: Setup, offers: readonly U
   return {
     id: `player:param:${change.block}:${change.key}`,
     kind: 'player',
-    label: `${spec.name}: ${p.name} to ${value}${p.unit ? ` ${p.unit}` : ''}`,
+    label: paramChangeLabel(spec.name, p, value),
     setup: withBlock({ params: { ...paramsFrom(spec, current?.params), [change.key]: value } }),
     about: change.block,
   };

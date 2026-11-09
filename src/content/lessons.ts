@@ -233,6 +233,81 @@ LESSONS.push(
   },
 );
 
+/** The currencies desk's lessons: they open with the desk at stage 4 and open no stage (DESK_LESSONS in stages.ts). */
+LESSONS.push(
+  {
+    id: 'pips',
+    title: 'Count in pips',
+    task:
+      'The currencies desk is open. Put EURUSD, the euro in dollars, on your watchlist; from the Desk page buy ten ' +
+      'lots of it, and watch the price for a minute or two.',
+    watch:
+      'The price’s four places, the last of them a pip; your euro balance and your dollar cash moving at the fill; ' +
+      'and the position’s P&L, a dollar for each pip the price moves.',
+    terms: ['pip', 'lot', 'currency-pair', 'base-quote', 'home-currency'],
+    done: (s) => s.fills.some((f) => f.block === 'hand' && s.stocks.some((st) => st.symbol === f.symbol && st.pair)),
+    lesson:
+      'A currency is priced in another, so a price is a ratio: 1.0850 dollars for a euro. It moves by a few ' +
+      'hundredths of a cent a minute, so it is written to four places and counted in pips, the fourth. A lot is ' +
+      'a thousand euros, so a pip of a lot is ten cents and a pip of ten lots a dollar. You did not spend dollars ' +
+      'on a thing: you swapped them for euros, and hold euros now, worth whatever the next price says.',
+  },
+  {
+    id: 'triangle',
+    title: 'Close a triangle',
+    task:
+      'Put EURUSD, USDJPY and EURJPY on your watchlist and turn on triangular arbitrage. From home it sees the cross ' +
+      'too late; try it from the rack in Eastholm.',
+    watch:
+      'Three orders leaving together when the dollar moves; whether all three fill; and what is left in each ' +
+      'currency once they have.',
+    terms: ['triangular-arbitrage', 'cross-rate', 'currency-pair'],
+    done: (s) => {
+      const legs = new Set(s.fills.filter((f) => f.block === 'triangle').map((f) => f.symbol));
+      const crosses = s.stocks.filter((st) => st.pair?.cross);
+      return crosses.some(
+        (x) =>
+          legs.has(x.symbol) && s.stocks.filter((st) => st.pair && !st.pair.cross).every((l) => legs.has(l.symbol)),
+      );
+    },
+    lesson:
+      'The euro in yen has to be the euro in dollars times the dollar in yen, or there is money for nothing in ' +
+      'going round the three. When the dollar moves, its two pairs reprice first and the cross is slow, and for ' +
+      'a moment the circle does not close. Sell the dear side, buy the cheap, and you hold what you held before, ' +
+      'bar a few yen. It is three races at once: lose one and you hold a position you never wanted.',
+  },
+  {
+    id: 'refused',
+    title: 'Be refused',
+    task:
+      'Set the triangle’s venue to the dealer, which charges no fee, and run it from the rack in Eastholm until the ' +
+      'dealer turns an order down.',
+    watch: 'An order in your list marked “refused”, and its race: the dealer held it a few milliseconds, then said no.',
+    terms: ['dealer', 'last-look', 'market-maker'],
+    done: (s) => s.orders.some((o) => o.status === 'refused'),
+    lesson:
+      'The dealer quotes a price and keeps the right to look at your order before it fills. If its price has ' +
+      'moved against it while it looked, it refuses. That is the maker’s free option, the one stale quotes give ' +
+      'away, kept by the maker this time: the faster you are, the more often you catch its price before it ' +
+      'moves, and the more often it says no. No fee, and no fill when it matters.',
+  },
+  {
+    id: 'rollover',
+    title: 'Earn the rollover',
+    task:
+      'Turn carry on and let it hold its pair through 17:00, when the currencies roll to the next day. Wednesday ' +
+      'pays three nights.',
+    watch: 'The rollover in that day’s report, in dollars, and the day’s P&L with it.',
+    terms: ['rollover', 'carry', 'home-currency'],
+    done: (s) => s.days.some((d) => (d.rollover ?? 0) > 0),
+    lesson:
+      'Holding the dollar against the yen is lending dollars and borrowing yen, so each night you are paid the ' +
+      'dollar’s interest and charged the yen’s, less a little the venue keeps. It is a few pips a night for doing ' +
+      'nothing, and a bad hour can take a month of it: carry is paid for sitting still while the price is free to ' +
+      'move against you. The market never closes in the week, so neither does the risk.',
+  },
+);
+
 export function lesson(id: string): Lesson | undefined {
   return LESSONS.find((l) => l.id === id);
 }

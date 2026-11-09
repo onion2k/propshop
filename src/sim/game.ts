@@ -25,7 +25,19 @@ import {
   type Wire,
 } from './firm';
 import { tick } from './flow';
-import { STOCKS_DESK, deskOf, isDerived, valueOf } from './instrument';
+import {
+  HOME,
+  STOCKS_DESK,
+  currencyOf,
+  decimalsOf,
+  deskOf,
+  isCarried,
+  listedOn,
+  rolloverDays,
+  inHome,
+  toHome,
+  valueOf,
+} from './instrument';
 import type { Level } from './orderbook';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { News, type Published, type SavedNews } from './news';
@@ -118,6 +130,12 @@ export interface DayReport {
   dropped?: number;
   /** By desk, where a desk other than the stocks traded that day; absent otherwise. */
   byDesk?: Record<string, Tally>;
+  /**
+   * The currencies' rollover at 17:00 that day, after the stocks' close, in dollar cents at the rates then: written
+   * into the report when it runs, and counted in its `pnl` and `equityAtClose`. Absent where the firm held no
+   * currency position at 17:00.
+   */
+  rollover?: number;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -229,7 +247,20 @@ export interface Snapshot {
   heatLine: number;
   risk: RiskSettings;
   halt: Halt | null;
-  positions: { symbol: string; qty: number; avgCost: number; mark: number | null; unrealised: number }[];
+  /** Each position held: its mark and average cost in its points, written to `decimals` places; unrealised in dollars. */
+  positions: {
+    symbol: string;
+    qty: number;
+    avgCost: number;
+    mark: number | null;
+    unrealised: number;
+    decimals: number;
+  }[];
+  /**
+   * Each currency besides the dollar the firm may hold, while a pair that prices it is live: the amount in its minor
+   * units (`minor` in one) and its value in dollar cents now. Empty while the currencies desk is closed.
+   */
+  balances: { currency: string; name: string; amount: number; minor: number; dollars: number }[];
   openOrders: OpenOrder[];
   /** Recent orders, open and finished, newest first, each with what its fills made. */
   orders: OrderStory[];
@@ -276,6 +307,17 @@ export interface Snapshot {
     bid: number | null;
     ask: number | null;
     dayChange: number | null;
+    /** The places its prices are written to: a price of `p` points reads `p / 10^decimals`. */
+    decimals: number;
+    /** A currency pair: the currency a unit buys, the one it is priced in, and a cross's two legs. */
+    pair?: {
+      base: string;
+      quote: string;
+      lot: number;
+      cross: { base: string; quote: string }[] | null;
+      /** Dollar cents a pip of one lot is worth at the rate now, so a fee in cents can be read in pips. */
+      pointValue: number;
+    };
     exchanges: {
       id: string;
       seen: { bid: number | null; ask: number | null; bidSize: number; askSize: number } | null;
@@ -297,7 +339,8 @@ export interface Snapshot {
   }[];
   /** The margin the firm's margined positions ask, cents, at their marks; absent while it holds none. */
   margin?: { initial: number; maintenance: number };
-  exchanges: { id: string; name: string; city: string; feePerShare: number }[];
+  /** The venues, each with its fee; `dealer` where it takes a last look at an order before it fills it. */
+  exchanges: { id: string; name: string; city: string; feePerShare: number; dealer: boolean }[];
   news: Published[];
   dark: { unlocked: boolean; offers: Tip[]; bought: Tip[]; fines: Fine[] };
   competitors: { id: string; name: string; latency: Record<string, number>; fills: number; pnl: number }[];
@@ -369,7 +412,20 @@ export class Game {
     this.seed = seed >>> 0;
     // The game begins at six on Monday morning: the market opens in a few hours, so the player has time to look.
     this.now = 6 * 60 * MS_PER_MINUTE;
-    this.market = new Market(content.stocks, content.exchanges, content.factors, content.series ?? []);
+    // Another desk's instruments are in the game where a venue lists them: content without the desk's venues is
+    // without the desk, and plays as it did before the desk was written.
+    const others = (content.instruments ?? []).filter((s) => content.exchanges.some((e) => listedOn(s, e)));
+    const currencies = (content.currencies ?? []).filter(
+      (c) => c.pair === undefined || others.some((s) => s.symbol === c.pair),
+    );
+    this.market = new Market(
+      [...content.stocks, ...others],
+      content.exchanges,
+      content.factors,
+      content.series ?? [],
+      others.some((s) => s.base !== undefined) ? currencies : [],
+    );
+    if (this.market.fx.size > 0) this.market.rollover = content.rollover ?? null;
     this.market.refreshContracts(this.now);
     this.streams = deriveStreams(
       this.seed,
@@ -410,7 +466,14 @@ export class Game {
             params: { minEdge: c.minEdge, size: 300, maxPosition: 3000, maxLatency: c.maxLatency ?? 100 },
           },
         ];
-    return new Firm(`bot:${c.id}`, c.name, content.startingCash * 10, infrastructureFrom(content, c), blocks);
+    const rival = new Firm(`bot:${c.id}`, c.name, content.startingCash * 10, infrastructureFrom(content, c), blocks);
+    rival.desks = Game.rivalDesks(c);
+    return rival;
+  }
+
+  /** What a rival sees: the desks its spec names; else a stocks firm the stocks alone, a desk's its desk and them. */
+  private static rivalDesks(c: Content['competitors'][number]): readonly string[] {
+    return c.watches ?? (c.desk === undefined ? [STOCKS_DESK] : [STOCKS_DESK, c.desk]);
   }
 
   /** Which kind of day a day is: from the seed and the day, the same every time it is asked. */
@@ -450,6 +513,8 @@ export class Game {
       this.today.fees += f.fee;
     }
     this.contracts(closedVenues);
+    const roll = this.content.rollover;
+    if (roll && this.market.fx.size > 0 && crossed(this.now, dt, roll.at)) this.rollover(roll);
     for (const o of this.firm.tickResolved) {
       if (!o.ioc) continue;
       if (o.filled >= o.size) this.today.races.won++;
@@ -496,6 +561,36 @@ export class Game {
       const gone = this.market.refreshContracts(this.now);
       for (const f of this.firms()) f.onClose(gone);
     }
+  }
+
+  /** The currencies' rollover, for every firm: what each pair's two rates and the venue's spread pay, on its days. */
+  rollover(roll: NonNullable<Content['rollover']>): void {
+    const days = rolloverDays(this.now);
+    if (days === 0) return;
+    const markOf = (symbol: string) => this.market.markOf(symbol);
+    for (const f of this.firms()) {
+      const credited = f.rollover(days, markOf, this.market.yearly, roll.spread, roll.basis);
+      if (f === this.firm && credited.length > 0) this.reportRollover(credited);
+    }
+  }
+
+  /**
+   * The player's rollover, in dollars, into the report of the day it ran on, and into that day's P&L and its equity
+   * at the close: it lands after the close and before the next open, so it would otherwise count in no day (the
+   * next day starts from the equity it left). The week's P&L is the sum of its days, so it counts there too. A day
+   * with no report keeps none.
+   */
+  private reportRollover(credited: readonly { currency: string; amount: number }[]): void {
+    const i = this.days.length - 1;
+    const last = this.days[i];
+    if (!last || last.day !== calendar(this.now).day) return;
+    const dollars = credited.reduce((n, c) => n + toHome(c.currency, c.amount, this.market.rates), 0);
+    this.days[i] = {
+      ...last,
+      pnl: last.pnl + dollars,
+      equityAtClose: last.equityAtClose + dollars,
+      rollover: (last.rollover ?? 0) + dollars,
+    };
   }
 
   /** Each firm holding a margined position on an open venue: below the maintenance margin, it is flattened in them. */
@@ -812,12 +907,16 @@ export class Game {
     for (const [symbol, pos] of firm.positions) {
       if (pos.qty === 0) continue;
       const mark = this.market.venuesOf(symbol)[0]?.book(symbol).mid() ?? null;
+      const value = mark === null ? 0 : valueOf(this.market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost);
+      // A pair's is in its quote currency: in dollars at the rate now.
+      const pair = this.market.fx.get(symbol);
       positions.push({
         symbol,
         qty: pos.qty,
         avgCost: pos.avgCost,
         mark,
-        unrealised: mark === null ? 0 : valueOf(this.market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost),
+        unrealised: pair ? toHome(pair.quote, value, this.market.rates) : value,
+        decimals: this.decimals(symbol),
       });
     }
     const unrealised = firm.unrealised(this.market, now);
@@ -842,6 +941,7 @@ export class Game {
       risk: { ...firm.risk },
       halt: firm.halt ? { ...firm.halt } : null,
       positions,
+      balances: this.balances(),
       openOrders: [...firm.orders.values()].filter(
         (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
       ),
@@ -880,6 +980,8 @@ export class Game {
         fair: this.market.fair.get(s.symbol) ?? s.startPrice,
         ...this.touchAcross(s.symbol, now),
         dayChange: this.dayChange(s.symbol),
+        decimals: this.decimals(s.symbol),
+        ...this.pairOf(s),
         exchanges: this.market.venuesOf(s.symbol).map((e) => ({
           id: e.id,
           seen: e.quoteAsOf(s.symbol, now - firm.dataLatency(e.id)),
@@ -887,7 +989,7 @@ export class Game {
           depth: e.book(s.symbol).depth(5, firm.id),
         })),
         history: this.market.history.get(s.symbol) ?? [],
-        ...(isDerived(s) ? { contract: this.contractOf(s) } : {}),
+        ...(isCarried(s) ? { contract: this.contractOf(s) } : {}),
       })),
       ...this.marginNow(),
       exchanges: this.market.exchanges.map((e) => ({
@@ -895,6 +997,7 @@ export class Game {
         name: e.spec.name,
         city: e.spec.city,
         feePerShare: e.spec.feePerShare,
+        dealer: e.spec.lastLook !== undefined,
       })),
       news: [...this.news.published].reverse(),
       dark: {
@@ -953,6 +1056,47 @@ export class Game {
       basis: fair - (this.market.fair.get(s.underlying!) ?? fair),
       margin: s.margin ? { initial: value * s.margin.initial, maintenance: value * s.margin.maintenance } : null,
     };
+  }
+
+  /** The places an instrument's prices are written to, from its price unit and its quote currency's minor units. */
+  private decimals(symbol: string): number {
+    const spec = this.market.instruments.find((x) => x.symbol === symbol);
+    if (!spec) return 2;
+    const minor = this.content.currencies?.find((c) => c.id === currencyOf(spec))?.minor ?? 100;
+    return decimalsOf(spec, minor);
+  }
+
+  /** What a pair is: its two currencies, and a cross's legs as theirs. */
+  private pairOf(s: InstrumentSpec): { pair?: NonNullable<Snapshot['stocks'][number]['pair']> } {
+    const pair = this.market.fx.get(s.symbol);
+    if (!pair) return {};
+    const legs = s.cross?.map((leg) => this.market.fx.get(leg)).filter((x) => x !== undefined) ?? null;
+    return {
+      pair: {
+        base: pair.base,
+        quote: pair.quote,
+        lot: s.multiplier ?? 1,
+        cross: legs ? legs.map((l) => ({ base: l.base, quote: l.quote })) : null,
+        pointValue: inHome(pair.quote, this.market.scales.get(s.symbol) ?? 1, this.market.rates),
+      },
+    };
+  }
+
+  /** The player's balance in each currency whose pricing pair is live, with its value home now. */
+  private balances(): Snapshot['balances'] {
+    const live = new Set(this.market.stocks.map((s) => s.symbol));
+    return (this.content.currencies ?? [])
+      .filter((c) => c.id !== HOME && c.pair !== undefined && live.has(c.pair))
+      .map((c) => {
+        const amount = this.firm.balances.get(c.id) ?? 0;
+        return {
+          currency: c.id,
+          name: c.name,
+          amount,
+          minor: c.minor,
+          dollars: toHome(c.id, amount, this.market.rates),
+        };
+      });
   }
 
   /** What the player's margined positions ask, at the marks; nothing while it holds none. */
@@ -1101,7 +1245,9 @@ export class Game {
     const saved = s.competitors.map((c) => {
       const spec = content.competitors.find((x) => `bot:${x.id}` === c.id);
       if (!spec) throw new Error(`Unknown competitor ${c.id}`);
-      return Firm.load(c, infrastructureFrom(content, spec));
+      const rival = Firm.load(c, infrastructureFrom(content, spec));
+      rival.desks = Game.rivalDesks(spec);
+      return rival;
     });
     // A rival added since the save was made joins as it starts, with the starting cash; the saved keep theirs.
     // A desk's rival is there if its desk is open, in the order it joined: after the stocks' rivals.
@@ -1171,4 +1317,9 @@ function upgraded(d: DayRecord): DayReport {
     halts: [],
     regulator: [],
   };
+}
+
+/** Whether the tick that ended at `now`, `dt` long, passed `at` ms past some midnight. */
+function crossed(now: number, dt: number, at: number): boolean {
+  return Math.floor((now - at) / MS_PER_DAY) !== Math.floor((now - dt - at) / MS_PER_DAY);
 }

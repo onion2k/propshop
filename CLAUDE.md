@@ -64,6 +64,10 @@ DOM and `src/content`) and the unit tests. No gate keeps a baseline: the one per
   when the desk opens (`DESK_BLOCKS`), and read the listed contracts from the view's `contracts`. The store opens
   the desk at stage 3 (`desk:futures` in the stage table), in free play and for a save from before the stages;
   its rival (`desk` on a competitor) joins the game when it opens.
+- `src/content/fx.ts` is the currencies desk (`plans/desk-fx.md`): the dollar, the euro and the yen, EUR/USD,
+  USD/JPY and their cross EUR/JPY (derived, like the index future), a book (EASTHOLM) and a dealer with last look
+  (ASHFORD), the rack there and rollover's rates. Its blocks are `triangle` and `carry`; it opens at stage 4. A
+  block sees the stocks and its own desk only; the stocks' blocks and the script see the stocks.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
@@ -122,6 +126,11 @@ For anything new, check what it does:
   them (`market.stocks` and `market.exchanges` are the live ones; `instruments` and `venues` all). Opening one draws
   from its own `world:<desk>` stream and changes nothing of the stocks' (their factors, news and regime drifts read
   the stocks desk alone). An instrument is listed on its `venues`, or every venue of its desk.
+- **currencies:** a firm keeps dollar `cash` and an integer balance in each other currency's minor units; an fx
+  fill moves two balances, and `toHome` in `src/sim/instrument.ts` is the one rounded conversion to dollars, at the
+  last mid (held over the weekend). Rollover lands at 17:00 each weekday (three days on Wednesday) and counts in
+  that day's P&L. The dealer holds a taker order 5 ms and refuses it if its price moved against it. A save without
+  balances has none.
 - **one leg only:** an arbitrage whose far leg misses leaves a position; the block scratches its own.
 - **capacity:** orders past the computer's limit are dropped and counted, never queued.
 - **a tip:** real or made up, and the fine that may follow days later.
@@ -156,7 +165,9 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 - **Frames, the frame budget and the stalls** (a pin, the close, a save): measured headless with Playwright,
   borrowed from `~/projects/artshape-game-template` (there is none here), held by nothing. A worker would lift
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
-  cannot be throttled, so the night's length on a phone is a guess.
+  cannot be throttled, so the night's length on a phone is a guess. The step-rate floor holds with no desk open:
+  the futures desk open is about 65,000 ticks a second, the currencies about 55,000, both about 46,000, and no gate
+  sees it (`plans/trading.md`, the performance part).
 - **Layout shift:** held by hand. What changes as the market runs keeps its room (fixed P&L columns, the
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked

@@ -22,6 +22,8 @@ import {
 } from '../src/sim';
 import { MARKET_OPEN } from '../src/sim/clock';
 import type { Scheduled } from '../src/sim/news';
+import { changeToVariant } from '../src/ui/nights';
+import { describeChange } from '../src/ui/overview';
 
 const SEED = 7;
 const WINDOW = 6 * MS_PER_SECOND;
@@ -307,6 +309,24 @@ describe('variants', () => {
     expect(ids.length - 1).toBeLessThanOrEqual(MAX_VARIANTS);
     const size = variants(start, offers, ['momentum']).find((v) => v.id === 'param:momentum:size:up')!;
     expect(size.setup.blocks[0]!.params.size).toBe(300);
+  });
+
+  it("names a choice by its choice's name, not its number: the triangle's venue goes to the dealer", () => {
+    const tri: Setup = { ...HOME, blocks: [{ id: 'triangle', enabled: true, params: { venue: 0 } }] };
+    const v = variants(tri, offers, [], { prefer: ['param:triangle:venue:up'] }).find(
+      (x) => x.id === 'param:triangle:venue:up',
+    )!;
+    expect(v.label).toBe('Triangular arbitrage: Venue to the dealer');
+    const mine = changeToVariant({ kind: 'param', block: 'triangle', key: 'venue', value: 1 }, tri, offers)!;
+    expect(mine.label).toBe('Triangular arbitrage: Venue to the dealer');
+    // An amount keeps its number and unit.
+    const lots = changeToVariant({ kind: 'param', block: 'triangle', key: 'lots', value: 20 }, tri, offers)!;
+    expect(lots.label).toBe('Triangular arbitrage: Size to 20 lots');
+    // And the Overview's words for the queued change.
+    const snap = new Game(CONTENT, SEED).snapshot();
+    expect(describeChange({ kind: 'param', block: 'triangle', key: 'venue', value: 1 }, snap)).toBe(
+      'Triangular arbitrage: Venue to the dealer',
+    );
   });
 
   it('switches a block off only where more than one is on', () => {

@@ -11,10 +11,12 @@ import {
   isMarketOpen,
   nextOpen,
   type SavedGame,
+  toHome,
   type SavedGameV1,
 } from '../src/sim';
 import { MARKET_OPEN, MS_PER_DAY } from '../src/sim/clock';
 import { infrastructureFrom } from '../src/sim/upgrades';
+import { weekPnl } from '../src/ui/overview';
 import { Random } from '../src/sim/random';
 import { HAND_BLOCK, REJECT_MARKET_CLOSED } from '../src/sim/firm';
 
@@ -610,4 +612,110 @@ describe('Game streams', () => {
     expect(a.fingerprint()).toBe(b.fingerprint());
     expect(a.save().version).toBe(3);
   });
+});
+
+describe('Game snapshot: the currencies desk', () => {
+  /** The desk open, the player's blocks off, the pairs watched, a few seconds into the morning. */
+  function fx(seed: number): Game {
+    const g = new Game(CONTENT, seed);
+    for (const b of g.firm.blocks) b.enabled = false;
+    g.openDesk('fx');
+    g.firm.setWatch(['EURUSD', 'USDJPY', 'EURJPY']);
+    g.skipToOpen();
+    run(g, 70_000);
+    return g;
+  }
+  function buy(g: Game, symbol: string, size: number) {
+    expect(g.hand({ symbol, side: 'buy', size, exchange: 'EASTHOLM', type: 'market' }).ok).toBe(true);
+    run(g, 1000);
+  }
+
+  it("carries each instrument's places: four for the euro in dollars, two for the yen pairs and the stocks", () => {
+    const g = fx(61);
+    const s = g.snapshot();
+    const places = (sym: string) => s.stocks.find((x) => x.symbol === sym)!.decimals;
+    expect(places('EURUSD')).toBe(4);
+    expect(places('USDJPY')).toBe(2);
+    expect(places('EURJPY')).toBe(2);
+    expect(places(CONTENT.stocks[0]!.symbol)).toBe(2);
+    expect(places('IDX')).toBe(2);
+    // What each pair is: its two currencies, and a cross's legs.
+    const pair = (sym: string) => s.stocks.find((x) => x.symbol === sym)!.pair;
+    expect(pair('EURUSD')).toEqual({ base: 'EUR', quote: 'USD', lot: 1000, cross: null, pointValue: 10 });
+    expect(pair('EURJPY')).toMatchObject({
+      base: 'EUR',
+      quote: 'JPY',
+      lot: 1000,
+      cross: [
+        { base: 'EUR', quote: 'USD' },
+        { base: 'USD', quote: 'JPY' },
+      ],
+    });
+    expect(pair(CONTENT.stocks[0]!.symbol)).toBeUndefined();
+  }, 60_000);
+
+  it("gives a pair position's unrealised in dollars, and each balance with its dollar value", () => {
+    const g = fx(62);
+    buy(g, 'USDJPY', 3);
+    buy(g, 'EURJPY', 2);
+    const s = g.snapshot();
+    for (const sym of ['USDJPY', 'EURJPY']) {
+      const p = s.positions.find((x) => x.symbol === sym)!;
+      expect(p.mark).not.toBeNull();
+      // Ten yen a point of a lot, in dollars at the rate now.
+      expect(p.unrealised).toBe(toHome('JPY', p.qty * (p.mark! - p.avgCost) * 10, g.market.rates));
+      expect(p.decimals).toBe(2);
+    }
+    expect(s.balances.map((b) => b.currency)).toEqual(['EUR', 'JPY']);
+    for (const b of s.balances) {
+      expect(b.amount).toBe(g.firm.balances.get(b.currency) ?? 0);
+      expect(b.dollars).toBe(toHome(b.currency, b.amount, g.market.rates));
+    }
+    expect(s.balances.find((b) => b.currency === 'JPY')!.minor).toBe(1);
+  }, 60_000);
+
+  it('shows no balances while the desk is closed', () => {
+    const g = new Game(CONTENT, 63);
+    expect(g.snapshot().balances).toEqual([]);
+  });
+
+  it("writes the 17:00 rollover into that day's report, in dollars, and the currencies into By desk", () => {
+    const g = fx(64);
+    buy(g, 'USDJPY', 5);
+    while (g.now < MS_PER_DAY * 0 + 17 * 3_600_000 - TICK_MS)
+      g.step(Math.min(MS_PER_MINUTE, 17 * 3_600_000 - TICK_MS - g.now));
+    const report = g.days.at(-1)!;
+    expect(report.byDesk?.fx?.fills).toBeGreaterThan(0);
+    expect(report.rollover).toBeUndefined();
+    const before = g.firm.balances.get('JPY')!;
+    g.step();
+    const credited = g.firm.balances.get('JPY')! - before;
+    // Long the dollar against the yen earns the rate difference.
+    expect(credited).toBeGreaterThan(0);
+    expect(g.days.at(-1)!.rollover).toBe(toHome('JPY', credited, g.market.rates));
+    expect(g.snapshot().days.at(-1)!.rollover).toBe(g.days.at(-1)!.rollover);
+  }, 60_000);
+
+  it("counts the rollover in the day's P&L and the week's, in the day it is credited", () => {
+    const g = fx(64);
+    buy(g, 'USDJPY', 5);
+    while (g.now < 17 * 3_600_000 - TICK_MS) g.step(Math.min(MS_PER_MINUTE, 17 * 3_600_000 - TICK_MS - g.now));
+    const before = { ...g.days.at(-1)! };
+    const weekBefore = weekPnl(g.snapshot().days, 1, 0);
+    g.step();
+    const after = g.days.at(-1)!;
+    expect(after.rollover).toBeGreaterThan(0);
+    expect(after.pnl).toBe(before.pnl + after.rollover!);
+    expect(after.equityAtClose).toBe(before.equityAtClose + after.rollover!);
+    expect(weekPnl(g.snapshot().days, 1, 0)).toBe(weekBefore + after.rollover!);
+    // Between the close and the open the day's P&L shown is the closed day's, rollover in.
+    expect(g.snapshot().dayPnl).toBe(after.pnl);
+  }, 60_000);
+
+  it('writes no rollover into a report where nothing was held', () => {
+    const g = new Game(CONTENT, 65);
+    throughTheDay(g);
+    while (g.now % MS_PER_DAY < 17 * 3_600_000 + MS_PER_MINUTE) g.step(MS_PER_MINUTE);
+    expect('rollover' in g.days.at(-1)!).toBe(false);
+  }, 60_000);
 });

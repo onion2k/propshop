@@ -36,7 +36,16 @@ export {
   startOf,
 } from './experiment';
 export type { BeatenRace, Measures, Moment, MomentDraft, MomentSource, RaceTally, Setup } from './experiment';
-export { BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById, clampParam, paramsFrom } from './strategy';
+export {
+  BLOCKS,
+  EXAMPLE_SOURCE,
+  SCRIPT_ID,
+  blockById,
+  clampParam,
+  paramChangeLabel,
+  paramText,
+  paramsFrom,
+} from './strategy';
 export type {
   BeatenBy,
   BlockSpec,
@@ -81,6 +90,8 @@ export type {
   InstrumentKind,
   ContractSeriesSpec,
   MarginSpec,
+  CurrencySpec,
+  RolloverSpec,
   ExchangeSpec,
   LocationSpec,
   NetworkSpec,
@@ -109,9 +120,14 @@ export { regimeFor } from './regime';
 export { BACKTEST_WINDOW_MS, MAX_DAY_PINS, MAX_VARIANTS, pinTimes, testNight, variants } from './backtest';
 export type { NightEvent, Pin, Variant, VariantOptions } from './backtest';
 export {
+  HOME,
   MAX_LIVE_PER_SERIES,
   STOCKS_DESK,
   contractOf,
+  currencyOf,
+  decimalsOf,
+  rolloverDays,
+  toHome,
   deskOf,
   kindOf,
   listedOn,
@@ -120,4 +136,5 @@ export {
   tickOf,
   valueOf,
 } from './instrument';
+export type { FxPair, Rate } from './instrument';
 export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';

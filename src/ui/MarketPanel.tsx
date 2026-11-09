@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { TICK_MS, calendar, formatTime, type Level, type Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
-import { moneyShort, price, shares } from './format';
+import { moneyShort, price, priceDelta, shares } from './format';
 import { GapLine, GapList } from './Gaps';
 import { Term } from './Glossary';
 import type { Store } from './store';
@@ -84,14 +84,16 @@ export function MarketPanel({
               <td className="muted col-sector">
                 {st.contract
                   ? `future on ${st.contract.underlying}, ${expiryLabel(st.contract.expiry)}`
-                  : st.constituents
-                    ? `index of ${st.constituents.length}`
-                    : st.sector}
+                  : st.pair
+                    ? pairLabel(st.pair, st.name)
+                    : st.constituents
+                      ? `index of ${st.constituents.length}`
+                      : st.sector}
               </td>
-              <td className="num bid">{price(st.bid)}</td>
-              <td className="num ask">{price(st.ask)}</td>
+              <td className="num bid">{price(st.bid, st.decimals)}</td>
+              <td className="num ask">{price(st.ask, st.decimals)}</td>
               <td className={`num ${st.dayChange === null ? 'muted' : st.dayChange >= 0 ? 'up' : 'down'}`}>
-                {st.dayChange === null ? '—' : `${st.dayChange >= 0 ? '+' : ''}${(st.dayChange / 100).toFixed(2)}`}
+                {st.dayChange === null ? '—' : priceDelta(st.dayChange, st.decimals)}
               </td>
             </tr>
           ))}
@@ -108,6 +110,19 @@ export function MarketPanel({
                   <Term id="future">future</Term> on {selected.contract.underlying}, {selected.contract.multiplier} to a
                   contract, <Term id="expiry">expires</Term> {expiryLabel(selected.contract.expiry)}
                 </>
+              ) : selected.pair ? (
+                <>
+                  {selected.pair.cross ? (
+                    <>
+                      <Term id="cross-rate">cross rate</Term> of{' '}
+                      {selected.pair.cross.map((l) => `${l.base}/${l.quote}`).join(' and ')}
+                    </>
+                  ) : (
+                    <Term id="currency-pair">currency pair</Term>
+                  )}
+                  {' · '}a <Term id="lot">lot</Term> is {selected.pair.lot.toLocaleString('en-US')} {selected.pair.base}
+                  , the <Term id="base-quote">base</Term>, priced in {selected.pair.quote} <Term id="pip">pips</Term>
+                </>
               ) : selected.constituents ? (
                 `index of ${selected.constituents.join(', ')}`
               ) : (
@@ -115,7 +130,8 @@ export function MarketPanel({
               )}
             </span>
             <span className="muted right">
-              <Term id="fair-value">fair</Term> <span className="num">{price(Math.round(selected.fair))}</span>
+              <Term id="fair-value">fair</Term>{' '}
+              <span className="num">{price(Math.round(selected.fair), selected.decimals)}</span>
             </span>
           </div>
           {selected.contract && (
@@ -156,6 +172,7 @@ export function MarketPanel({
                 const nowBid = ex.depth.bids[0]?.price ?? null;
                 const nowAsk = ex.depth.asks[0]?.price ?? null;
                 const spread = q && q.bid !== null && q.ask !== null ? q.ask - q.bid : null;
+                const places = selected.decimals;
                 return (
                   <tr
                     key={ex.id}
@@ -164,15 +181,23 @@ export function MarketPanel({
                     className={ladder === key ? 'hover' : ''}
                   >
                     <td>
-                      <span className="dot" style={{ background: exchangeColour(ex.id) }} /> {ex.id}
+                      <span className="dot" style={{ background: exchangeColour(ex.id) }} />{' '}
+                      {/* A dealer's name links to what a dealer is, taking no more room than the name. */}
+                      {s.exchanges.find((x) => x.id === ex.id)?.dealer ? <Term id="dealer">{ex.id}</Term> : ex.id}
                     </td>
-                    <td className={`num bid ${bestBid ? 'best' : ''}`}>{price(q?.bid ?? null)}</td>
-                    <td className={`num ask ${bestAsk ? 'best' : ''}`}>{price(q?.ask ?? null)}</td>
-                    <td className="num col-spread">{spread === null ? '—' : `${spread}¢`}</td>
+                    <td className={`num bid ${bestBid ? 'best' : ''}`}>{price(q?.bid ?? null, places)}</td>
+                    <td className={`num ask ${bestAsk ? 'best' : ''}`}>{price(q?.ask ?? null, places)}</td>
+                    <td className="num col-spread">
+                      {spread === null ? '—' : selected.pair ? `${spread} pip${spread === 1 ? '' : 's'}` : `${spread}¢`}
+                    </td>
                     <td className="num muted col-now">
-                      {live ? 'live' : nowBid === null && nowAsk === null ? '—' : `${price(nowBid)} / ${price(nowAsk)}`}
+                      {live
+                        ? 'live'
+                        : nowBid === null && nowAsk === null
+                          ? '—'
+                          : `${price(nowBid, places)} / ${price(nowAsk, places)}`}
                     </td>
-                    <td className="num">{price(ex.last)}</td>
+                    <td className="num">{price(ex.last, places)}</td>
                     <td className="num muted col-size">{q ? `${shares(q.bidSize)} × ${shares(q.askSize)}` : '—'}</td>
                   </tr>
                 );
@@ -188,17 +213,37 @@ export function MarketPanel({
           {selected.exchanges.map(
             (ex) =>
               ladder === `${selected.symbol}:${ex.id}` && (
-                <Ladder key={ex.id} exchange={ex.id} bids={ex.depth.bids} asks={ex.depth.asks} />
+                <Ladder
+                  key={ex.id}
+                  exchange={ex.id}
+                  bids={ex.depth.bids}
+                  asks={ex.depth.asks}
+                  decimals={selected.decimals}
+                />
               ),
           )}
-          <Chart history={selected.history} exchanges={selected.exchanges.map((e) => e.id)} />
+          <Chart
+            history={selected.history}
+            exchanges={selected.exchanges.map((e) => e.id)}
+            decimals={selected.decimals}
+          />
         </div>
       )}
     </section>
   );
 }
 
-function Ladder({ exchange, bids, asks }: { exchange: string; bids: Level[]; asks: Level[] }) {
+function Ladder({
+  exchange,
+  bids,
+  asks,
+  decimals,
+}: {
+  exchange: string;
+  bids: Level[];
+  asks: Level[];
+  decimals: number;
+}) {
   const rows = Math.max(bids.length, asks.length);
   const mine = (l: Level | undefined) => (l && l.mine > 0 ? <span className="mine">{shares(l.mine)}</span> : '');
   return (
@@ -223,8 +268,8 @@ function Ladder({ exchange, bids, asks }: { exchange: string; bids: Level[]; ask
             <tr key={i}>
               <td className="num">{mine(bids[i])}</td>
               <td className="num muted">{bids[i] ? shares(bids[i].size) : ''}</td>
-              <td className="num bid">{bids[i] ? price(bids[i].price) : ''}</td>
-              <td className="num ask">{asks[i] ? price(asks[i].price) : ''}</td>
+              <td className="num bid">{bids[i] ? price(bids[i].price, decimals) : ''}</td>
+              <td className="num ask">{asks[i] ? price(asks[i].price, decimals) : ''}</td>
               <td className="num muted">{asks[i] ? shares(asks[i].size) : ''}</td>
               <td className="num">{mine(asks[i])}</td>
             </tr>
@@ -239,4 +284,10 @@ function Ladder({ exchange, bids, asks }: { exchange: string; bids: Level[]; ask
 function expiryLabel(at: number): string {
   const c = calendar(at);
   return `${c.weekday} wk ${c.week} ${formatTime(at).slice(0, 5)}`;
+}
+
+/** What a pair is, in the watchlist's words: "euro in dollars", or "cross of EUR/USD and USD/JPY". */
+function pairLabel(pair: NonNullable<Snapshot['stocks'][number]['pair']>, name: string): string {
+  if (pair.cross) return `cross of ${pair.cross.map((l) => `${l.base}/${l.quote}`).join(' and ')}`;
+  return name.charAt(0).toLowerCase() + name.slice(1);
 }

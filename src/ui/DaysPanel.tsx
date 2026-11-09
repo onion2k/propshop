@@ -1,7 +1,7 @@
 // The days: each close's report, newest first and the latest open. The chart of daily P&L is on the Overview.
 // The report says what the day was in numbers the top bar cannot: by block, by stock, by race.
 
-import { REGIMES } from '../content';
+import { DESK_NAMES, REGIMES } from '../content';
 import type { DayReport, Snapshot, Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
@@ -56,7 +56,7 @@ function Report({ d }: { d: DayReport }) {
         {d.byDesk && (
           <div>
             <h3>By desk</h3>
-            <TallyTable rows={Object.entries(d.byDesk).map(([k, t]) => [k, t])} />
+            <TallyTable rows={Object.entries(d.byDesk).map(([k, t]) => [DESK_NAMES[k] ?? k, t])} />
           </div>
         )}
         <div>
@@ -64,6 +64,13 @@ function Report({ d }: { d: DayReport }) {
           <TallyTable rows={Object.entries(d.bySymbol).map(([k, t]) => [k, t])} />
         </div>
       </div>
+      {d.rollover !== undefined && (
+        <p className="rollover">
+          <Term id="rollover">Rollover</Term> at 17:00, after the close:{' '}
+          <span className={`num ${d.rollover >= 0 ? 'up' : 'down'}`}>{money(d.rollover, true)}</span>
+          <span className="muted"> in dollars, on the currencies held then, into equity before the next open</span>
+        </p>
+      )}
       <h3>
         Races{' '}
         <span className="muted">

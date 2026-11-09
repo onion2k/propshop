@@ -18,6 +18,12 @@ const PRAIRIE_FIBRE = { location: 'colo-prairie', network: 'fibre', computer: 'r
 const PRAIRIE_MW = { location: 'colo-prairie', network: 'microwave', computer: 'rack' };
 const LAKESIDE_MW = { location: 'colo-lakeside', network: 'microwave', computer: 'rack' };
 const DESK_BLOCK_IDS = ['basisArb', 'leadLag', 'roll'];
+// The currencies desk's: from home (35 ms of fibre to Eastholm), and a rack in Eastholm beside both venues
+// (plans/desk-fx.md). A block of the desk opens it and watches the three pairs first.
+const EASTHOLM = { location: 'colo-eastholm', network: 'fibre', computer: 'rack' };
+const HOME_FIBRE = { location: 'home', network: 'fibre', computer: 'server' };
+const FX_BLOCK_IDS = ['triangle', 'carry'];
+const FX_PAIRS = ['EURUSD', 'USDJPY', 'EURJPY'];
 
 type Config = [
   string,
@@ -64,7 +70,16 @@ const CONFIGS: Config[] = [
   ['lakeside leadLag mw t0.5', LAKESIDE_MW, ['leadLag'], { leadLag: { threshold: 0.5 } }],
   ['prairie basisArb mw t0.5', PRAIRIE_MW, ['basisArb'], { basisArb: { threshold: 0.5 } }],
   ['prairie basisArb mw t1', PRAIRIE_MW, ['basisArb'], { basisArb: { threshold: 1 } }],
+  ['fx home triangle book', HOME, ['triangle']],
+  ['fx home fibre triangle book', HOME_FIBRE, ['triangle']],
+  ['fx eastholm triangle book', EASTHOLM, ['triangle']],
+  ['fx home triangle dealer', HOME, ['triangle'], { triangle: { venue: 1 } }],
+  ['fx home fibre triangle dealer', HOME_FIBRE, ['triangle'], { triangle: { venue: 1 } }],
+  ['fx eastholm triangle dealer', EASTHOLM, ['triangle'], { triangle: { venue: 1 } }],
+  ['fx home carry', HOME, ['carry']],
 ];
+// PACE_FX='{"triangle":{"threshold":2}}' sets the currencies' blocks' parameters over every fx row, for tuning.
+const FX_OVER = JSON.parse(process.env.PACE_FX ?? '{}') as Record<string, Record<string, number>>;
 
 function pnl(f: Firm, g: Game): number {
   return f.realised - f.feesPaid + f.unrealised(g.market, g.now);
@@ -74,6 +89,8 @@ measure('paces', { timeout: 3_600_000 }, () => {
   const perDay = (x: number) => Math.round((x * (390 / MINUTES)) / 100);
   const rows: Record<string, number[]> = {};
   const fills: Record<string, number[]> = {};
+  /** Each currencies row's orders refused by the dealer, and sent, a seed at a time. */
+  const refusals: Record<string, [number, number][]> = {};
   const add = (name: string, value: number, n: number) => {
     (rows[name] ??= []).push(perDay(value));
     (fills[name] ??= []).push(n);
@@ -85,16 +102,24 @@ measure('paces', { timeout: 3_600_000 }, () => {
       // A futures block opens the desk, and watches the index and its contracts first, so a laptop sees them too.
       const desk = blocks.some((b) => DESK_BLOCK_IDS.includes(b));
       if (desk) g.openDesk('futures');
+      const fx = blocks.some((b) => FX_BLOCK_IDS.includes(b));
+      if (fx) g.openDesk('fx');
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
       for (const [id, p] of Object.entries(params ?? {})) g.setBlock(id, { params: p });
+      if (fx) for (const [id, p] of Object.entries(FX_OVER)) g.setBlock(id, { params: p });
       // Watch everything the computer allows, the index first so index arbitrage has its basket on a rack.
       g.firm.setWatch([
+        ...(fx ? FX_PAIRS : []),
         'IDX',
         ...(desk ? g.market.live('IXF') : []),
         ...CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol),
       ]);
       g.skipToOpen();
+      // The currencies trade all night, so their hour is measured from here, not from nothing.
+      const startEquity = fx ? g.firm.equity(g.market, g.now) : 0;
+      const kestrel = g.competitors.find((x) => x.name === 'Kestrel Currency');
+      const kestrelStart = kestrel ? kestrel.equity(g.market, g.now) : 0;
       const person = blocks.includes(HAND);
       const momentum = blockById('momentum');
       // The block's own size range stops at 2,000; the person's order is larger than any one top of book.
@@ -128,7 +153,16 @@ measure('paces', { timeout: 3_600_000 }, () => {
           }
         }
       }
-      add(name, pnl(g.firm, g), g.firm.stats.fillsReceived);
+      // A currency firm's P&L is its equity's move: its balances, in dollars at the rates now, are the position.
+      add(name, fx ? g.firm.equity(g.market, g.now) - startEquity : pnl(g.firm, g), g.firm.stats.fillsReceived);
+      if (fx) {
+        const sent = [...g.firm.orders.values()].filter((o) => FX_PAIRS.includes(o.symbol) && o.status !== 'rejected');
+        const refused = sent.filter((o) => o.status === 'refused').length;
+        (refusals[name] ??= []).push([refused, sent.length]);
+        if (name.includes('triangle book') || name.includes('triangle dealer'))
+          for (const c of g.competitors.filter((x) => x.name === 'Kestrel Currency'))
+            add(`bot Kestrel (${name.slice(3)})`, c.equity(g.market, g.now) - kestrelStart, c.stats.fillsReceived);
+      }
       if (name === 'prairie leadLag mw')
         for (const c of g.competitors.filter((x) => x.name === 'Prairie Partners'))
           add(`bot ${c.name} (desk open)`, pnl(c, g), c.stats.fillsReceived);
@@ -140,7 +174,17 @@ measure('paces', { timeout: 3_600_000 }, () => {
     const mean = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
     const f = fills[name] ?? [];
     const meanFills = Math.round(f.reduce((a, b) => a + b, 0) / f.length);
-    return `${name.padEnd(24)} $/day ${String(mean).padStart(8)}  seeds [${values.map((v) => String(v).padStart(7)).join(', ')}]  fills/h ${Math.round(meanFills / (MINUTES / 60))}`;
+    const r = refusals[name];
+    const refused = r
+      ? `  refused ${r.map(([a, b]) => `${a}/${b}`).join(', ')} (${Math.round(
+          (100 * r.reduce((n, [a]) => n + a, 0)) /
+            Math.max(
+              1,
+              r.reduce((n, [, b]) => n + b, 0),
+            ),
+        )}%)`
+      : '';
+    return `${name.padEnd(24)} $/day ${String(mean).padStart(8)}  seeds [${values.map((v) => String(v).padStart(7)).join(', ')}]  fills/h ${Math.round(meanFills / (MINUTES / 60))}${refused}`;
   });
   process.stderr.write(lines.join('\n') + '\n');
 });

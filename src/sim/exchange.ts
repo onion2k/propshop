@@ -13,7 +13,8 @@ import {
   type Trade,
 } from './orderbook';
 
-export type SubmitResult = ReturnType<OrderBook['add']>;
+/** What an order met: matched, rested or refused; `lastLook` where the dealer refused it after its look. */
+export type SubmitResult = ReturnType<OrderBook['add']> & { lastLook?: boolean };
 import { activity as stockActivity, isMarketOpen, nextOpen as stockNextOpen } from './clock';
 import { deskOf, tickOf } from './instrument';
 import { activityIn, isOpenIn, nextOpenIn, type SessionSpec } from './session';
@@ -26,6 +27,10 @@ export const BACKGROUND = 'bg';
 export const REFUSED_CLOSED = 'market closed';
 /** Why a venue refused an order or a cancel: it does not list the symbol, or no longer (an expired contract). */
 export const REFUSED_UNLISTED = 'not listed here';
+/** Why a dealer refused a fill it had looked at: its price moved against it in the hold. */
+export function refusedByDealer(holdMs: number): string {
+  return `refused by the dealer after ${holdMs} ms`;
+}
 
 /** How many resting orders the background crowd aims to keep on each side of each book. */
 const TARGET_DEPTH = 24;
@@ -89,8 +94,18 @@ export class Exchange {
   readonly stocks = new Map<string, StockState>();
   /** The rules this exchange runs, settable from the lab. */
   rules: ExchangeRules = { ...DEFAULT_RULES };
-  /** Orders waiting for the next batch, where the exchange runs batches. */
-  private pending: { symbol: string; req: OrderRequest; at: number; resolve: (r: SubmitResult) => void }[] = [];
+  /**
+   * Orders waiting for the next batch, where the exchange runs batches, and a dealer's held orders, each with the
+   * moment its look ends and the price it met. Not saved, as a batch's are not. Bounded by what the firms send in
+   * a hold or a batch, which their computers' orders a second bound.
+   */
+  private pending: {
+    symbol: string;
+    req: OrderRequest;
+    at: number;
+    resolve: (r: SubmitResult) => void;
+    look?: { until: number; price: number };
+  }[] = [];
   /** Trades made this tick, by anyone, for the game to route to their owners. */
   tickTrades: { symbol: string; trade: Trade }[] = [];
   /** The desk whose instruments it lists. */
@@ -101,7 +116,13 @@ export class Exchange {
   wasOpen = false;
   constructor(
     spec: ExchangeSpec,
-    symbols: { symbol: string; startPrice: number; constituents?: string[]; tickSize?: number }[],
+    symbols: {
+      symbol: string;
+      startPrice: number;
+      constituents?: string[];
+      tickSize?: number;
+      cross?: readonly [string, string];
+    }[],
   ) {
     this.spec = spec;
     this.desk = deskOf(spec);
@@ -109,7 +130,8 @@ export class Exchange {
     for (const s of symbols) {
       this.stocks.set(s.symbol, {
         book: new OrderBook(),
-        index: (s.constituents?.length ?? 0) > 0,
+        // A cross is derived as an index is, and its crowd as slow to catch up.
+        index: (s.constituents?.length ?? 0) > 0 || s.cross !== undefined,
         ...(s.tickSize === undefined ? {} : { tickSize: s.tickSize }),
         belief: s.startPrice,
         tape: [],
@@ -321,23 +343,25 @@ export class Exchange {
     // order still in the wire at the close rests in the emptied book. Nobody takes an order for what is not listed.
     const unlisted = !this.stocks.has(symbol);
     if (unlisted || (this.session && !isOpenIn(this.session, now))) {
-      const order = {
-        id: -1,
-        owner: req.owner,
-        side: req.side,
-        price: req.price,
-        size: req.size,
-        remaining: req.size,
-        at: now,
-        ioc: req.ioc ?? false,
-        postOnly: req.postOnly ?? false,
-        display: req.display ?? null,
-        shown: 0,
-      };
-      const refused: SubmitResult = { order, trades: [], refused: unlisted ? REFUSED_UNLISTED : REFUSED_CLOSED };
-      return refused;
+      return this.refusal(req, now, unlisted ? REFUSED_UNLISTED : REFUSED_CLOSED);
     }
     const shaped = this.shape(this.stock(symbol), req);
+    // A dealer looks at a firm's order that would take its price before it fills it; the crowd's it does not.
+    const look = this.spec.lastLook;
+    if (look && done && req.owner !== BACKGROUND && !shaped.postOnly) {
+      const q = this.stock(symbol).book.quote();
+      const touch = shaped.side === 'buy' ? q.ask : q.bid;
+      if (touch !== null && (shaped.side === 'buy' ? shaped.price >= touch : shaped.price <= touch)) {
+        this.pending.push({
+          symbol,
+          req: shaped,
+          at: now,
+          resolve: done,
+          look: { until: now + look.holdMs, price: touch },
+        });
+        return null;
+      }
+    }
     if (this.rules.batchMs > 0 && done) {
       this.pending.push({ symbol, req: shaped, at: now, resolve: done });
       return null;
@@ -345,6 +369,59 @@ export class Exchange {
     const result = this.addMarked(symbol, shaped, now);
     this.record(symbol, result.trades);
     return result;
+  }
+
+  /** An order refused as it arrived, matched against nothing. */
+  private refusal(req: OrderRequest, now: number, reason: string): SubmitResult {
+    const order = {
+      id: -1,
+      owner: req.owner,
+      side: req.side,
+      price: req.price,
+      size: req.size,
+      remaining: req.size,
+      at: now,
+      ioc: req.ioc ?? false,
+      postOnly: req.postOnly ?? false,
+      display: req.display ?? null,
+      shown: 0,
+    };
+    return { order, trades: [], refused: reason };
+  }
+
+  /** How many orders the dealer is looking at now. */
+  held(): number {
+    let n = 0;
+    for (const p of this.pending) if (p.look) n++;
+    return n;
+  }
+
+  /**
+   * The looks that have ended: each fills at the price it met, no further, unless the dealer's belief has moved
+   * past that price, against it, by more than its `refuseTicks`; then it is refused, and no fill is told.
+   */
+  private release(now: number): void {
+    const look = this.spec.lastLook;
+    if (!look || !this.pending.some((p) => p.look && p.look.until <= now)) return;
+    const due = this.pending.filter((p) => p.look && p.look.until <= now);
+    this.pending = this.pending.filter((p) => !(p.look && p.look.until <= now));
+    for (const p of due) {
+      const s = this.stocks.get(p.symbol);
+      const held = p.look!.price;
+      if (!s || (this.session && !isOpenIn(this.session, now))) {
+        p.resolve(this.refusal(p.req, now, s ? REFUSED_CLOSED : REFUSED_UNLISTED));
+        continue;
+      }
+      const moved = p.req.side === 'buy' ? s.belief - held : held - s.belief;
+      if (moved > look.refuseTicks * tickOf(s, this.rules.tickSize)) {
+        p.resolve({ ...this.refusal(p.req, now, refusedByDealer(look.holdMs)), lastLook: true });
+        continue;
+      }
+      const price = p.req.side === 'buy' ? Math.min(p.req.price, held) : Math.max(p.req.price, held);
+      const result = this.addMarked(p.symbol, { ...p.req, price }, now);
+      this.record(p.symbol, result.trades);
+      p.resolve(result);
+    }
   }
 
   /** A request as this exchange's rules make it: on the tick grid, and post-only only where honoured. */
@@ -357,8 +434,10 @@ export class Exchange {
   /** A batch: every order that has waited matches now, in a shuffled order, so time of arrival counts for nothing. */
   private runBatch(now: number, random: Random): void {
     if (this.pending.length === 0) return;
-    const batch = this.pending;
-    this.pending = [];
+    // A dealer's held orders wait out their look, not the batch.
+    const batch = this.pending.filter((p) => !p.look);
+    this.pending = this.pending.filter((p) => p.look);
+    if (batch.length === 0) return;
     for (let i = batch.length - 1; i > 0; i--) {
       const j = random.int(0, i);
       [batch[i], batch[j]] = [batch[j]!, batch[i]!];
@@ -413,6 +492,7 @@ export class Exchange {
    */
   step(now: number, dt: number, fair: ReadonlyMap<string, number>, activity: number, random: Random): void {
     this.tickTrades = [];
+    if (this.pending.length > 0) this.release(now);
     if (this.rules.batchMs > 0 && Math.round(now / dt) % Math.max(1, Math.round(this.rules.batchMs / dt)) === 0) {
       this.runBatch(now, random);
     }

@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { REGIMES, shows, signals as readSignals, type Signal } from '../content';
 import { calendar, MARKET_CLOSE, MARKET_OPEN, MS_PER_MINUTE, type Snapshot } from '../sim';
 import { Comparisons } from './Comparisons';
-import { money, moneyShort, ms } from './format';
+import { balance, money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
 import { Section } from './OverviewSection';
 import { Legend, LineChart, PnlChart, lineStyle, type Line } from './OverviewCharts';
@@ -104,6 +104,21 @@ function Position({ s }: { s: Snapshot }) {
           </div>
         )}
       </dl>
+      {s.balances.length > 0 && (
+        // A row a currency from the moment the desk opens, held or not, so the section does not grow as it trades.
+        <dl className="ov-stats ov-balances">
+          {s.balances.map((b) => (
+            <div key={b.currency}>
+              <dt>
+                {b.name} <Term id="home-currency">in dollars</Term>
+              </dt>
+              <dd className="num">
+                {balance(b.amount, b.minor, b.currency)} <span className="muted">({money(b.dollars)})</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
       <p className="small">
         <span className="muted">Setup: </span>
         {setupLine(s)}

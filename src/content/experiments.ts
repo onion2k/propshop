@@ -655,7 +655,180 @@ const LEAD: Experiment = {
     'well; the races are where the lesson shows.',
 };
 
-export const EXPERIMENTS: readonly Experiment[] = [HEADLINE, MILES, OPTION, LEAD];
+// ---- 5. Last look ------------------------------------------------------------------------------------------
+
+/**
+ * Seed 30: with the currencies desk open, the dollar jumps nearly nine pips against the yen about forty seconds
+ * into a window that starts a minute after Monday's open. Found by reading each seed's `world:fx` for the largest
+ * move in a tenth of a second in the first quarter hour (docs/measured.md).
+ */
+const LOOK_SEED = 30;
+/** A move of the euro or the dollar this many pips inside a tenth of a second is the moment worth seeing. */
+const JUMP_PIPS = 2;
+const PAIRS = ['EURUSD', 'USDJPY', 'EURJPY'];
+
+const triangleOn = (venue: number) => block('triangle', { venue, lots: 100 });
+
+const lookBase: Setup = {
+  location: 'colo-eastholm',
+  network: 'fibre',
+  computer: 'rack',
+  watched: PAIRS,
+  blocks: [triangleOn(1)],
+};
+
+const onBook = (s: Setup): Setup => ({ ...s, blocks: [triangleOn(0)] });
+
+function lookTracker(): Tracker {
+  let jump: Moment | null = null;
+  let entry: Moment | null = null;
+  let refused: Moment | null = null;
+  const seen: { at: number; eur: number; usd: number }[] = [];
+  const source: MomentSource = (g, _events, resolved) => {
+    const eur = g.market.fair.get('EURUSD');
+    const usd = g.market.fair.get('USDJPY');
+    if (!jump && eur !== undefined && usd !== undefined) {
+      seen.push({ at: g.now, eur, usd });
+      while (seen[0]!.at < g.now - 100) seen.shift();
+      const first = seen[0]!;
+      const moves = [
+        ['EUR/USD', 'The euro', eur - first.eur],
+        ['USD/JPY', 'The dollar', usd - first.usd],
+      ] as const;
+      for (const [pair, name, d] of moves) {
+        if (Math.abs(d) < JUMP_PIPS) continue;
+        jump = {
+          at: g.now,
+          from: first.at,
+          kind: 'jump',
+          label: `${name} jumps ${Math.abs(d).toFixed(1)} pips ${d > 0 ? 'up' : 'down'} in ${pair}, and the cross has not caught up`,
+          symbol: pair.replace('/', ''),
+        };
+        break;
+      }
+    }
+    for (const o of resolved) {
+      if (!PAIRS.includes(o.symbol) || o.block !== 'triangle') continue;
+      if (jump && !entry && o.sentAt >= jump.at) {
+        entry = {
+          at: o.arrivedAt ?? o.sentAt,
+          from: raceFrom(o),
+          kind: 'entry',
+          label: `The triangle's first leg after it: ${o.side} ${o.size} ${o.symbol} on ${o.exchange}, ${o.status === 'refused' ? 'refused' : o.filled >= o.size ? 'filled' : 'not filled'}`,
+          symbol: o.symbol,
+          exchange: o.exchange,
+        };
+      }
+      if (!refused && o.status === 'refused') {
+        refused = {
+          at: o.ackAt ?? o.arrivedAt ?? o.sentAt,
+          from: raceFrom(o),
+          kind: 'refused',
+          label: `The dealer looks at your ${o.side} of ${o.size} ${o.symbol} for 5 ms, and refuses it`,
+          symbol: o.symbol,
+          exchange: o.exchange,
+        };
+      }
+    }
+    return [];
+  };
+  return {
+    source,
+    pick: () => [jump, entry, refused].filter((m): m is Moment => m !== null).sort(byAt),
+  };
+}
+
+/** How many of the triangle's legs went out, every one immediate-or-cancel. */
+const legs = (m: Measures) => m.races.won + m.races.beaten + m.races.missed;
+const share = (n: number, of: number) => `${of > 0 ? Math.round((100 * n) / of) : 0}%`;
+/** What happened to the legs the dealer looked at: refused, or found its price gone once the look was over. */
+function looked(m: Measures): string {
+  const refused = m.refused ?? 0;
+  const gone = Math.max(0, m.races.missed - refused);
+  return `the dealer refused ${refused} of them and ${gone} more found its price gone when its look was over`;
+}
+
+const LOOK: Experiment = {
+  id: 'lastlook',
+  title: 'Last look',
+  teaches: 'A dealer charges no fee and keeps the right to say no; the fills you most want are the ones it keeps.',
+  briefing:
+    'Monday morning, with the currencies desk open: a rack in Eastholm beside both currency venues, running the ' +
+    'triangle with the dealer. When the euro or the dollar jumps, its pair reprices at once and the cross, the euro ' +
+    'in yen, is slower: for a moment going round the three pays. The triangle sells the dear side and buys the ' +
+    'cheap, three legs at once. The dealer charges no fee, but it holds each order 5 ms before it fills it, and ' +
+    'refuses one whose price it has moved away from in the meantime. About forty seconds in, the dollar jumps. ' +
+    `From the rack both venues are ${ms(latencyMs(lookBase, 'ASHFORD'))} away.`,
+  terms: ['triangular-arbitrage', 'cross-rate', 'dealer', 'last-look', 'pip'],
+  seed: LOOK_SEED,
+  desks: ['fx'],
+  startAt: START,
+  windowMs: 2 * MS_PER_MINUTE,
+  symbol: 'EURJPY',
+  baseline: lookBase,
+  baselineLabel: 'the triangle with the dealer, from a rack in Eastholm',
+  changes: [
+    {
+      id: 'book',
+      label: 'Trade on the book',
+      detail:
+        'The same rack and the same triangle, all three legs sent to the book instead: a fee a leg, no look, and Kestrel Currency racing you for the same prices.',
+      apply: onBook,
+    },
+    {
+      id: 'home',
+      label: 'The dealer, from home',
+      detail: 'The triangle with the dealer from home, on fibre: 35 ms from Eastholm instead of a tenth of one.',
+      apply: (s) => ({ ...s, location: 'home' }),
+    },
+    {
+      id: 'book-home',
+      label: 'The book, from home',
+      detail: 'The triangle on the book from home, on fibre: the fees, the races, and every one of them 35 ms late.',
+      apply: (s) => ({ ...onBook(s), location: 'home' }),
+    },
+  ],
+  tracker: lookTracker,
+  explain: (a, b, change) => {
+    const lost = b.races.beaten > 0 ? `, and lost ${b.races.beaten} to a faster firm` : '';
+    const out = [
+      `With the dealer from the rack the triangle sent ${legs(a)} legs and ${a.races.won} filled in full, for ${dollars(a.pnl)}: ${looked(a)}. ` +
+        `After “${change.label}” it sent ${legs(b)} and ${b.races.won} filled in full, paying ${dollars(b.fees)} in fees, for ${dollars(b.pnl)}` +
+        (change.id === 'home' ? `: ${looked(b)}.` : `${lost}.`),
+    ];
+    if (change.id === 'book') {
+      out.push(
+        b.races.won > a.races.won
+          ? `The book filled ${b.races.won} legs in full to the dealer’s ${a.races.won}. The dealer’s legs that missed were the ones sent in the moment its price was stale, which is the only moment a triangle pays: for 5 ms the choice was the dealer’s, and it chose. The book never looks; it charges a fee and lets the fastest have it.`
+          : 'The book filled no more than the dealer: here its fees and Kestrel’s races took what the look did not.',
+      );
+    }
+    if (change.id === 'home') {
+      const missedA = (a.races.missed * 100) / Math.max(1, legs(a));
+      const missedB = (b.races.missed * 100) / Math.max(1, legs(b));
+      out.push(
+        legs(b) < legs(a)
+          ? `From home it saw the jump 35 ms late and sent ${legs(b)} legs, not ${legs(a)}: by then the dealer had repriced the cross, and there was little left to trade. ${share(b.races.missed, legs(b))} of them missed, against ${share(a.races.missed, legs(a))} from the rack${missedB < missedA ? ': the slow firm is turned down less, because it asks for less' : ''}.`
+          : 'From home it sent as many legs as from the rack: look at the replay for what the dealer did with them.',
+      );
+    }
+    if (change.id === 'book-home') {
+      out.push(
+        b.races.beaten > 0
+          ? `From home on the book it lost ${b.races.beaten} legs to Kestrel Currency, on the next rack in Eastholm: a lost leg leaves a triangle open, traded back into line at the spread.`
+          : 'From home on the book it lost no races: what it saw late, it mostly did not send.',
+      );
+    }
+    return out.join(' ');
+  },
+  takeaway:
+    'A triangle pays only in the moment the cross is stale, and that is the moment a dealer’s price is stale too. ' +
+    'A last look is the free option a maker gives away on a book, kept by the maker: no fee to trade, and the fills ' +
+    'you most want are the ones it turns down. The faster you are, the more often you catch it, and the more often ' +
+    'it says no.',
+};
+
+export const EXPERIMENTS: readonly Experiment[] = [HEADLINE, MILES, OPTION, LEAD, LOOK];
 
 export function experiment(id: string): Experiment | undefined {
   return EXPERIMENTS.find((e) => e.id === id);

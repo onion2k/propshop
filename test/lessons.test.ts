@@ -1,5 +1,14 @@
 import { CONTENT, LESSONS, REGIMES } from '../src/content';
-import { Game, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, isMarketOpen, regimeFor, type Snapshot } from '../src/sim';
+import {
+  Game,
+  MS_PER_MINUTE,
+  MS_PER_SECOND,
+  TICK_MS,
+  isMarketOpen,
+  regimeFor,
+  type DayReport,
+  type Snapshot,
+} from '../src/sim';
 import { infrastructureFrom } from '../src/sim/upgrades';
 
 function fresh(): Snapshot {
@@ -9,7 +18,7 @@ function fresh(): Snapshot {
 const L = (id: string) => LESSONS.find((l) => l.id === id)!;
 
 describe('lessons', () => {
-  it("are the stocks' ten in stage order, then the futures desk's three, each with words", () => {
+  it("are the stocks' ten in stage order, then the futures desk's three and the currencies desk's four, each with words", () => {
     expect(LESSONS.map((l) => l.id)).toEqual([
       'home',
       'seat',
@@ -24,6 +33,10 @@ describe('lessons', () => {
       'basis',
       'overnight',
       'lead',
+      'pips',
+      'triangle',
+      'refused',
+      'rollover',
     ]);
     for (const l of LESSONS) {
       expect(l.task.length).toBeGreaterThan(20);
@@ -176,4 +189,51 @@ describe('lessons', () => {
       expect(used.done(s)).toBe(true);
     },
   );
+
+  describe("the currencies desk's", () => {
+    /** A snapshot with the desk open, and these fills, orders and days in it. */
+    function withFx(over: Partial<Snapshot> = {}): Snapshot {
+      const g = new Game(CONTENT, 9);
+      g.openDesk('fx');
+      return { ...g.snapshot(), ...over };
+    }
+    const fill = (block: string, symbol: string) => ({ block, symbol }) as unknown as Snapshot['fills'][number];
+
+    it('Count in pips: done by a hand fill in a pair, not in a stock', () => {
+      expect(L('pips').done(withFx({ fills: [fill('hand', CONTENT.stocks[0]!.symbol)] }))).toBe(false);
+      expect(L('pips').done(withFx({ fills: [fill('triangle', 'EURUSD')] }))).toBe(false);
+      expect(L('pips').done(withFx({ fills: [fill('hand', 'EURUSD')] }))).toBe(true);
+    });
+
+    it('Count in pips: done in a game by ten lots bought by hand', { timeout: 60_000 }, () => {
+      const g = new Game(CONTENT, 9);
+      g.openDesk('fx');
+      // A laptop watches four symbols: the pair has to be one of them for its quote to reach the desk.
+      g.firm.setWatch(['EURUSD']);
+      g.stepTicks((10 * MS_PER_SECOND) / TICK_MS);
+      expect(L('pips').done(g.snapshot())).toBe(false);
+      expect(g.hand({ symbol: 'EURUSD', side: 'buy', size: 10, exchange: 'EASTHOLM', type: 'market' }).ok).toBe(true);
+      g.stepTicks(MS_PER_SECOND / TICK_MS);
+      expect(L('pips').done(g.snapshot())).toBe(true);
+    });
+
+    it('Close a triangle: done once the triangle has filled in the cross and both legs', () => {
+      const two = [fill('triangle', 'EURUSD'), fill('triangle', 'USDJPY')];
+      expect(L('triangle').done(withFx({ fills: two }))).toBe(false);
+      expect(L('triangle').done(withFx({ fills: [...two, fill('hand', 'EURJPY')] }))).toBe(false);
+      expect(L('triangle').done(withFx({ fills: [...two, fill('triangle', 'EURJPY')] }))).toBe(true);
+    });
+
+    it('Be refused: done by an order the dealer refused', () => {
+      const order = (status: string) => ({ status }) as unknown as Snapshot['orders'][number];
+      expect(L('refused').done(withFx({ orders: [order('cancelled'), order('rejected')] }))).toBe(false);
+      expect(L('refused').done(withFx({ orders: [order('refused')] }))).toBe(true);
+    });
+
+    it('Earn the rollover: done by a day whose report has a rollover paid', () => {
+      const day = (rollover?: number) => ({ ...(rollover === undefined ? {} : { rollover }) }) as unknown as DayReport;
+      expect(L('rollover').done(withFx({ days: [day(), day(-40)] }))).toBe(false);
+      expect(L('rollover').done(withFx({ days: [day(), day(49)] }))).toBe(true);
+    });
+  });
 });

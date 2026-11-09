@@ -41,6 +41,12 @@ describe.each(EXPERIMENTS.map((e) => [e.id, e] as const))('experiment %s', (_id,
       expect(base.moments.some((m) => m.kind === 'headline')).toBe(true);
     if (e.id === 'lead') expect(base.measures.races.beaten + base.measures.races.won).toBeGreaterThanOrEqual(10);
     if (e.id === 'miles') expect(base.measures.races.beaten + base.measures.races.won).toBeGreaterThanOrEqual(50);
+    // Last look: the dollar jumps in the window, and the dealer turns legs down, refused or gone after its look.
+    if (e.id === 'lastlook') {
+      expect(base.moments.some((m) => m.kind === 'jump')).toBe(true);
+      expect(base.measures.refused).toBeGreaterThan(0);
+      expect(base.measures.races.missed).toBeGreaterThan(base.measures.races.won);
+    }
     expect(base.measures.fills).toBeGreaterThan(0);
 
     const answers = new Set<string>();
@@ -50,6 +56,11 @@ describe.each(EXPERIMENTS.map((e) => [e.id, e] as const))('experiment %s', (_id,
       expect(differs(b.measures), change.id).toBe(true);
       momentsFit(e, b.moments);
       answers.add(answerOf(base.measures, b.measures));
+      // The book, which never looks, fills more legs in full than the dealer; from home the dealer refuses none.
+      if (e.id === 'lastlook' && change.id === 'book')
+        expect(b.measures.races.won).toBeGreaterThan(base.measures.races.won);
+      if (e.id === 'lastlook' && change.id === 'home')
+        expect(b.measures.refused ?? 0).toBeLessThan(base.measures.refused ?? 0);
       const text = e.explain(base.measures, b.measures, change);
       whole(text);
       expect(text.length).toBeGreaterThan(80);

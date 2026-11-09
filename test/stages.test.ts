@@ -2,6 +2,7 @@ import {
   DESK_LESSONS,
   CONTENT,
   LESSONS,
+  featureStage,
   STAGES,
   introSteps,
   lessonStage,
@@ -56,6 +57,7 @@ describe('stageOf', () => {
     for (const l of LESSONS) expect(lessonStage(l.id)).toBeDefined();
     // A desk's lessons sit at the desk's stage and open no stage: all the stocks' done is the last stage.
     expect(lessonStage('lead')).toBe(3);
+    for (const id of ['pips', 'triangle', 'refused', 'rollover']) expect(lessonStage(id)).toBe(4);
     const stocks = Object.fromEntries(STAGES.flatMap((s) => s.lessons).map((id) => [id, 1]));
     expect(stageOf(stocks)).toBe(5);
   });
@@ -80,6 +82,13 @@ describe('shows', () => {
     ['block:indexArb', 5],
     ['block:script', 5],
     ['tab:lab', 5],
+    ['desk:futures', 3],
+    ['block:basisArb', 3],
+    ['block:leadLag', 3],
+    ['block:roll', 3],
+    ['desk:fx', 4],
+    ['block:triangle', 4],
+    ['block:carry', 4],
   ];
   it.each(table)('%s opens at stage %i and not before', (feature, at) => {
     for (let stage = 1; stage <= 5; stage++) expect(shows(feature, stage as 1)).toBe(stage >= at);
@@ -90,6 +99,14 @@ describe('shows', () => {
       expect(shows(`block:${b.spec.id}`, 5)).toBe(true);
       expect(shows(`block:${b.spec.id}`, 1)).toBe(b.spec.id === 'momentum');
     }
+  });
+
+  it('places every desk the content has before the last stage, so none opens by default in free play', () => {
+    // An unnamed desk would fall to the last stage and open in free play: each is named in the table instead.
+    const store = createStore(CONTENT, null, 1);
+    const desks = store.game.market.desks;
+    expect(desks).toEqual(['futures', 'fx']);
+    for (const d of desks) expect(featureStage(`desk:${d}`)).toBeLessThan(5);
   });
 
   it('gives each stage after the first intro cards', () => {

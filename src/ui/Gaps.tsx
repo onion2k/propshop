@@ -7,9 +7,9 @@ import { Term } from './Glossary';
 
 type Stock = Snapshot['stocks'][number];
 
-/** Cents a share with the sign as a minus, not a hyphen. */
-function cents(edge: number): string {
-  return `${edge < 0 ? '−' : ''}${Math.abs(edge).toFixed(2)}¢`;
+/** Cents a share, or pips for a currency pair, with the sign as a minus, not a hyphen. */
+function cents(edge: number, pips = false): string {
+  return `${edge < 0 ? '−' : ''}${Math.abs(edge).toFixed(2)}${pips ? ' pips' : '¢'}`;
 }
 
 /** What a taker pays a share on an exchange: its fee and any tax the rules put on. */
@@ -40,13 +40,23 @@ export function GapLine({ s, stock }: { s: Snapshot; stock: Stock }) {
   const c = crossed(stock);
   if (!c) return null;
   const gross = c.bid.p - c.ask.p;
-  const edge = gross - takerCost(s, c.ask.on) - takerCost(s, c.bid.on);
+  // A pair's gap is in pips, and its fees (dollar cents a lot) are turned into pips at what a pip of a lot is worth.
+  const pips = stock.pair !== undefined;
+  const perPoint = stock.pair?.pointValue ?? 1;
+  const edge = gross - (takerCost(s, c.ask.on) + takerCost(s, c.bid.on)) / perPoint;
   return (
     <p className="gap-line">
-      <Term id="arbitrage">Gap</Term>: buy on {c.ask.on} at {price(c.ask.p)}, sell on {c.bid.on} at {price(c.bid.p)} ·{' '}
-      {gross}¢ a share,{' '}
+      <Term id="arbitrage">Gap</Term>: buy on {c.ask.on} at {price(c.ask.p, stock.decimals)}, sell on {c.bid.on} at{' '}
+      {price(c.bid.p, stock.decimals)} ·{' '}
+      {pips ? (
+        <>
+          {gross} {gross === 1 ? 'pip' : 'pips'},
+        </>
+      ) : (
+        <>{gross}¢ a share,</>
+      )}{' '}
       <span className={edge > 0 ? 'up' : 'down'}>
-        {cents(edge)} after both <Term id="maker-taker">taker fees</Term>
+        {cents(edge, pips)} after both <Term id="maker-taker">taker fees</Term>
       </span>
       {edge <= 0 && ': the fees are bigger than the gap'} · as you see it: {c.ask.on} {s.dataLatency[c.ask.on] ?? 0}ms
       ago, {c.bid.on} {s.dataLatency[c.bid.on] ?? 0}ms ago.
@@ -89,6 +99,8 @@ export function GapList({ s, stock, onPick }: { s: Snapshot; stock: Stock; onPic
               o.symbol === g.symbol && o.sentAt >= g.firstSeen && o.sentAt <= g.lastSeen + s.capacity.decisionEveryMs,
           );
           const summary = orderSummary(mine, s.names);
+          const listed = s.stocks.find((x) => x.symbol === g.symbol);
+          const places = listed?.decimals;
           return (
             <div
               className={`gap-row ${g.symbol === stock.symbol ? 'picked' : ''}`}
@@ -99,12 +111,12 @@ export function GapList({ s, stock, onPick }: { s: Snapshot; stock: Stock; onPic
                 {formatTime(g.firstSeen)}.{String(g.firstSeen % 1000).padStart(3, '0')}
               </span>
               <strong>{g.symbol}</strong>
-              <span title={`buy ${g.buyOn} ${price(g.ask)} / sell ${g.sellOn} ${price(g.bid)}`}>
-                buy {g.buyOn} {price(g.ask)} / sell {g.sellOn} {price(g.bid)}
+              <span title={`buy ${g.buyOn} ${price(g.ask, places)} / sell ${g.sellOn} ${price(g.bid, places)}`}>
+                buy {g.buyOn} {price(g.ask, places)} / sell {g.sellOn} {price(g.bid, places)}
               </span>
               <span className={`num ${g.edge > 0 ? 'up' : 'down'}`}>
                 {g.edge > 0 ? '+' : ''}
-                {cents(g.edge)}
+                {cents(g.edge, listed?.pair !== undefined)}
               </span>
               <span className="muted">{g.lastSeen === g.firstSeen ? 'one look' : ms(g.lastSeen - g.firstSeen)}</span>
               <span className="muted" title={summary || undefined}>

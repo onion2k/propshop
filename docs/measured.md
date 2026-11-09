@@ -98,6 +98,14 @@ All headless with Playwright, borrowed from `~/projects/artshape-game-template`.
   and under the whole suite it falls under its floor of 75,000 now and then, and always with other runs beside
   it (63,000 on 2026-11-08 beside four harness runs). Alone on 2026-11-07, after the Overview's sim changes:
   95,000 (four runs, 94,900 to 96,200).
+- **With desks open,** the same setup as `steps fast enough for the top speed` (seed 12, `skipToOpen`, 10 s
+  warm-up, 2 minutes timed) with `openDesk` first, alone, three runs on 2026-11-09 with the currencies desk built
+  (5a): none open 83,500 to 86,300 ticks a second; the futures desk 64,000 to 66,100; the currencies desk 54,400
+  to 55,300; both 45,600 to 46,200. The gate opens no desk, so a player at stage 3 or in free play has run under
+  its floor since the futures desk opened. Profiled with both open (esbuild bundle, `node --cpu-prof`): the firms'
+  deciding is 43% of a tick (building each rival's view of every watched symbol on every venue 14%, the blocks
+  the rest), the exchanges' step 18% (the crowd 14%), the quote logs 12%, the stocks' drift 7%, the collector 7%.
+  A skip to the open from Monday 16:10 takes 32 to 39 ms with the currencies closed and 114 to 115 with them open.
 - The night's tests, headless Chrome on 2026-11-07, one 12-core machine: a night is 3 pinned windows by 7
   setups, 21 runs of five simulated minutes. Close to `done` with the sim stopped: 48 to 52 s over eight
   nights, and the same with the sim running at 10× or 300×. CDP's CPU throttle refuses a worker, so the page
@@ -174,3 +182,45 @@ fibre, 4 races won and 14 lost, $148; microwave better (13 and 1, $387); home th
 Lakeside on microwave the same (6 and 5, $146). Over ten seeds with a market-moving headline early on Monday,
 microwave cut the races lost to Prairie Partners from 12 to 46 down to 0 to 4 on every one, and its P&L was
 higher on three of ten: two minutes of lead-lag is a few hundred dollars, inside the noise.
+
+## The currencies desk (5d), 2026-11-09
+
+- **The triangle's gap**, before the pairs jumped (a scratch measurement over 20 minutes from the open, seeds 1
+  and 2, every 50 ms): the cross on either venue was richer or cheaper than its legs, across all three spreads,
+  in 0.01% to 0.03% of samples, at most 0.7 pips on the book. A smooth wander of about eleven pips an hour moves a
+  tenth of a pip in the time the cross's crowd takes to follow, so the triangle never paid: in PACE (one seed,
+  20 minutes) the book earned $3 a day from home and from the rack alike, the same 57 orders, and the dealer −98
+  to 0. With each pair jumping now and
+  then (`jumpsPerSecond` 0.01, 2.5 pips for EUR/USD and 3.5 for USD/JPY, `src/content/fx.ts`; reverting to the
+  anchor as a stock's jumps do, and drawn from `world:fx` alone), the gap passes a pip in about 0.03% of samples,
+  at most about 3.7 pips.
+- **PACE**, `PACE=1 PACE_ONLY=fx npx vitest run test/pace.test.ts`, three seeds, an hour from the open, scaled to
+  a stocks day (×6.5), at the defaults (triangle 1 pip and 10 lots, Kestrel 1 pip and 20 lots, carry 10 lots and
+  a 50-pip stop). Dollars a day, the equity's move:
+  - triangle on the book: from home (consumer) −16 (−29, −34, 15); from home on fibre 0 (3, −30, 28); from the
+    rack in Eastholm 1,069 (631, 1,072, 1,503). Kestrel, beside it, 2,090 to 2,292.
+  - triangle with the dealer: from home −11 (−7, −22, −4), refused 0 of 94, 97 and 100 orders; on fibre 22,
+    refused 0 of 115, 97, 97; from the rack 466 (166, 562, 670), refused 18 of 156, 33 of 228, 40 of 248 (14%).
+  - carry from home 56 (−41, 154, 54), a fill an hour.
+  - the triangle's threshold from the rack, on the book: 0.5 pips 1,230 (680 fills an hour), 1 pip 1,069 (431),
+    2 pips 728 (209). The defaults were left as they were.
+- **The plan's check is met:** the triangle earns from a rack at the centre and not from home, and on the dealer a
+  fast firm is refused more often than a slow one, on each of three seeds. Most of what the dealer turns down is
+  not refused outright: the order is held 5 ms, the crowd reprices the book in that time, and the order meets
+  nothing (counted as missed).
+- **Last look**, seed 30 (`npx vitest run test/experiments.test.ts`): the dollar jumps 8.7 pips against the yen
+  41 seconds into a window from 9:31:00. Found by stepping seeds 1 to 30 with the desk open and reading the largest
+  move of EUR/USD's or USD/JPY's fair value in a tenth of a second in the first quarter hour from 9:31 (9.2 pips
+  the largest, on seed 3, at 9:42; seed 30's came first). The triangle at 100 lots with the dealer from the rack:
+  29 legs, 2 filled in full, 1 refused and 26 more gone after the look, $79; on the book 90 legs all filled, $299
+  (better); the dealer from home 4 legs, none refused, $0 (same); the book from home 10 legs, 4 lost to Kestrel,
+  −$24 (worse).
+- **The futures desk with the stocks' blocks kept to the stocks** (fix 1): the busy colocated game of
+  `test/instruments.test.ts` with the futures desk open, IXF watched and mean reversion added, ten minutes from
+  the open: the market maker quoted IXF 4 times before and not after; the game then went its own way (1,671
+  fills and equity $188,300 before, 1,719 and $200,064 after).
+- **Unchanged by 5d:** every PACE row from before the desk (the stocks' and the futures desk's, 46 rows, three
+  seeds; after, with `PACE_ONLY` set to the names of those rows, before on a copy of the tree from before 5d), and
+  the stage harness (`STAGE_PACE=1 STAGE_SEEDS=1 STAGE_DAYS=1`), each
+  stage opening at the same moment. The whole PACE harness takes about 73 minutes on this machine under load,
+  past the test's hour: it prints its table and then reports the timeout.

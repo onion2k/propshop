@@ -4,27 +4,40 @@
 import type { OrderStory } from '../sim';
 import { money, ms, price, shares } from './format';
 
-export function raceSentence(o: OrderStory, names: Record<string, string>, now: number): string {
+export function raceSentence(o: OrderStory, names: Record<string, string>, now: number, decimals = 2): string {
   const name = (id: string) => names[id] ?? id;
   if (o.status === 'rejected')
     return `Refused before it left: ${o.reason ?? 'the computer was over its orders a second'}.`;
+  // A dealer's last look: its reason says how long it looked.
+  if (o.status === 'refused') return `${(o.reason ?? 'refused by the dealer').replace(/^r/, 'R')}.`;
   if (o.status === 'inflight') return `On its way, ${ms(now - o.sentAt)} so far.`;
-  if (o.status === 'resting') return `Resting at ${price(o.price)}, ${shares(o.size - o.filled)} left.`;
+  if (o.status === 'resting') return `Resting at ${price(o.price, decimals)}, ${shares(o.size - o.filled)} left.`;
   if (o.status === 'cancelling') return 'Being pulled.';
   // What it paid, not what it was willing to: a market order through the touch fills under its limit.
   const at = o.avgFill ?? o.price;
-  if (o.filled >= o.size) return `Filled ${shares(o.size)} at ${price(Math.round(at))}.`;
+  if (o.filled >= o.size) return `Filled ${shares(o.size)} at ${price(Math.round(at), decimals)}.`;
   const last = o.beatenBy[o.beatenBy.length - 1];
   const part = o.filled > 0 ? `Filled ${shares(o.filled)} of ${shares(o.size)}; ` : 'Missed: ';
   if (last && o.arrivedAt !== null) {
     const gap = o.arrivedAt - last.at;
-    return `${part}${name(last.owner)} took ${shares(last.size)} at ${price(last.price)} ${ms(gap)} before you arrived.`;
+    return `${part}${name(last.owner)} took ${shares(last.size)} at ${price(last.price, decimals)} ${ms(gap)} before you arrived.`;
   }
   if (o.ioc) return `${part}the quote was gone by the time you arrived.`;
   return `${part}pulled.`;
 }
 
-export function Race({ o, names, now }: { o: OrderStory; names: Record<string, string>; now: number }) {
+export function Race({
+  o,
+  names,
+  now,
+  decimals,
+}: {
+  o: OrderStory;
+  names: Record<string, string>;
+  now: number;
+  /** The places the order's instrument writes a price to; absent, a stock's two. */
+  decimals?: number;
+}) {
   const start = o.seenAt ?? o.sentAt;
   const end = o.ackAt ?? now;
   const span = Math.max(1, end - start);
@@ -59,8 +72,8 @@ export function Race({ o, names, now }: { o: OrderStory; names: Record<string, s
           {o.arrivedAt !== null && ` · arrived ${ms(o.arrivedAt - o.sentAt)} later`}
           {o.ackAt !== null && ` · heard ${ms(o.ackAt - o.sentAt)} after sending`}
         </span>
-        <div className={o.filled >= o.size ? 'up' : o.beatenBy.length > 0 ? 'down' : ''}>
-          {raceSentence(o, names, now)}
+        <div className={o.filled >= o.size ? 'up' : o.beatenBy.length > 0 || o.status === 'refused' ? 'down' : ''}>
+          {raceSentence(o, names, now, decimals)}
           {o.realised !== 0 && <span className="muted"> · {money(Math.round(o.realised), true)} realised</span>}
           {o.fee > 0 && <span className="muted"> · fee {money(o.fee)}</span>}
         </div>

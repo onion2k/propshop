@@ -2,6 +2,7 @@
 import { anticipate } from './anticipate';
 import { arbitrage } from './arbitrage';
 import { basisArb } from './basisArb';
+import { carry } from './carry';
 import { indexArb } from './indexArb';
 import { leadLag } from './leadLag';
 import { marketMaker } from './marketMaker';
@@ -11,6 +12,7 @@ import { newsReaction } from './newsReaction';
 import { pairs } from './pairs';
 import { roll } from './roll';
 import { sniper } from './sniper';
+import { triangle } from './triangle';
 import { EXAMPLE_SOURCE, SCRIPT_ID, scriptBlock } from './script';
 import type { StrategyBlock } from './types';
 
@@ -29,10 +31,16 @@ export const BLOCKS: readonly StrategyBlock[] = [
   basisArb,
   leadLag,
   roll,
+  // The currencies desk's, the same way.
+  triangle,
+  carry,
 ];
 
 /** The blocks of each desk but the stocks, which a firm is given, off, when the desk opens. */
-export const DESK_BLOCKS: Readonly<Record<string, readonly string[]>> = { futures: ['basisArb', 'leadLag', 'roll'] };
+export const DESK_BLOCKS: Readonly<Record<string, readonly string[]>> = {
+  futures: ['basisArb', 'leadLag', 'roll'],
+  fx: ['triangle', 'carry'],
+};
 
 export function blockById(id: string): StrategyBlock {
   const b = BLOCKS.find((x) => x.spec.id === id);

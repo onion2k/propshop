@@ -3,6 +3,7 @@ import type { Content } from '../sim';
 import { DESK } from './desk';
 import { EXCHANGES } from './exchanges';
 import { COLO_PRAIRIE, IXF, PRAIRIE, PRAIRIE_DISTANCE } from './futures';
+import { COLO_EASTHOLM, CURRENCIES, FX_DISTANCE, FX_VENUES, PAIRS, ROLLOVER } from './fx';
 import { NEWS } from './news';
 import { REGIMES } from './regimes';
 import { FACTORS, STOCKS } from './stocks';
@@ -10,13 +11,24 @@ import { COMPETITORS, COMPUTERS, LOCATIONS, NETWORKS, START, STARTING_CASH } fro
 
 export const CONTENT: Content = {
   stocks: STOCKS,
-  // The futures desk's venue and contracts: there, and closed, until the desk opens.
-  exchanges: [...EXCHANGES, PRAIRIE],
+  // The futures desk's venue and contracts, and the currencies desk's venues and pairs: there, and closed, until
+  // each desk opens.
+  exchanges: [...EXCHANGES, PRAIRIE, ...FX_VENUES],
   series: [IXF],
+  instruments: PAIRS,
+  currencies: CURRENCIES,
+  rollover: ROLLOVER,
   news: NEWS,
   locations: [
-    ...LOCATIONS.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: PRAIRIE_DISTANCE[l.id] ?? 20 } })),
-    COLO_PRAIRIE,
+    ...[
+      ...LOCATIONS.map((l) => ({ ...l, distance: { ...l.distance, PRAIRIE: PRAIRIE_DISTANCE[l.id] ?? 20 } })),
+      COLO_PRAIRIE,
+    ].map((l) => {
+      const fx = FX_DISTANCE[l.id] ?? 35;
+      return { ...l, distance: { ...l.distance, ...Object.fromEntries(FX_VENUES.map((v) => [v.id, fx])) } };
+    }),
+    // The currencies' rack carries its own distance to every venue.
+    COLO_EASTHOLM,
   ],
   networks: NETWORKS,
   computers: COMPUTERS,

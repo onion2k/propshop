@@ -1,7 +1,9 @@
 // What an instrument is worth: the one place a quantity and a price become money. A stock's price is in cents and
 // one share is one unit, so its value is quantity times price; a contract counts its price in its own points and
-// holds many units. Everything that values a position, an order or a fill asks here.
+// holds many units. Everything that values a position, an order or a fill asks here, and a balance in another
+// currency becomes dollars here alone (`toHome`).
 
+import { MS_PER_DAY } from './clock';
 import type { ContractSeriesSpec, ExchangeSpec, InstrumentKind, InstrumentSpec } from './types';
 
 /** The desk every instrument and venue belongs to unless it says otherwise: the stocks, always open. */
@@ -60,7 +62,82 @@ export function liveContracts(series: ContractSeriesSpec, now: number): Instrume
   return out;
 }
 
-/** Whether an instrument's fair value is derived from its underlying and carry rather than drawn. */
-export function isDerived(spec: InstrumentSpec): boolean {
+/** Whether an instrument's fair value is its underlying's carried to expiry: a future. */
+export function isCarried(spec: InstrumentSpec): boolean {
   return spec.carry !== undefined && spec.underlying !== undefined && spec.expiry !== undefined;
+}
+
+/** Whether an instrument's fair value is the product of two pairs': a cross rate. */
+export function isCross(spec: InstrumentSpec): boolean {
+  return spec.cross !== undefined;
+}
+
+/** Whether an instrument's fair value is derived (carried, or a cross) rather than drawn. */
+export function isDerived(spec: InstrumentSpec): boolean {
+  return isCarried(spec) || isCross(spec);
+}
+
+/** The firm's own currency: its cash is in its cents, and every other balance is counted in it. */
+export const HOME = 'USD';
+
+/** The currency an instrument's price is counted in. */
+export function currencyOf(spec: InstrumentSpec): string {
+  return spec.currency ?? HOME;
+}
+
+/**
+ * What a currency's balance is worth at home, from the mid of the pair that prices it: `perPoint` is minor units
+ * of the pair's quote per minor unit of its base, a point. The pair's base is the currency (the euro, in EUR/USD),
+ * so a minor unit is worth `mid × perPoint` cents; or its quote is (the yen, in USD/JPY), so it is worth one over that.
+ */
+export interface Rate {
+  mid: number;
+  perPoint: number;
+  inverse: boolean;
+}
+
+/**
+ * A balance in a currency's minor units, in dollar cents: the one conversion, rounded here and nowhere else.
+ * Multiplied for a currency its pair is priced in, divided for one its pair is priced by.
+ */
+export function toHome(currency: string, amount: number, rates: ReadonlyMap<string, Rate>): number {
+  // A balance of nought is nought, not minus nought.
+  return Math.round(inHome(currency, amount, rates)) || 0;
+}
+
+/**
+ * The same conversion unrounded, for a block weighing a price (what a point of a lot is worth at home), never for
+ * money held: that is `toHome`'s.
+ */
+export function inHome(currency: string, amount: number, rates: ReadonlyMap<string, Rate>): number {
+  if (currency === HOME) return amount;
+  const r = rates.get(currency);
+  if (!r) throw new Error(`No rate for ${currency}`);
+  const perMinor = r.mid * r.perPoint;
+  return r.inverse ? amount / perMinor : amount * perMinor;
+}
+
+/** A currency pair as a fill sees it: what a lot buys (`units` of the base's minor units) and what it is priced in. */
+export interface FxPair {
+  base: string;
+  quote: string;
+  units: number;
+}
+
+/**
+ * The places a price is written to: a point is the price unit in the quote's minor units, so a pip of the euro in
+ * dollars (a hundredth of a cent) is four places of a dollar, a pip of the yen (a hundredth of a yen) two, and a
+ * stock's cent two. `minor` is the quote currency's minor units in one.
+ */
+export function decimalsOf(spec: Pick<InstrumentSpec, 'priceUnit'>, minor: number): number {
+  return Math.max(0, Math.round(-Math.log10((spec.priceUnit ?? 1) / minor)));
+}
+
+/** No currency but the dollar: nothing to convert. */
+export const NO_RATES: ReadonlyMap<string, Rate> = new Map();
+
+/** Days a rollover at this moment carries: one each weekday, three on Wednesday (the weekend's), none at the weekend. */
+export function rolloverDays(now: number): number {
+  const weekday = Math.floor(now / MS_PER_DAY) % 7;
+  return weekday === 2 ? 3 : weekday < 5 ? 1 : 0;
 }

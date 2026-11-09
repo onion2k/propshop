@@ -76,6 +76,8 @@ export interface Measures {
   byBlock: Record<string, Tally>;
   /** Fees paid in the window, cents. */
   fees: number;
+  /** Orders a dealer looked at and refused (last look); absent in a measure from before the dealer. */
+  refused?: number;
 }
 
 /**
@@ -107,6 +109,7 @@ export class Run {
   private events: GameEvent[] = [];
   private fills = 0;
   private fees = 0;
+  private refused = 0;
   private readonly byBlock: Record<string, Tally> = {};
   private readonly races: RaceTally = { won: 0, beaten: 0, missed: 0 };
   private readonly byExchange: Record<string, RaceTally> = {};
@@ -171,6 +174,7 @@ export class Run {
       beaten: this.beaten.map((b) => ({ ...b })),
       byBlock: Object.fromEntries(Object.entries(this.byBlock).map(([k, v]) => [k, { ...v }])),
       fees: this.fees,
+      refused: this.refused,
     };
   }
 
@@ -181,6 +185,7 @@ export class Run {
 
   /** Only immediate-or-cancel orders race: filled in full is won, beaten by a named rival, or missed with nobody named. */
   private race(o: OpenOrder): void {
+    if (o.status === 'refused') this.refused++;
     if (!o.ioc) return;
     const ex = (this.byExchange[o.exchange] ??= { won: 0, beaten: 0, missed: 0 });
     if (o.filled >= o.size) {

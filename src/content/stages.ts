@@ -72,6 +72,11 @@ const FEATURE_STAGE: Record<string, StageId> = {
   'block:basisArb': 3,
   'block:leadLag': 3,
   'block:roll': 3,
+  // The currencies desk opens with "By hand": its triangle is three races at once and its dealer's last look is the
+  // maker's option seen from the other side, so it comes after the stage that teaches making.
+  'desk:fx': 4,
+  'block:triangle': 4,
+  'block:carry': 4,
 };
 
 /** An unknown block is held to the last stage rather than shown early. */
@@ -98,7 +103,13 @@ export function stageOf(progress: Readonly<Record<string, number>>): StageId {
  * Each desk's lessons beyond the stocks': they open with the desk, at its stage, and open no stage themselves, so
  * the stocks' path is the same with a desk as without.
  */
-export const DESK_LESSONS: Readonly<Record<string, readonly string[]>> = { futures: ['basis', 'overnight', 'lead'] };
+export const DESK_LESSONS: Readonly<Record<string, readonly string[]>> = {
+  futures: ['basis', 'overnight', 'lead'],
+  fx: ['pips', 'triangle', 'refused', 'rollover'],
+};
+
+/** What the page calls each desk, in the day's report. */
+export const DESK_NAMES: Readonly<Record<string, string>> = { stocks: 'Stocks', futures: 'Futures', fx: 'Currencies' };
 
 /** The desk a lesson belongs to, if it is a desk's. */
 export function lessonDesk(id: string): string | undefined {

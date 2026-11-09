@@ -16,8 +16,9 @@ http://localhost:5181.
   block), guess whether it will do better, the same or worse, and run the
   same morning again. The two runs sit side by side, the answer is measured
   from them, and the moments that decided it replay a hundred times slower
-  on a map of every message on the wire. Three so far: the headline, a few
-  miles, and the free option. The open week below is **Free play**.
+  on a map of every message on the wire. Five so far: the headline, a few
+  miles, the free option, the lead and last look. The open week below is
+  **Free play**.
 - **A market, not a price feed.** Twelve fictional stocks in four sectors
   and an index over them trade on three fictional exchanges, each with its
   own price-time order book fed by a crowd of background traders. Stocks
@@ -46,6 +47,12 @@ http://localhost:5181.
   is quicker, so it moves first and the stocks follow; what that lead is
   worth depends on your line to it. A contract is held on margin, settled
   in cash every night, and expires each Friday, so it has to be rolled.
+- **A currencies desk, after that.** The dollar, the euro and the yen,
+  open all week: two pairs and their cross, so going round the three can
+  pay when one pair moves and the cross is slow. A book charges a fee; a
+  dealer charges none and may refuse your fill a few milliseconds after it
+  sees it. The firm holds euros and yen and counts in dollars, and a
+  position held through five in the evening earns or pays the rollover.
 - **Eight strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day

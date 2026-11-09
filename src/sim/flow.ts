@@ -30,6 +30,8 @@ export function tick(
     f.taxes = taxes;
     f.scales = market.scales;
     f.margins = market.margins;
+    f.fx = market.fx;
+    f.rates = market.rates;
     f.batchedAt = now;
     f.step(now, market, news, open);
   }

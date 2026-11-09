@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { formatTime, type OrderStory, type Snapshot } from '../sim';
 import { exchangeColour } from './Chart';
-import { money, ms, price, shares } from './format';
+import { balance, money, ms, price, shares } from './format';
 import { Term } from './Glossary';
 import { Race } from './Race';
 
@@ -96,6 +96,7 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
         <PnlStat label="Fines" value={money(-s.finesPaid)} tone={s.finesPaid > 0 ? -1 : 0} />
         <PnlStat label="Net" value={money(net, true)} tone={net} />
       </div>
+      {s.balances.length > 0 && <Balances s={s} />}
       <h3>Positions</h3>
       {/* Room for a laptop's four positions is kept, flat or not, so nothing under it moves as they open. */}
       <div className="positions-box">
@@ -108,7 +109,7 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
                 <tr key={p.symbol}>
                   <td>{p.symbol}</td>
                   <td className={`num ${p.qty > 0 ? 'up' : 'down'}`}>{shares(p.qty)}</td>
-                  <td className="num muted">@ {price(Math.round(p.avgCost))}</td>
+                  <td className="num muted">@ {price(Math.round(p.avgCost), p.decimals)}</td>
                   <td className={`num ${p.unrealised >= 0 ? 'up' : 'down'}`}>
                     {money(Math.round(p.unrealised), true)}
                   </td>
@@ -142,22 +143,31 @@ export function FirmPanel({ s, races = true }: { s: Snapshot; races?: boolean })
       ) : (
         <>
           <ul className="orders" onMouseEnter={() => setHeld(shown)} onMouseLeave={() => setHeld(null)}>
-            {shown.orders.map((o) => (
-              <li key={o.localId} data-id={o.localId}>
-                <div className="order-line">
-                  <span className="muted num">{formatTime(o.sentAt)}</span>{' '}
-                  <span className={o.side === 'buy' ? 'bid' : 'ask'}>{o.side}</span>{' '}
-                  <span className="num">{shares(o.size)}</span> {o.symbol} on {o.exchange} at{' '}
-                  <span className="num">{price(o.price)}</span>
-                  <span className="muted">
-                    {' '}
-                    · {o.block}
-                    {o.ioc ? '' : ' · limit'}
-                  </span>
-                </div>
-                {races && <Race o={o} names={s.names} now={shown.now} />}
-              </li>
-            ))}
+            {shown.orders.map((o) => {
+              const places = s.stocks.find((x) => x.symbol === o.symbol)?.decimals;
+              return (
+                <li key={o.localId} data-id={o.localId}>
+                  <div className="order-line">
+                    <span className="muted num">{formatTime(o.sentAt)}</span>{' '}
+                    <span className={o.side === 'buy' ? 'bid' : 'ask'}>{o.side}</span>{' '}
+                    <span className="num">{shares(o.size)}</span> {o.symbol} on {o.exchange} at{' '}
+                    <span className="num">{price(o.price, places)}</span>
+                    <span className="muted">
+                      {' '}
+                      · {o.block}
+                      {o.ioc ? '' : ' · limit'}
+                    </span>
+                    {o.status === 'refused' && (
+                      <span className="down">
+                        {' '}
+                        · <Term id="last-look">refused</Term>
+                      </span>
+                    )}
+                  </div>
+                  {races && <Race o={o} names={s.names} now={shown.now} decimals={places} />}
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
@@ -170,6 +180,31 @@ function PnlStat({ label, value, tone = 0 }: { label: string; value: string; ton
     <div className="stat">
       <span className="label">{label}</span>
       <span className={`value num ${tone > 0 ? 'up' : tone < 0 ? 'down' : ''}`}>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * The firm's money in each currency besides the dollar, and what it is worth in dollars now: a row a currency, there
+ * from the moment the desk opens, so nothing under it moves as the balances change.
+ */
+export function Balances({ s }: { s: Snapshot }) {
+  return (
+    <div className="balances">
+      <h3>
+        <Term id="home-currency">Balances</Term> <span className="muted">· in dollars at the rate now</span>
+      </h3>
+      <table>
+        <tbody>
+          {s.balances.map((b) => (
+            <tr key={b.currency}>
+              <td>{b.name}</td>
+              <td className="num">{balance(b.amount, b.minor, b.currency)}</td>
+              <td className="num muted">({money(b.dollars)})</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

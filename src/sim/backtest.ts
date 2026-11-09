@@ -7,7 +7,7 @@ import { MARKET_CLOSE, MARKET_OPEN, MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, isMa
 import { TICK_MS, type Game, type SavedGame } from './game';
 import { Run, MAX_WINDOW_MS, type Measures, type Setup } from './experiment';
 import type { BlockSetting } from './firm';
-import { blockById, clampParam, paramsFrom, SCRIPT_ID } from './strategy';
+import { blockById, clampParam, paramChangeLabel, paramsFrom, SCRIPT_ID } from './strategy';
 import type { Content } from './types';
 import type { UpgradeKind, UpgradeOffer } from './upgrades';
 
@@ -127,7 +127,7 @@ export function variants(
       cand.push({
         id: `param:${b.id}:${p.key}:${dir}`,
         kind: 'param',
-        label: `${spec.name}: ${p.name} ${dir} to ${to}${p.unit ? ` ${p.unit}` : ''}`,
+        label: paramChangeLabel(spec.name, p, to, dir),
         setup: withBlock(b, { params: { ...params, [p.key]: to } }),
         about: b.id,
       });
@@ -151,7 +151,7 @@ export function variants(
     cand.push({
       id,
       kind: 'param',
-      label: `${spec.name}: ${p.name} ${dir} to ${to}${p.unit ? ` ${p.unit}` : ''}`,
+      label: paramChangeLabel(spec.name, p, to, dir as 'up' | 'down'),
       setup: withBlock(b, { params: { ...params, [p.key]: to } }),
       about: b.id,
     });

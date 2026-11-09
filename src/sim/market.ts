@@ -6,9 +6,31 @@
 
 import { MS_PER_HOUR, MS_PER_SECOND, MS_PER_YEAR, activity, isMarketOpen } from './clock';
 import { Exchange, type SavedExchange } from './exchange';
-import { STOCKS_DESK, deskOf, isDerived, listedOn, liveContracts, scaleOf } from './instrument';
+import {
+  HOME,
+  STOCKS_DESK,
+  currencyOf,
+  deskOf,
+  isCarried,
+  isCross,
+  isDerived,
+  listedOn,
+  liveContracts,
+  scaleOf,
+  type FxPair,
+  type Rate,
+} from './instrument';
 import type { Random } from './random';
-import type { ContractSeriesSpec, ExchangeSpec, FactorSpec, MarginSpec, RegimeSpec, StockSpec } from './types';
+import type {
+  ContractSeriesSpec,
+  CurrencySpec,
+  ExchangeSpec,
+  FactorSpec,
+  MarginSpec,
+  RegimeSpec,
+  RolloverSpec,
+  StockSpec,
+} from './types';
 
 /** A day with no character: every multiplier one, no drift. What the market runs on until the game says. */
 export const PLAIN_DAY: RegimeSpec = {
@@ -56,6 +78,8 @@ export interface SavedMarket {
   exchanges: Record<string, SavedExchange>;
   history: Record<string, HistoryPoint[]>;
   lastSample: number;
+  /** Each currency's last mid of its pair; absent where there is no currency but the dollar. */
+  rates?: Record<string, number>;
 }
 
 export class Market {
@@ -95,14 +119,31 @@ export class Market {
   private drifts = new Map<string, number>();
   /** Cents a price point of one held unit is worth, by symbol: one for every stock (`instrument.ts`). */
   readonly scales: Map<string, number>;
+  /**
+   * Each currency but the dollar's rate home: its pair's last mid, from that pair's first live venue, kept while the
+   * venues are shut. One entry a currency of the content. Handed to the firms each tick, as the scales are.
+   */
+  readonly rates = new Map<string, Rate>();
+  /** Each currency's interest a year, for rollover, the dollar's included. */
+  readonly yearly = new Map<string, number>();
+  /** The currency pairs, by symbol: what a fill moves, in which currencies, a lot. */
+  readonly fx = new Map<string, FxPair>();
+  /** Each cross's points per product of its legs' points. */
+  readonly crossScale = new Map<string, number>();
+  /** When the currencies roll over and what the venues keep, handed in by the game; null with no currency. */
+  rollover: RolloverSpec | null = null;
+  /** The pairs the rates are read from, with their desks. */
+  private readonly ratePairs: { currency: string; pair: string; desk: string }[] = [];
 
   constructor(
     stocks: StockSpec[],
     exchanges: ExchangeSpec[],
     factors: FactorSpec = { marketHourlyBps: 0, sectorHourlyBps: 0, ownReversionPerHour: 0.1 },
     series: readonly ContractSeriesSpec[] = [],
+    currencies: readonly CurrencySpec[] = [],
   ) {
     this.series = series;
+    this.currencyPairs(stocks, currencies);
     this.instruments = [...stocks];
     for (const s of stocks) if (s.margin) this.margins.set(s.symbol, s.margin);
     this.stockDesk = stocks.filter((s) => deskOf(s) === STOCKS_DESK);
@@ -141,13 +182,42 @@ export class Market {
     }
   }
 
-  /** The desks other than the stocks that have an instrument or a venue, in the content's order. */
+  /**
+   * The currency pairs and their rates, from the content's currencies: a lot's base in its minor units, a cross's
+   * scale from its legs', and each currency's rate from the pair that prices it, at its start.
+   */
+  private currencyPairs(stocks: readonly StockSpec[], currencies: readonly CurrencySpec[]): void {
+    if (currencies.length === 0) return;
+    const minor = (c: string) => currencies.find((x) => x.id === c)?.minor ?? 100;
+    // What a point is worth in the quote's whole units.
+    const point = (s: StockSpec) => (s.priceUnit ?? 1) / minor(currencyOf(s));
+    for (const c of currencies) this.yearly.set(c.id, c.rate);
+    for (const s of stocks) {
+      if (s.base === undefined) continue;
+      this.fx.set(s.symbol, { base: s.base, quote: currencyOf(s), units: (s.multiplier ?? 1) * minor(s.base) });
+      if (s.cross) {
+        const [a, b] = s.cross.map((leg) => stocks.find((x) => x.symbol === leg));
+        if (!a || !b) throw new Error(`The cross ${s.symbol} needs both its legs`);
+        this.crossScale.set(s.symbol, (point(a) * point(b)) / point(s));
+      }
+    }
+    for (const c of currencies) {
+      if (c.id === HOME || c.pair === undefined) continue;
+      const p = stocks.find((x) => x.symbol === c.pair);
+      const pair = p ? this.fx.get(p.symbol) : undefined;
+      if (!p || !pair) throw new Error(`No pair ${c.pair} for ${c.id}`);
+      this.rates.set(c.id, { mid: p.startPrice, perPoint: scaleOf(p) / pair.units, inverse: pair.quote === c.id });
+      this.ratePairs.push({ currency: c.id, pair: p.symbol, desk: deskOf(p) });
+    }
+  }
+
+  /** The desks other than the stocks that have a venue, a series or an instrument, in the content's order. */
   get desks(): string[] {
     const out: string[] = [];
     for (const d of [
-      ...this.instruments.map(deskOf),
-      ...this.series.map((s) => deskOf(s.contract)),
       ...this.venues.map((e) => e.desk),
+      ...this.series.map((s) => deskOf(s.contract)),
+      ...this.instruments.map(deskOf),
     ])
       if (d !== STOCKS_DESK && !out.includes(d)) out.push(d);
     return out;
@@ -200,7 +270,7 @@ export class Market {
       for (const c of wanted[i] ?? []) {
         if (this.rootOf.has(c.symbol)) continue;
         const sibling = this.live(series.root)[0];
-        const fair = isDerived(c)
+        const fair = isCarried(c)
           ? this.carried(c, now)
           : ((sibling !== undefined ? this.fair.get(sibling) : undefined) ?? c.startPrice);
         this.instruments.push(c);
@@ -234,6 +304,11 @@ export class Market {
     const spec = this.stock(symbol);
     const tick = spec.tickSize ?? this.venues.find((e) => e.lists(symbol))?.rules.tickSize ?? 1;
     return Math.round((this.fair.get(symbol) ?? spec.startPrice) / tick) * tick;
+  }
+
+  /** Where a symbol trades now: the mid on its first live venue, else its fair value. */
+  markOf(symbol: string): number {
+    return this.venuesOf(symbol)[0]?.book(symbol).mid() ?? this.fair.get(symbol) ?? this.stock(symbol).startPrice;
   }
 
   /** The live venues that list a symbol, in the content's order. */
@@ -331,8 +406,19 @@ export class Market {
       }
       e.wasOpen = isOpen;
     }
+    if (this.ratePairs.length > 0) this.refreshRates();
     if (now - this.lastSample >= HISTORY_EVERY) this.sample(now);
     return { closed, closedVenues };
+  }
+
+  /** Each currency's rate is its pair's mid on its first live venue; with no mid (the venues shut), the last one. */
+  private refreshRates(): void {
+    for (const { currency, pair, desk } of this.ratePairs) {
+      if (!this.openDesks.has(desk)) continue;
+      const mid = this.venuesOf(pair)[0]?.book(pair).mid() ?? null;
+      const rate = this.rates.get(currency);
+      if (rate && mid !== null) rate.mid = mid;
+    }
   }
 
   /** A derived instrument's fair value: its underlying's, carried to expiry. Draws nothing. */
@@ -342,19 +428,29 @@ export class Market {
     return under * (1 + (s.carry ?? 0) * years);
   }
 
-  /** Every live derived instrument follows its underlying, each tick, and meets it at expiry. */
+  /** A cross's fair value: the product of its legs', scaled to its points. Draws nothing. */
+  private crossed(s: StockSpec): number {
+    const [a, b] = s.cross!;
+    return (this.fair.get(a) ?? 0) * (this.fair.get(b) ?? 0) * (this.crossScale.get(s.symbol) ?? 1);
+  }
+
+  /**
+   * Every live derived instrument follows what it is derived from, each tick: a future its underlying, meeting it at
+   * expiry; a cross the product of its legs.
+   */
   private settleDerived(now: number): void {
     for (const s of this.stocks) {
       if (!isDerived(s)) continue;
-      const fair = this.carried(s, now);
+      const fair = isCross(s) ? this.crossed(s) : this.carried(s, now);
       this.fair.set(s.symbol, fair);
       this.anchor.set(s.symbol, fair);
     }
   }
 
   /**
-   * Another desk's fair values: each sector's factor and each instrument's own wander back to its anchor, drawn
-   * from the desk's own stream. No regime, no market factor and no jumps yet: each desk's plan adds its own.
+   * Another desk's fair values: each sector's factor, taken by each instrument at its `beta` (signed: the dollar's
+   * wander lifts one pair and lowers another), and each instrument's own wander back to its anchor, drawn from the
+   * desk's own stream, and its own jumps where it has them. No regime and no market factor: each desk's plan adds its own.
    */
   private driftDesk(desk: string, factors: Map<string, number>, dt: number, random: Random): void {
     const hours = dt / MS_PER_HOUR;
@@ -368,9 +464,12 @@ export class Market {
       if (deskOf(s) !== desk || s.constituents || isDerived(s)) continue;
       const fair = this.fair.get(s.symbol) ?? s.startPrice;
       const anchor = this.anchor.get(s.symbol) ?? s.startPrice;
-      const common = (fair * (moves.get(s.sector) ?? 0)) / 10_000;
+      const common = (fair * (s.beta ?? 1) * (moves.get(s.sector) ?? 0)) / 10_000;
       const reversion = Math.min(1, this.factorSpec.ownReversionPerHour * hours);
-      const next = fair + (anchor - fair) * reversion + s.hourlyVol * Math.sqrt(hours) * random.normal() + common;
+      let next = fair + (anchor - fair) * reversion + s.hourlyVol * Math.sqrt(hours) * random.normal() + common;
+      // Now and then a burst of orders shoves the price at once, as a stock's are, and the anchor stays: what a
+      // derived instrument's slower crowd (a cross) lags behind. An instrument without jumps draws nothing for them.
+      if (s.jumpsPerSecond > 0 && random.chance((s.jumpsPerSecond * dt) / 1000)) next += s.jumpSize * random.normal();
       this.anchor.set(s.symbol, anchor + common);
       this.fair.set(s.symbol, Math.max(1, next));
     }
@@ -448,6 +547,8 @@ export class Market {
       exchanges,
       history: Object.fromEntries(this.history),
       lastSample: this.lastSample,
+      // A market with no currency but the dollar saves as it did before currencies, to the byte.
+      ...(this.rates.size > 0 ? { rates: Object.fromEntries([...this.rates].map(([c, r]) => [c, r.mid])) } : {}),
     };
   }
 
@@ -476,5 +577,9 @@ export class Market {
         v.map((p) => ({ ...p })),
       );
     this.lastSample = saved.lastSample;
+    for (const [c, mid] of Object.entries(saved.rates ?? {})) {
+      const rate = this.rates.get(c);
+      if (rate) rate.mid = mid;
+    }
   }
 }

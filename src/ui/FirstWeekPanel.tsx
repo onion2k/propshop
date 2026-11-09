@@ -2,7 +2,17 @@
 // it has. The first open one is the current one. A stage that is not open yet is shown by its name alone, and
 // the switch opens every stage at once.
 
-import { DESK_LESSONS, LESSONS, STAGES, lessonDesk, lessonStage, shows, type Lesson, type StageId } from '../content';
+import {
+  DESK_LESSONS,
+  DESK_NAMES,
+  LESSONS,
+  STAGES,
+  lessonDesk,
+  lessonStage,
+  shows,
+  type Lesson,
+  type StageId,
+} from '../content';
 import { formatTime } from '../sim';
 import { Term } from './Glossary';
 import type { Progress, Store } from './store';
@@ -77,9 +87,9 @@ export function FirstWeekPanel({
       {Object.entries(DESK_LESSONS)
         .filter(([desk]) => shows(`desk:${desk}`, stage))
         .map(([desk, ids]) => (
-          <section key={desk} className="stage open" aria-label={`The ${desk} desk`}>
+          <section key={desk} className="stage open" aria-label={`The ${deskName(desk)} desk`}>
             <h3>
-              The {desk} desk <span className="muted small">· open alongside, and opens no stage</span>
+              The {deskName(desk)} desk <span className="muted small">· open alongside, and opens no stage</span>
             </h3>
             <ol>
               {ids.map((id) => (
@@ -96,6 +106,11 @@ export function FirstWeekPanel({
         ))}
     </div>
   );
+}
+
+/** "futures", "currencies": what the page calls a desk, as a word in a sentence. */
+function deskName(desk: string): string {
+  return (DESK_NAMES[desk] ?? desk).toLowerCase();
 }
 
 function LessonItem({

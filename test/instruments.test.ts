@@ -37,7 +37,9 @@ describe('instruments, folded in from stocks', () => {
     expect(g.competitors.map((c) => c.cash)).toEqual([200000000, 199999972, 200001148, 200002880, 200000000]);
     // The save now carries the futures desk, there and closed (its venue's books, streams and contracts), so the
     // whole game's fingerprint moved on 2026-11-08 while every figure above stayed; without the desk it is the same.
-    expect(g.fingerprint()).toBe('50fb0670');
+    // It moved again on 2026-11-09 for the currencies desk, there and closed (its venues' books and streams, its
+    // pairs' fair values and factor, the rates); without that desk it is '50fb0670', the futures desk's, still.
+    expect(g.fingerprint()).toBe('914a5ecf');
     const stocksOnly = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
     expect(busyGame(stocksOnly).fingerprint()).toBe('c08c8813');
   }, 120_000);

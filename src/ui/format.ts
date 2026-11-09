@@ -18,9 +18,33 @@ export function moneyShort(cents: number, signed = false): string {
   return money(cents, signed);
 }
 
-export function price(cents: number | null): string {
-  if (cents === null) return '—';
-  return (cents / 100).toFixed(2);
+/** A price in its points, written to the instrument's places: cents for a stock (two), pips for a pair (four or two). */
+export function price(points: number | null, decimals = 2): string {
+  if (points === null) return '—';
+  return (points / 10 ** decimals).toFixed(decimals);
+}
+
+/** What the player typed as a price, in the instrument's points: "1.0851" at four places is 10851. */
+export function pointsFrom(text: string, decimals = 2): number {
+  return Math.round(Number(text) * 10 ** decimals);
+}
+
+/** The smallest step a price box takes at so many places: 0.01, or 0.0001 for the euro in dollars. */
+export function priceStep(decimals = 2): number {
+  return 1 / 10 ** decimals;
+}
+
+/** A change of price in points, signed, to the instrument's places, rounded to a whole point first: never "-0.00". */
+export function priceDelta(points: number, decimals = 2): string {
+  const whole = Math.round(points) || 0;
+  return `${whole >= 0 ? '+' : ''}${price(whole, decimals)}`;
+}
+
+/** A balance in a currency's minor units, by its code: "EUR 1,234.56", "JPY -50,000". */
+export function balance(amount: number, minor: number, code: string): string {
+  const places = Math.max(0, Math.round(Math.log10(minor)));
+  const whole = amount / minor;
+  return `${code} ${whole.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places })}`;
 }
 
 export function centsDelta(cents: number): string {

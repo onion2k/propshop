@@ -3,7 +3,7 @@
 
 import { shows, type StageId } from '../content';
 import { answerOf, type Answer } from '../content/experiments';
-import { BLOCKS, type DayReport, type Measures, type Snapshot } from '../sim';
+import { BLOCKS, paramChangeLabel, type DayReport, type Measures, type Snapshot } from '../sim';
 import type { Change, Night, StoredMeasures } from './nights';
 
 /** The length of a full session in minutes: a payback scales the tested minutes up to it. */
@@ -363,7 +363,7 @@ export function describeChange(change: Change, s: Snapshot): string {
     return `${name} switched ${on ? 'off' : 'on'}`;
   }
   const p = spec?.params.find((x) => x.key === change.key);
-  return `${name}: ${p?.name ?? change.key} to ${change.value}${p?.unit ? ` ${p.unit}` : ''}`;
+  return p ? paramChangeLabel(name, p, change.value) : `${name}: ${change.key} to ${change.value}`;
 }
 
 const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

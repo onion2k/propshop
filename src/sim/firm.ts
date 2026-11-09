@@ -5,14 +5,28 @@
 import { MS_PER_SECOND } from './clock';
 import type { Exchange, SubmitResult } from './exchange';
 import { DelayQueue, dataLatencyTo, latencyTo, type Delayed } from './latency';
-import { NO_SCALES, isDerived, valueOf } from './instrument';
+import {
+  HOME,
+  NO_RATES,
+  STOCKS_DESK,
+  NO_SCALES,
+  deskOf,
+  inHome,
+  isCarried,
+  toHome,
+  valueOf,
+  type FxPair,
+  type Rate,
+} from './instrument';
 import type { Market } from './market';
 import type { Quote, Side, Trade } from './orderbook';
-import { EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
+import { DESK_BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
 import {
   flattenTo,
   type BeatenBy,
   type ContractView,
+  type PairView,
+  type RolloverView,
   type Fill,
   type HandIntent,
   type Intent,
@@ -26,6 +40,24 @@ import {
   TAPE_VIEW,
 } from './strategy';
 import type { Headline, Infrastructure, MarginSpec } from './types';
+
+/** The desk each desk's own block belongs to; a block not named is the stocks'. */
+const BLOCK_DESK: ReadonlyMap<string, string> = new Map(
+  Object.entries(DESK_BLOCKS).flatMap(([desk, ids]) => ids.map((id) => [id, desk] as const)),
+);
+
+/**
+ * The view with fewer symbols, everything else the same: its tape and depth stay built on first read, and are the
+ * view's own (they hold every watched symbol; a block trades only what `symbols` names).
+ */
+function narrowed(view: MarketView, symbols: readonly string[]): MarketView {
+  const out = Object.create(
+    Object.getPrototypeOf(view) as object,
+    Object.getOwnPropertyDescriptors(view),
+  ) as MarketView;
+  Object.defineProperty(out, 'symbols', { value: symbols, enumerable: true, writable: true });
+  return out;
+}
 
 /** How many fills and how many finished orders a firm remembers. */
 const FILL_LOG = 200;
@@ -47,7 +79,10 @@ export interface GapEpisode {
   /** Integer cents at first sight. */
   ask: number;
   bid: number;
-  /** Cents a share after both legs' taker fees and any tax; negative where the gap is smaller than the costs. */
+  /**
+   * After both legs' taker fees and any tax, in the instrument's points: cents a share for a stock, pips for a
+   * currency pair; negative where the gap is smaller than the costs.
+   */
   edge: number;
   firstSeen: number;
   lastSeen: number;
@@ -135,7 +170,9 @@ type Inbound =
   | { kind: 'fill'; localId: number; price: number; size: number; at: number; taker: boolean }
   | { kind: 'cancelled'; localId: number }
   | { kind: 'cancelRefused'; localId: number; reason: string }
-  | { kind: 'rejected'; localId: number; reason: string };
+  | { kind: 'rejected'; localId: number; reason: string }
+  /** A dealer looked at the order and would not fill it. */
+  | { kind: 'refused'; localId: number; reason: string };
 
 export interface RiskSettings {
   /** The day's loss, in cents, at which the firm halts until the next open. */
@@ -152,7 +189,7 @@ export interface Halt {
 /** A message on the wire, as the microscope shows it. */
 export interface Wire {
   owner: string;
-  kind: 'order' | 'cancel' | 'ack' | 'fill' | 'cancelled' | 'cancelRefused' | 'rejected';
+  kind: 'order' | 'cancel' | 'ack' | 'fill' | 'cancelled' | 'cancelRefused' | 'rejected' | 'refused';
   exchange: string;
   symbol: string;
   side: Side;
@@ -179,8 +216,12 @@ export interface SavedFirm {
   id: string;
   name: string;
   cash: number;
+  /** Each currency but the dollar, in its minor units; absent with none, as in every save from before currencies. */
+  balances?: Record<string, number>;
   positions: Record<string, Position>;
   blockPositions: Record<string, Record<string, number>>;
+  /** What each block paid on average for what it holds in a currency pair; absent with none, as before 5d. */
+  blockCosts?: Record<string, Record<string, number>>;
   realised: number;
   feesPaid: number;
   finesPaid: number;
@@ -210,11 +251,22 @@ export interface SavedFirm {
 export class Firm {
   readonly id: string;
   name: string;
-  /** Cents. */
+  /** Dollar cents: the home currency's balance. */
   cash: number;
+  /**
+   * Each other currency held, in its minor units (euro cents, yen), an integer: a currency fill moves them exactly
+   * and nothing else does but rollover. One entry at most a currency of the content.
+   */
+  readonly balances = new Map<string, number>();
   readonly positions = new Map<string, Position>();
   /** What each block has net bought, by symbol, so a block can tidy up after itself and not after another. */
   readonly blockPositions = new Map<string, Map<string, number>>();
+  /**
+   * What each block paid on average, in price points, for what it holds in a currency pair, so a block with a stop
+   * (carry) knows its entry however many fills have passed through the log since. At most one entry a block and
+   * pair; gone when the block is flat in it.
+   */
+  readonly blockCosts = new Map<string, Map<string, number>>();
   realised = 0;
   feesPaid = 0;
   finesPaid = 0;
@@ -224,6 +276,11 @@ export class Firm {
   blocks: BlockSetting[];
   /** The symbols the firm watches and its blocks see: at most what the computer allows. */
   watch: string[] = [];
+  /**
+   * The desks whose instruments the firm's blocks see, of those open; null, every one. A rival's, from its spec, so
+   * a stocks firm's arbitrage never meets the currencies. Not saved: the spec says it again.
+   */
+  desks: readonly string[] | null = null;
   risk: RiskSettings;
   halt: Halt | null = null;
   /** Equity as of the last step, for the exposure cap, which cannot reach the market from send. */
@@ -300,6 +357,10 @@ export class Firm {
   scales: ReadonlyMap<string, number> = NO_SCALES;
   /** What each margined instrument asks the firm to hold, by symbol, handed in each tick; absent, bought outright. */
   margins: ReadonlyMap<string, MarginSpec> = new Map();
+  /** The currency pairs, by symbol, handed in each tick from the market; a pair's fills move balances. */
+  fx: ReadonlyMap<string, FxPair> = new Map();
+  /** Each currency's rate home, handed in each tick from the market, as the scales are. */
+  rates: ReadonlyMap<string, Rate> = NO_RATES;
   /** A margin call is under way: told once, until the firm is flat in what is margined or back above maintenance. */
   marginCalled = false;
 
@@ -342,7 +403,10 @@ export class Firm {
       if (pos.qty === 0) continue;
       const mark = this.mark(market, symbol, now);
       if (mark === null) continue;
-      total += valueOf(market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost);
+      const value = valueOf(market.scales.get(symbol) ?? 1, pos.qty, mark - pos.avgCost);
+      // A pair's is in its quote currency: in dollars at the rate now.
+      const pair = market.fx.get(symbol);
+      total += pair && pair.quote !== HOME ? toHome(pair.quote, value, market.rates) : value;
     }
     return total;
   }
@@ -358,11 +422,15 @@ export class Firm {
     return best;
   }
 
-  /** Cash plus what the positions would fetch, cents. */
+  /**
+   * Cash, each balance in dollars, and what the other positions would fetch, cents. A currency position is its
+   * balances, already counted: it is never also counted by its mark.
+   */
   equity(market: Market, now: number): number {
     let total = this.cash;
+    for (const [currency, amount] of this.balances) total += toHome(currency, amount, market.rates);
     for (const [symbol, pos] of this.positions) {
-      if (pos.qty === 0) continue;
+      if (pos.qty === 0 || market.fx.has(symbol)) continue;
       const mark = this.mark(market, symbol, now) ?? pos.avgCost;
       // A margined position was not paid for: it is worth only what it has made or lost since its cost.
       const scale = market.scales.get(symbol) ?? 1;
@@ -418,10 +486,17 @@ export class Firm {
           order.status = 'rejected';
           order.reason = msg.reason;
           break;
+        case 'refused':
+          order.status = 'refused';
+          order.reason = msg.reason;
+          break;
       }
       if (
         order.status !== before &&
-        (order.status === 'filled' || order.status === 'cancelled' || order.status === 'rejected')
+        (order.status === 'filled' ||
+          order.status === 'cancelled' ||
+          order.status === 'rejected' ||
+          order.status === 'refused')
       ) {
         this.tickResolved.push(order);
       }
@@ -452,10 +527,20 @@ export class Firm {
     }
     this.positions.set(order.symbol, pos);
     const mine = this.blockPositions.get(order.block) ?? new Map<string, number>();
-    mine.set(order.symbol, (mine.get(order.symbol) ?? 0) + signed);
+    const had = mine.get(order.symbol) ?? 0;
+    mine.set(order.symbol, had + signed);
     this.blockPositions.set(order.block, mine);
-    // Bought outright, the value changes hands; held on margin, only the fee and what a closing fill realises.
-    if (this.margins.has(order.symbol)) this.cash += realised - fee;
+    if (this.fx.has(order.symbol)) this.costBlock(order.block, order.symbol, had, signed, price);
+    // Bought outright, the value changes hands; held on margin, only the fee and what a closing fill realises. A
+    // currency pair moves its two balances, exactly, and the fee is paid in dollars; what it realised is in its
+    // quote currency, and turned to dollars at this moment for the reports alone.
+    const pair = this.fx.get(order.symbol);
+    if (pair) {
+      this.credit(pair.base, signed * pair.units);
+      this.credit(pair.quote, -valueOf(scale, signed, price));
+      this.cash -= fee;
+      if (pair.quote !== HOME) realised = toHome(pair.quote, realised, this.rates);
+    } else if (this.margins.has(order.symbol)) this.cash += realised - fee;
     else this.cash -= valueOf(scale, signed, price) + fee;
     this.feesPaid += fee;
     // A fill that realised nothing says nought, not minus nought, which a save would lose.
@@ -478,6 +563,51 @@ export class Firm {
     this.fills.push(fill);
     this.tickFills.push(fill);
     if (this.fills.length > FILL_LOG) this.fills.splice(0, this.fills.length - FILL_LOG);
+  }
+
+  /** A block's average cost in a pair after a fill: averaged while it adds, kept while it reduces, reset past flat. */
+  private costBlock(block: string, symbol: string, had: number, signed: number, price: number): void {
+    const costs = this.blockCosts.get(block) ?? new Map<string, number>();
+    const now = had + signed;
+    if (now === 0) costs.delete(symbol);
+    else if (had === 0 || Math.sign(now) !== Math.sign(had)) costs.set(symbol, price);
+    else if (Math.sign(signed) === Math.sign(had))
+      costs.set(symbol, ((costs.get(symbol) ?? price) * Math.abs(had) + price * Math.abs(signed)) / Math.abs(now));
+    if (costs.size > 0) this.blockCosts.set(block, costs);
+    else this.blockCosts.delete(block);
+  }
+
+  /** An amount into a currency's balance: the dollar's is cash. */
+  private credit(currency: string, amount: number): void {
+    if (currency === HOME) this.cash += amount;
+    else this.balances.set(currency, (this.balances.get(currency) ?? 0) + amount);
+  }
+
+  /**
+   * Rollover: each currency position earns its base's rate and pays its quote's on its notional at the mark, less
+   * the venue's `spread` whichever way it faces, for `days` of a `basis`-day year, into the quote's balance, rounded.
+   * Draws nothing. Says what it credited, by currency in its minor units, for the day's report: nothing where no
+   * currency position was held.
+   */
+  rollover(
+    days: number,
+    markOf: (symbol: string) => number,
+    yearly: ReadonlyMap<string, number>,
+    spread: number,
+    basis = 360,
+  ): { currency: string; amount: number }[] {
+    const credited: { currency: string; amount: number }[] = [];
+    if (days === 0) return credited;
+    for (const [symbol, pos] of this.positions) {
+      const pair = this.fx.get(symbol);
+      if (!pair || pos.qty === 0) continue;
+      const notional = valueOf(this.scaleOf(symbol), pos.qty, markOf(symbol));
+      const carry = (yearly.get(pair.base) ?? 0) - (yearly.get(pair.quote) ?? 0);
+      const amount = Math.round(((notional * carry - Math.abs(notional) * spread) * days) / basis) || 0;
+      this.credit(pair.quote, amount);
+      credited.push({ currency: pair.quote, amount });
+    }
+    return credited;
   }
 
   private feeFor(exchange: string): number {
@@ -509,7 +639,9 @@ export class Firm {
 
   private view(now: number, market: Market, news: readonly Headline[], include: readonly string[] = []): MarketView {
     const quotes: Record<string, Record<string, SeenQuote>> = {};
-    const watchedNow = this.watching(market.stocks.map((s) => s.symbol));
+    const desks = this.desks;
+    const live = desks === null ? market.stocks : market.stocks.filter((s) => desks.includes(deskOf(s)));
+    const watchedNow = this.watching(live.map((s) => s.symbol));
     const symbols =
       include.length === 0 ? watchedNow : [...watchedNow, ...include.filter((s) => !watchedNow.includes(s))];
     const watched = market.stocks.filter((s) => symbols.includes(s.symbol));
@@ -574,7 +706,11 @@ export class Firm {
         const open = this.openGaps.get(s.symbol);
         if (open && open.buyOn === askOn && open.sellOn === bidOn) open.lastSeen = now;
         else {
-          const edge = bestBid - bestAsk - this.takerCost(askOn!) - this.takerCost(bidOn!);
+          // In the instrument's own points: a stock's cent, a pair's pip, the fees (dollar cents a unit) turned
+          // into points at what a point of one unit is worth at home now.
+          const pair = market.fx.get(s.symbol);
+          const perPoint = pair ? inHome(pair.quote, market.scales.get(s.symbol) ?? 1, market.rates) : 1;
+          const edge = bestBid - bestAsk - (this.takerCost(askOn!) + this.takerCost(bidOn!)) / perPoint;
           const ep: GapEpisode = {
             symbol: s.symbol,
             buyOn: askOn!,
@@ -603,20 +739,41 @@ export class Firm {
     for (const e of market.exchanges) latency[e.id] = this.latency(e.id);
     const blockPositions: Record<string, Record<string, number>> = {};
     for (const [block, bySymbol] of this.blockPositions) blockPositions[block] = Object.fromEntries(bySymbol);
+    const blockCosts: Record<string, Record<string, number>> = {};
+    for (const [block, bySymbol] of this.blockCosts) blockCosts[block] = Object.fromEntries(bySymbol);
     const sectors: Record<string, string> = {};
     const constituents: Record<string, readonly string[]> = {};
     const contracts: Record<string, ContractView> = {};
+    const pairs: Record<string, PairView> = {};
     for (const s of market.stocks) {
       sectors[s.symbol] = s.sector;
       if (s.constituents) constituents[s.symbol] = s.constituents;
-      if (isDerived(s))
+      if (isCarried(s))
         contracts[s.symbol] = {
           underlying: s.underlying!,
           expiry: s.expiry!,
           carry: s.carry!,
           multiplier: s.multiplier ?? 1,
         };
+      const pair = market.fx.get(s.symbol);
+      if (pair) {
+        const scale = market.crossScale.get(s.symbol);
+        pairs[s.symbol] = {
+          base: pair.base,
+          quote: pair.quote,
+          units: pair.units,
+          scale: market.scales.get(s.symbol) ?? 1,
+          pointValue: inHome(pair.quote, market.scales.get(s.symbol) ?? 1, market.rates),
+          venues: market.venuesOf(s.symbol).map((e) => e.id),
+          ...(s.cross && scale !== undefined ? { cross: { legs: s.cross, scale } } : {}),
+        };
+      }
     }
+    const roll = market.rollover;
+    const rollover: RolloverView | undefined =
+      roll && Object.keys(pairs).length > 0
+        ? { at: roll.at, spread: roll.spread, basis: roll.basis, rates: Object.fromEntries(market.yearly) }
+        : undefined;
     return {
       now,
       symbols,
@@ -625,6 +782,8 @@ export class Firm {
       exchanges: market.exchanges.map((e) => e.id),
       quotes,
       contracts,
+      ...(Object.keys(pairs).length > 0 ? { pairs } : {}),
+      ...(rollover ? { rollover } : {}),
       get tape() {
         return (tape ??= buildTape());
       },
@@ -636,6 +795,7 @@ export class Firm {
       mids,
       positions,
       blockPositions,
+      ...(this.blockCosts.size > 0 ? { blockCosts } : {}),
       cash: this.cash,
       openOrders: [...this.orders.values()].filter(
         (o) => o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling',
@@ -647,9 +807,36 @@ export class Firm {
 
   private decide(now: number, market: Market, news: readonly Headline[]): void {
     const view = this.view(now, market, news);
+    // A block sees the stocks and its own desk: the stocks' blocks (and the script) the stocks alone, a desk's
+    // blocks that desk and the stocks. With only the stocks in view every block sees the one view.
+    const deskOfSymbol = new Map<string, string>();
+    let others = false;
+    if (!(this.desks?.length === 1 && this.desks[0] === STOCKS_DESK)) {
+      for (const s of market.stocks) {
+        const d = deskOf(s);
+        if (d === STOCKS_DESK) continue;
+        deskOfSymbol.set(s.symbol, d);
+        others ||= view.symbols.includes(s.symbol);
+      }
+    }
+    const byDesk = new Map<string, MarketView>();
     for (const setting of this.enabledBlocks()) {
       const block = blockFor(setting);
-      for (const intent of block.decide(view, setting.params)) this.send(intent, setting.id, now, view);
+      let seen = view;
+      if (others) {
+        const desk = BLOCK_DESK.get(setting.id) ?? STOCKS_DESK;
+        seen =
+          byDesk.get(desk) ??
+          narrowed(
+            view,
+            view.symbols.filter((s) => {
+              const d = deskOfSymbol.get(s) ?? STOCKS_DESK;
+              return d === STOCKS_DESK || d === desk;
+            }),
+          );
+        byDesk.set(desk, seen);
+      }
+      for (const intent of block.decide(seen, setting.params)) this.send(intent, setting.id, now, seen);
     }
   }
 
@@ -669,19 +856,30 @@ export class Firm {
     }
   }
 
-  /** Gross notional of what is held and what is resting or in flight, cents. */
+  /**
+   * Gross notional of what is held and what is resting or in flight, cents. What is held in currencies is the gross
+   * of the balances in dollars, not the pairs' positions; a currency order counts in dollars at the rate now.
+   */
   private exposure(): number {
     let total = 0;
+    for (const [currency, amount] of this.balances) total += Math.abs(toHome(currency, amount, this.rates));
     for (const [symbol, pos] of this.positions) {
-      if (this.margins.has(symbol)) continue;
+      if (this.margins.has(symbol) || this.fx.has(symbol)) continue;
       total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), pos.avgCost);
     }
     for (const o of this.orders.values()) {
       if (this.margins.has(o.symbol)) continue;
       if (o.status === 'inflight' || o.status === 'resting')
-        total += valueOf(this.scaleOf(o.symbol), o.size - o.filled, o.price);
+        total += this.notional(o.symbol, o.size - o.filled, o.price);
     }
     return total;
+  }
+
+  /** What an order for so many units at a price is worth, in dollar cents. */
+  private notional(symbol: string, qty: number, price: number): number {
+    const value = valueOf(this.scaleOf(symbol), qty, price);
+    const pair = this.fx.get(symbol);
+    return pair && pair.quote !== HOME ? toHome(pair.quote, value, this.rates) : value;
   }
 
   /**
@@ -787,7 +985,7 @@ export class Firm {
     if (intent.kind === 'order' && !force) {
       // An order that would carry more than the leverage allows is refused here, not at the exchange.
       const reduces = Math.sign(this.position(intent.symbol)) === (intent.side === 'buy' ? -1 : 1);
-      const adds = valueOf(this.scaleOf(intent.symbol), intent.size, intent.price);
+      const adds = this.notional(intent.symbol, intent.size, intent.price);
       const margin = this.margins.get(intent.symbol);
       if (margin) {
         if (!reduces && this.marginRequired('initial') + adds * margin.initial > this.equityNow) {
@@ -1021,7 +1219,8 @@ export class Firm {
       const answer = (result: SubmitResult, arrivedAt: number) => {
         const reply = arrivedAt + this.latency(msg.exchange);
         if (result.refused) {
-          this.inbound.push({ kind: 'rejected', localId: msg.localId, reason: result.refused }, reply);
+          const kind = result.lastLook ? 'refused' : 'rejected';
+          this.inbound.push({ kind, localId: msg.localId, reason: result.refused }, reply);
           return;
         }
         const o = this.orders.get(msg.localId);
@@ -1158,8 +1357,13 @@ export class Firm {
       id: this.id,
       name: this.name,
       cash: this.cash,
+      // A firm with no other currency saves as it did before currencies, to the byte.
+      ...(this.balances.size > 0 ? { balances: Object.fromEntries(this.balances) } : {}),
       positions: Object.fromEntries(this.positions),
       blockPositions: Object.fromEntries([...this.blockPositions].map(([b, m]) => [b, Object.fromEntries(m)])),
+      ...(this.blockCosts.size > 0
+        ? { blockCosts: Object.fromEntries([...this.blockCosts].map(([b, m]) => [b, Object.fromEntries(m)])) }
+        : {}),
       realised: this.realised,
       feesPaid: this.feesPaid,
       finesPaid: this.finesPaid,
@@ -1192,8 +1396,10 @@ export class Firm {
       infra,
       s.blocks.map((b) => ({ ...b, params: { ...b.params } })),
     );
+    for (const [k, v] of Object.entries(s.balances ?? {})) f.balances.set(k, v);
     for (const [k, v] of Object.entries(s.positions)) f.positions.set(k, { ...v });
     for (const [b, m] of Object.entries(s.blockPositions)) f.blockPositions.set(b, new Map(Object.entries(m)));
+    for (const [b, m] of Object.entries(s.blockCosts ?? {})) f.blockCosts.set(b, new Map(Object.entries(m)));
     f.realised = s.realised;
     f.feesPaid = s.feesPaid;
     f.finesPaid = s.finesPaid;

@@ -481,7 +481,10 @@ export const GLOSSARY: GlossaryEntry[] = [
       'Holding the index for a week costs the interest on what you paid and earns its dividends. The difference, ' +
       'a share a year, is the carry: here 3.5%, so a contract a week out is about 3.5 cents over the index and one ' +
       'two weeks out about 7. Carry is why the next contract is always dearer than the near, and why rolling from ' +
-      'one to the other is never quite free.',
+      'one to the other is never quite free. A currency has carry too: holding one earns its interest rate and ' +
+      'owing the other costs its own, paid each night as rollover. Here the dollar pays 4.5% and the yen 0.5%, so ' +
+      'long the dollar against the yen is paid to wait. The carry trade is holding that position for the nights, ' +
+      'and the risk is that the rate moves more in an hour than the nights pay in a month.',
   },
   {
     id: 'margin',
@@ -540,6 +543,110 @@ export const GLOSSARY: GlossaryEntry[] = [
       'trade where it takes hundreds. After the market moves, the future has repriced and the index has not. A ' +
       'firm that sees the future soon enough knows where the index is going before its crowd does. The edge is ' +
       'the time between them, so it is bought with a rack at the futures venue and the fastest line to the stocks.',
+  },
+  {
+    id: 'currency-pair',
+    term: 'Currency pair',
+    short: 'One currency priced in another: EUR/USD is the euro in dollars.',
+    long:
+      'A currency has no price of its own, only a price in another. EUR/USD at 1.0850 says a euro costs a dollar ' +
+      'and eight and a half cents; USD/JPY at 150.00 says a dollar costs a hundred and fifty yen. Buying a pair ' +
+      'buys the first currency and pays with the second, so a position in it is two balances, one up and one ' +
+      'down. Here there are two pairs that move with the dollar, in opposite directions, and the cross between ' +
+      'them, all traded in Eastholm, east of the stocks.',
+  },
+  {
+    id: 'base-quote',
+    term: 'Base and quote currency',
+    short: 'The first currency of a pair is what you buy; the second is what its price is counted in.',
+    long:
+      'In EUR/USD the euro is the base and the dollar the quote: the price is dollars for one euro. Buy a lot and ' +
+      'your euro balance goes up by a thousand euros and your dollars down by the price. In USD/JPY the dollar is ' +
+      'the base, so buying it spends yen. What a position makes or loses is counted in the quote currency first, ' +
+      'yen for the yen pairs, and the game turns it into dollars at the rate now.',
+  },
+  {
+    id: 'pip',
+    term: 'Pip',
+    short: 'The smallest step a currency price usually moves: 0.0001 for the euro in dollars, 0.01 for the yen.',
+    long:
+      'A pair is quoted to more places than a stock because its moves are small: EUR/USD moves about half a ' +
+      'percent on a day, some fifty pips. A pip is the fourth place, 0.0001 of a dollar, for most pairs, and the ' +
+      'second, 0.01 of a yen, for the yen pairs, since a yen is worth so little. Here a price point is a pip: ' +
+      'a spread of one pip on a lot of EUR/USD is ten cents.',
+  },
+  {
+    id: 'lot',
+    term: 'Lot',
+    short: 'The unit a currency trades in: here a thousand of the base currency.',
+    long:
+      'Nobody trades one euro. Currencies trade in lots, and a lot here is a thousand of the first currency of ' +
+      'the pair: a thousand euros, or a thousand dollars against the yen. A pip on a lot is ten cents for ' +
+      'EUR/USD and ten yen for the yen pairs, about seven cents. The real market’s standard lot is a hundred ' +
+      'times that; the game keeps the sums small enough to read.',
+  },
+  {
+    id: 'cross-rate',
+    term: 'Cross rate',
+    short: 'A pair worked out from two others through a third currency: EUR/JPY from EUR/USD and USD/JPY.',
+    long:
+      'If a euro is 1.0850 dollars and a dollar is 150.00 yen, a euro must be 162.75 yen: the euro in yen is the ' +
+      'product of the other two. EUR/JPY trades on its own book, with its own crowd, but its fair value is that ' +
+      'product and nothing else. Here its crowd is slower than the two pairs’, so when the dollar moves the cross ' +
+      'is left behind for a moment.',
+  },
+  {
+    id: 'triangular-arbitrage',
+    term: 'Triangular arbitrage',
+    short: 'Trading a cross against its two legs when they disagree, three orders at once.',
+    long:
+      'When EUR/JPY is dearer than EUR/USD times USD/JPY, sell the cross and buy the two legs; when it is cheaper, ' +
+      'the other way. Done in full, the euros, dollars and yen bought and sold cancel and what is left is the gap, ' +
+      'less three fees and three spreads. It is three races, not one: lose one leg and the firm holds a currency ' +
+      'it did not mean to, and must trade it back at whatever the price has become. The gap lasts milliseconds, ' +
+      'so it belongs to whoever is nearest.',
+  },
+  {
+    id: 'dealer',
+    term: 'Dealer',
+    short: 'A bank that quotes its own prices to trade with, instead of a book of everyone’s orders.',
+    long:
+      'Much of the currency market is not an exchange: a dealer shows a bid and an ask and trades with you itself. ' +
+      'Here the Ashford Bank dealing desk charges no fee, since its spread is its fee, and it takes a look at ' +
+      'each order before it fills it. Its price moves with the market like a book’s, but it does not have to ' +
+      'keep its word.',
+  },
+  {
+    id: 'last-look',
+    term: 'Last look',
+    short: 'A dealer’s right to see your order and refuse it if the price has moved against it since.',
+    long:
+      'The dealer holds an order that would take its price for a few milliseconds, 5 here, then fills it only if ' +
+      'its own idea of the price has not moved more than half a pip past the order. If it has, the order comes ' +
+      'back refused. So a dealer can quote tight, because it is never picked off by a faster firm: it is a market ' +
+      'maker’s free option, seen from the other side. A firm that trades on news the dealer has not heard is the ' +
+      'one refused most.',
+  },
+  {
+    id: 'rollover',
+    term: 'Rollover',
+    short: 'The nightly interest on a currency position: earned on the one held, paid on the one owed.',
+    long:
+      'A currency position is moved on to the next day at 17:00 each weekday. It earns a day of the interest rate ' +
+      'of the currency it holds and pays a day of the rate of the one it owes, on a year of 360 days, less half a ' +
+      'percent a year the venue keeps either way. Wednesday pays three days, for the weekend. Here the dollar pays ' +
+      '4.5%, the euro 3% and the yen 0.5%: a night on a lot is a few cents, and it is paid into the currency the ' +
+      'pair is priced in.',
+  },
+  {
+    id: 'home-currency',
+    term: 'Home currency',
+    short: 'The currency the firm counts in: the dollar. Every other balance is turned into it at the rate now.',
+    long:
+      'The firm’s cash is in dollars and its results are in dollars. A balance in euros or yen is still money, ' +
+      'but what it is worth moves with the rate: hold a hundred thousand yen and do nothing, and its dollar value ' +
+      'goes up and down all day. The equity, the loss limit and the exposure cap all count the balances in ' +
+      'dollars at the mid of the pair that prices them, so a currency held is a position, traded or not.',
   },
 ];
 

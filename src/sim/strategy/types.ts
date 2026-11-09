@@ -14,6 +14,11 @@ export interface ParamSpec {
   default: number;
   unit: string;
   explain: string;
+  /**
+   * Names for its values, from `min` by `step`, where it is a choice rather than an amount: the panel offers these
+   * instead of a slider. The value is still the number.
+   */
+  choices?: readonly string[];
 }
 
 export interface BlockSpec {
@@ -53,7 +58,8 @@ export interface OpenOrder {
   ioc: boolean;
   postOnly?: boolean;
   display?: number;
-  status: 'inflight' | 'resting' | 'cancelling' | 'filled' | 'cancelled' | 'rejected';
+  /** `refused`: a dealer looked at it and would not fill it. */
+  status: 'inflight' | 'resting' | 'cancelling' | 'filled' | 'cancelled' | 'rejected' | 'refused';
   block: string;
   sentAt: number;
   /** When the exchange published the quote this order was priced from; null when the firm had no quote. */
@@ -145,6 +151,11 @@ export interface MarketView {
   positions: Readonly<Record<string, number>>;
   /** blockPositions[block][symbol]: what each block has net bought, so it can undo its own doing. */
   blockPositions: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /**
+   * blockCosts[block][symbol]: what a block paid on average, in price points, for what it holds in a currency pair.
+   * Absent where no block holds a pair.
+   */
+  blockCosts?: Readonly<Record<string, Readonly<Record<string, number>>>>;
   cash: number;
   openOrders: readonly OpenOrder[];
   recentFills: readonly Fill[];
@@ -152,6 +163,47 @@ export interface MarketView {
   news: readonly Headline[];
   /** Each listed contract priced from an underlying: what it is on, when it expires, its carry and multiplier. */
   contracts?: Readonly<Record<string, ContractView>>;
+  /** Each live currency pair: what a lot buys, what it is priced in, where it trades, and a cross's legs. */
+  pairs?: Readonly<Record<string, PairView>>;
+  /** What a currency position earns or pays each night, from the content's rates; absent with no pair live. */
+  rollover?: RolloverView;
+}
+
+/** A currency pair as a block sees it. */
+export interface PairView {
+  base: string;
+  quote: string;
+  /** Minor units of the base in one lot. */
+  units: number;
+  /** Minor units of the quote a price point of one lot is worth: ten cents for EUR/USD, ten yen for USD/JPY. */
+  scale: number;
+  /** Dollar cents a price point of one lot is worth, at the rate now: a pip of a lot, at home. Unrounded. */
+  pointValue: number;
+  /** The live venues that list it, in the content's order. */
+  venues: readonly string[];
+  /** A cross: the two pairs it is the product of, and its points per product of their points. */
+  cross?: { legs: readonly [string, string]; scale: number };
+}
+
+/** Rollover as a block sees it: when it runs, each currency's rate a year, and what the venue keeps of it. */
+export interface RolloverView {
+  /** Ms past midnight, each weekday. */
+  at: number;
+  /** A share a year the venue keeps whichever way a position faces. */
+  spread: number;
+  /** Days in the year the rates are counted on. */
+  basis: number;
+  /** Each currency's interest a year, a share, the dollar's included. */
+  rates: Readonly<Record<string, number>>;
+}
+
+/** What holding a pair earns a year from rollover, a share of its notional: long if `side` is buy, short if sell. */
+export function rolloverYield(view: MarketView, symbol: string, side: Side): number | null {
+  const pair = view.pairs?.[symbol];
+  const r = view.rollover;
+  if (!pair || !r) return null;
+  const carry = (r.rates[pair.base] ?? 0) - (r.rates[pair.quote] ?? 0);
+  return (side === 'buy' ? carry : -carry) - r.spread;
 }
 
 /** A listed contract as a block sees it. */
@@ -306,6 +358,21 @@ export function paramsFrom(spec: BlockSpec, given: Partial<Params> = {}): Params
   const out: Params = {};
   for (const p of spec.params) out[p.key] = clampParam(p, given[p.key] ?? p.default);
   return out;
+}
+
+/** A parameter's value as the player reads it: a choice's name, else the number and its unit. */
+export function paramText(p: ParamSpec, value: number): string {
+  if (p.choices) {
+    const name = p.choices[Math.round((value - p.min) / p.step)];
+    if (name !== undefined) return name;
+  }
+  return `${value}${p.unit ? ` ${p.unit}` : ''}`;
+}
+
+/** "Momentum: Lookback up to 12 s", or for a choice, which has no up or down, "Triangular arbitrage: Venue to the dealer". */
+export function paramChangeLabel(blockName: string, p: ParamSpec, value: number, dir?: 'up' | 'down'): string {
+  const way = dir && !p.choices ? `${dir} ` : '';
+  return `${blockName}: ${p.name} ${way}to ${paramText(p, value)}`;
 }
 
 export function clampParam(p: ParamSpec, value: number): number {

@@ -218,6 +218,19 @@ export const COMPETITORS: CompetitorSpec[] = [
     desk: 'futures',
     blocks: [{ id: 'leadLag', params: { threshold: 0.5, shares: 3000 } }],
   },
+  {
+    // The currencies desk's rival, there once the desk opens: a rack in Eastholm, closing triangles on the book.
+    // It watches the currencies alone. The firm the player races for the cross.
+    id: 'kestrel',
+    name: 'Kestrel Currency',
+    location: 'colo-eastholm',
+    network: 'fibre',
+    computer: 'rack',
+    minEdge: 0,
+    desk: 'fx',
+    watches: ['fx'],
+    blocks: [{ id: 'triangle', params: { threshold: 1, lots: 20, venue: 0 } }],
+  },
 ];
 
 export const STARTING_CASH = 200 * K;

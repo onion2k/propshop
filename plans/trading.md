@@ -1,7 +1,8 @@
 # From a high-frequency sim to a trading sim
 
-State: parts 1 to 4 built 2026-11-08; the futures desk's lead check unmet, by Chris's choice (part 4). Next: Chris
-plays the futures desk; the currencies desk's plan, `plans/desk-fx.md`, is agreed and waits to be built on `sonnet`.
+State: parts 1 to 5 built, 1 to 4 on 2026-11-08 and 5 on 2026-11-09; the futures desk's lead check unmet, by
+Chris's choice (part 4). Next: Chris plays the currencies desk and says whether its pairs keep their jumps; then
+part 5½, the step rate with desks open, before the metals desk.
 
 ## Context
 
@@ -225,8 +226,15 @@ its own. Part 1 must change nothing a player sees.
       the PACE harness says the lead is worth the microwave. The second is not met: a rack and microwave beat home
       by about 780 a day against microwave's 120,000, and Chris chose to leave the stocks' books as they are
       (2026-11-08). "The roll" is dropped as an experiment; its block and lesson teach it.
-- [ ] **5. Currencies desk** (`plans/desk-fx.md`, specified 2026-11-09): balances by currency, a dealer with last
-      look, the desk at stage 4. Check: the desk's plan's own.
+- [x] **5. Currencies desk** (`plans/desk-fx.md`, specified and built 2026-11-09, on Opus): balances by currency,
+      a dealer with last look, the desk at stage 4. Check: the desk's plan's own, met but the floor with the desk
+      open (part 5½). From the Eastholm rack the triangle earns about 1,070 a day on the book and 470 with the
+      dealer, from home nothing; the dealer refuses 14% of the rack's orders and none from home. The pairs jump
+      now and then to get there, which the plan did not say: Chris to keep or drop.
+- [ ] **5½. The step rate with desks open** (`plans/desk-speed.md`, before the metals desk): found 2026-11-09, the
+      futures desk open runs at about 65,000 ticks a second, the currencies about 55,000, both about 46,000,
+      against the floor of 75,000 with none open (figures and profile in `docs/measured.md`). Chris chose to finish
+      the currencies desk first. Check: the floor with every built desk open, and a gate that opens them.
 - [ ] **6. Metals desk** (`plans/desk-metals.md`).
 - [ ] **7. Options desk** (`plans/desk-options.md`).
 - [ ] **8. The firm across desks** (`plans/firm-desks.md`).
