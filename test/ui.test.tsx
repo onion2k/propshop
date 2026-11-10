@@ -3125,3 +3125,94 @@ describe('Options', () => {
     }, 120_000);
   });
 });
+
+describe('the rough fast-forward, on the page', () => {
+  const quietStore = () => {
+    const store = createStore(CONTENT, null, 71);
+    store.setTutorial({ state: 'done' });
+    store.setReveal(true);
+    store.game.news.scheduled = [];
+    return store;
+  };
+
+  it('has a glossary entry, fast-forward, and the bar links it', () => {
+    expect(glossary('fast-forward')?.term).toBe('Fast-forward');
+    const store = quietStore();
+    act(() => store.game.setSpeed(300));
+    act(() => {
+      while (store.game.now < MARKET_OPEN + 11 * 3_600_000)
+        store.game.step(Math.min(60_000, MARKET_OPEN + 11 * 3_600_000 - store.game.now));
+      store.publish();
+    });
+    render(<App store={store} />);
+    expect(screen.getByTestId('stride')).toHaveTextContent('fast-forward');
+    expect(within(screen.getByTestId('stride')).getByRole('button', { name: 'fast-forward' })).toBeInTheDocument();
+  });
+
+  it('keeps its room: empty off the top speed, rough in the quiet, exact in a window', () => {
+    const store = quietStore();
+    render(<App store={store} />);
+    const slot = screen.getByTestId('stride');
+    expect(slot.textContent.trim()).toBe('');
+    act(() => {
+      while (store.game.now < MARKET_OPEN + 3_600_000)
+        store.game.step(Math.min(60_000, MARKET_OPEN + 3_600_000 - store.game.now));
+      store.setSpeed(300);
+    });
+    expect(screen.getByTestId('stride')).toBe(slot);
+    expect(slot).toHaveTextContent('fast-forward');
+    act(() => {
+      // Two seconds before the close: the lead.
+      while (store.game.now < 16 * 3_600_000 - 2000)
+        store.game.step(Math.min(60_000, 16 * 3_600_000 - 2000 - store.game.now));
+      store.publish();
+    });
+    expect(slot).toHaveTextContent('live');
+    act(() => store.setSpeed(60));
+    expect(slot.textContent.trim()).toBe('');
+  });
+
+  it('the day report says what share of the session ran rough, and only when some did', () => {
+    const store = quietStore();
+    const day = (extra: object) => ({
+      day: 0,
+      weekday: 'Mon' as const,
+      week: 1,
+      pnl: 0,
+      equityAtClose: 0,
+      byBlock: {},
+      bySymbol: {},
+      races: { won: 0, beaten: 0, missed: 0 },
+      fees: 0,
+      fines: 0,
+      headlines: [],
+      latency: {},
+      rivals: [],
+      ...extra,
+    });
+    act(() => {
+      store.game.days.push(day({ roughMs: 11_700_000 }));
+      store.game.version++;
+      store.publish();
+    });
+    const { unmount } = render(<App store={store} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Reports/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+    const line = document.querySelector('.rough-share')!;
+    expect(line.textContent).toMatch(/50% of this session was fast-forwarded with the blocks asleep/);
+    expect(line.textContent).toMatch(/night's tests replay the day exactly/);
+    expect(within(line as HTMLElement).getByRole('button', { name: 'Fast-forward' })).toBeInTheDocument();
+    unmount();
+    cleanup();
+    const exact = quietStore();
+    act(() => {
+      exact.game.days.push(day({}));
+      exact.game.version++;
+      exact.publish();
+    });
+    render(<App store={exact} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Reports/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+    expect(document.querySelector('.rough-share')).toBeNull();
+  });
+});

@@ -2,7 +2,7 @@
 // store running by it.
 import { CONTENT } from '../src/content';
 import { METALS_DESK } from '../src/content/metals';
-import { Game, MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, MS_PER_SECOND, TICK_MS, type NextMoment } from '../src/sim';
+import { Game, MS_PER_DAY, MS_PER_HOUR, MS_PER_SECOND, TICK_MS, type NextMoment } from '../src/sim';
 import { MARKET_CLOSE, MARKET_OPEN } from '../src/sim/clock';
 import type { JobEvent, NightJob } from '../src/nightjob';
 import type { NightRunner } from '../src/ui/nights';
@@ -279,7 +279,9 @@ describe('the store in watch mode', () => {
 
   it('runs closed hours fast to the open’s lead, and the open is watched at 1×', () => {
     const { store } = watchStore();
-    jump(store, at(1, 9 * H + 20 * MS_PER_MINUTE));
+    // Three and a half hours of closed time: a pump at the top speed is rough now (plans/rough-speed.md), a wall
+    // second covering 300 s of it, where it was held to 30 s by the tick cap.
+    jump(store, at(1, 6 * H));
     store.setWatching(true);
     store.pump(0);
     const open = at(1, MARKET_OPEN);

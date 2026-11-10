@@ -10,10 +10,13 @@ import {
   MAX_DAY_PINS,
   MAX_TICKS_PER_ADVANCE,
   MS_PER_DAY,
+  StrideTracker,
   TICK_MS,
+  fineWindow,
   isMarketOpen,
   nextOpen,
   pinTimes,
+  strideAt,
   variants as makeVariants,
   type DayReport,
   type NextMoment,
@@ -124,6 +127,11 @@ export interface Store {
   getWatching: () => boolean;
   /** One object per change, for `useSyncExternalStore`. */
   getWatchState: () => WatchState;
+  /**
+   * At the top speed, how the sim is stepping now: `rough` (`ROUGH_MS` a step, through the quiet) or `exact` (every
+   * 2 ms, in a window around a moment or after a headline); null at any other speed, which is always exact.
+   */
+  getStride: () => 'rough' | 'exact' | null;
   skipToOpen: () => void;
   /** The nights' tests: one object per change, for `useSyncExternalStore`. */
   getTests: () => Tests;
@@ -230,9 +238,14 @@ export function createStore(
   let lastLabel: string | null = null;
   let watchNext: NextMoment | null = null;
   let watchSpeedNow = 0;
+  // The rough fast-forward: at the top speed the quiet is stepped `ROUGH_MS` at a time (src/sim/stride.ts).
+  let tracker = new StrideTracker(game);
+  let strideState: 'rough' | 'exact' | null = null;
   const watchOn = () => watching && game.speed === WATCH_SPEED;
   /** Read what the log already holds, and hear headlines as they land. */
   const attachWatch = () => {
+    tracker = new StrideTracker(game);
+    strideState = null;
     lastMoment = null;
     lastHeadline = null;
     lastLabel = null;
@@ -513,6 +526,45 @@ export function createStore(
     takePins();
     return done;
   };
+  /**
+   * The rough fast-forward: run `wantedMs` of simulated time (within the deadline if there is one) by `strideAt`, a
+   * step of `ROUGH_MS` through the quiet and ticks inside a window, stopping where a pin is due and pinning it. A step
+   * is counted against `MAX_TICKS_PER_ADVANCE` and the budget as a tick is, so a frame buys a rough step's worth of
+   * time for the cost of one step. With `holdSpeed` (watch mode) it returns where the watch speed changes. Returns the
+   * simulated time run.
+   */
+  const runRough = (wantedMs: number, deadline?: number, holdSpeed?: number): number => {
+    const from = game.now;
+    let steps = 0;
+    while (game.now - from < wantedMs && steps < MAX_TICKS_PER_ADVANCE) {
+      ensureSchedule();
+      takePins();
+      if (holdSpeed !== undefined && decide().speed !== holdSpeed) break;
+      const left = wantedMs - (game.now - from);
+      const view = tracker.view(game);
+      let dt = strideAt(view);
+      let n = 1;
+      if (dt === TICK_MS) {
+        // Exact: ticks to the end of the window, a chunk at a time so the view is read again as it moves on.
+        const w = fineWindow(view.now, view.nextAt, view.lastMoment, view.lastHeadline, view.lastAction, view.lead);
+        n = Math.min(CHUNK, Math.ceil(left / TICK_MS), Math.max(1, Math.ceil((w.until - game.now) / TICK_MS)));
+      } else dt = Math.min(dt, left);
+      const due = pending();
+      if (due && due.at > game.now) {
+        const cut = due.at - game.now;
+        if (dt === TICK_MS) n = Math.min(n, Math.max(1, Math.ceil(cut / TICK_MS)));
+        else dt = Math.max(TICK_MS, Math.min(dt, cut));
+      }
+      if (dt === TICK_MS) game.stepTicks(n);
+      else game.step(dt);
+      steps += n;
+      checkClose();
+      if (deadline !== undefined && clock!() >= deadline) break;
+    }
+    ensureSchedule();
+    takePins();
+    return game.now - from;
+  };
   // A page loaded into an open day has lost that day's earlier pins; it says so at the close.
   ensureSchedule(true);
 
@@ -550,9 +602,19 @@ export function createStore(
     for (const l of listeners) l();
   };
 
+  /** How the sim is stepping at the top speed, for the bar: a new value only when it changed. */
+  const refreshStride = () => {
+    const next: 'rough' | 'exact' | null =
+      game.speed === WATCH_SPEED ? (strideAt(tracker.view(game)) === TICK_MS ? 'exact' : 'rough') : null;
+    if (next === strideState) return;
+    strideState = next;
+    for (const l of listeners) l();
+  };
+
   const publish = () => {
     openDesks();
     refreshWatch();
+    refreshStride();
     if (game.version === publishedVersion) return;
     // A step the page took itself (a test, a jump) is seen here: the open's pin and the close's night.
     ensureSchedule();
@@ -644,20 +706,25 @@ export function createStore(
         const deadline = frameStart === undefined ? undefined : frameStart + BUDGET_MS;
         if (watchOn()) {
           // Watch mode: the wall time is spent in segments, each at the speed it is worth there, so the sim lands on
-          // a lead rather than overshooting it. What a segment asks and does is counted in ticks, for the bar.
+          // a lead rather than overshooting it. What a segment asks and does is counted in simulated ms, for the bar.
+          // The fast segments are rough where the stride says so; the slow ones are ticks.
           let wall = dt;
           let asked = 0;
           let did = 0;
           let at = WATCH_SPEED as number;
-          for (let guard = 0; wall > 0 && asked < MAX_TICKS_PER_ADVANCE && guard < 64; guard++) {
+          for (let guard = 0; wall > 0 && guard < 64; guard++) {
             const d = decide();
             at = d.speed;
-            const wanted = Math.min(MAX_TICKS_PER_ADVANCE - asked, Math.floor((wall * d.speed) / TICK_MS));
+            const fast = d.speed === WATCH_SPEED;
+            const ms = Math.floor((wall * d.speed) / TICK_MS) * TICK_MS;
+            const wanted = fast ? ms : Math.min(MAX_TICKS_PER_ADVANCE * TICK_MS - asked, ms);
             if (wanted <= 0) break;
-            const done = runTicks(wanted, deadline, d.speed);
+            const done = fast
+              ? runRough(wanted, deadline, d.speed)
+              : runTicks(wanted / TICK_MS, deadline, d.speed) * TICK_MS;
             did += done;
             asked += wanted;
-            wall -= (done * TICK_MS) / d.speed;
+            wall -= done / d.speed;
             if (deadline !== undefined && clock!() >= deadline) break;
             if (done === 0 && decide().speed === d.speed) break;
           }
@@ -666,6 +733,11 @@ export function createStore(
           if (watchSpeedNow !== at) running = at * share;
           watchSpeedNow = at;
           running += (at * share - running) * Math.min(1, dt / 500);
+        } else if (game.speed === WATCH_SPEED) {
+          // The top speed: rough through the quiet. What was asked and not run is dropped, not owed.
+          const done = runRough(Math.floor((dt * game.speed) / TICK_MS) * TICK_MS, deadline);
+          const reached = dt > 0 ? done / dt : running;
+          running += (reached - running) * Math.min(1, dt / 500);
         } else {
           const wanted = Math.min(MAX_TICKS_PER_ADVANCE, Math.floor((dt * game.speed) / TICK_MS));
           const done = runTicks(wanted, deadline);
@@ -682,6 +754,7 @@ export function createStore(
         });
       }
       lastPump = wallNow;
+      refreshStride();
       if (wallNow - lastPublish >= PUBLISH_EVERY) {
         lastPublish = wallNow;
         publish();
@@ -783,15 +856,22 @@ export function createStore(
     },
     getWatching: watchOn,
     getWatchState: () => watchState,
+    getStride: () => strideState,
     skipToOpen: act(() => game.skipToOpen()),
-    setBlock: act((id, change) => game.setBlock(id, change)),
+    setBlock: act((id, change) => {
+      tracker.acted(game.now);
+      return game.setBlock(id, change);
+    }),
     buyUpgrade: act((kind, id) => game.buyUpgrade(kind, id)),
     buyTip: act((id) => game.buyTip(id)),
     setRisk: act((change) => game.setRisk(change)),
     setWatch: act((symbol, on) => game.setWatch(symbol, on)),
     setWatchList: act((symbols) => game.setWatchList(symbols)),
     setRules: act((exchange, change) => game.setRules(exchange, change)),
-    hand: act((intent) => game.hand(intent)),
+    hand: act((intent) => {
+      tracker.acted(game.now);
+      return game.hand(intent);
+    }),
     stepTicks: act((n) => void runTicks(n)),
   };
   return store;

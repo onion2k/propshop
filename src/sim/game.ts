@@ -2,6 +2,7 @@
 // competitors, steps them together, and answers the UI's questions. Nothing in here draws anything.
 
 import {
+  MARKET_CLOSE,
   MARKET_OPEN,
   MS_PER_DAY,
   MS_PER_MINUTE,
@@ -12,6 +13,8 @@ import {
   nextOpen,
   type Calendar,
 } from './clock';
+import { nextCloseIn, nextOpenIn } from './session';
+import { ROUGH_MS, TICK_MS, isRough } from './tick';
 import { DarkWeb, HEAT_FINE_LINE, type Fine, type SavedDarkWeb, type Tip } from './darkweb';
 import {
   DELIVERY_BLOCK,
@@ -68,9 +71,7 @@ import type { Setup } from './experiment';
 import { buyUpgrade, catalogue, infrastructureFrom, rentOf, type UpgradeKind, type UpgradeOffer } from './upgrades';
 import { DEFAULT_RULES, type Content, type ExchangeRules, type InstrumentSpec, type RegimeSpec } from './types';
 
-/** One tick of simulated time, in ms. A colocated firm is within a tick of its exchange; a home office is twenty
-    away; a trading day is nearly twelve million. */
-export const TICK_MS = 2;
+export { ROUGH_MS, TICK_MS };
 /** Speeds the player may pick: simulated ms per wall ms. */
 export const SPEEDS = [0, 1, 10, 60, 300] as const;
 export type Speed = (typeof SPEEDS)[number];
@@ -221,6 +222,11 @@ export interface DayReport {
   rent?: number;
   /** The options held to the close and settled in cash, where there were any; counted in `pnl` and in By desk. */
   expired?: Expired[];
+  /**
+   * Ms of the session the game stepped `ROUGH_MS` at a time (the rough fast-forward); absent where none was, so a
+   * day played at 60× or less, and every report from before it, has none.
+   */
+  roughMs?: number;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -289,6 +295,8 @@ interface Today {
   byDesk?: Record<string, Tally>;
   /** The firm's options settled at today's close, `MAX_EXPIRED` at most; absent until one is. */
   expired?: Expired[];
+  /** Ms of today's session stepped in rough steps; absent until one is. */
+  roughMs?: number;
 }
 
 function median(xs: readonly number[]): number {
@@ -712,6 +720,8 @@ export class Game {
     }
     const open = isMarketOpen(this.now);
     if (open && !this.wasOpen) this.onOpen();
+    // A step longer than a tick, and no longer than the rough one, in the session: part of the day that ran rough.
+    if (open && isRough(dt)) this.today.roughMs = (this.today.roughMs ?? 0) + dt;
     if (open && this.now % MS_PER_MINUTE === 0) this.record();
     if (open && !this.firm.halt && this.now % LOSS_CHECK_EVERY === 0) this.checkLoss();
     if (!open && this.wasOpen) this.onClose();
@@ -1066,6 +1076,7 @@ export class Game {
       ...(this.today.byDesk ? { byDesk: this.byDesk() } : {}),
       ...(rent > 0 ? { rent } : {}),
       ...(this.today.expired ? { expired: this.today.expired.map((x) => ({ ...x })) } : {}),
+      ...(this.today.roughMs ? { roughMs: this.today.roughMs } : {}),
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -1161,6 +1172,101 @@ export class Game {
       if (isMarketWide(h) && h.at > now && h.at < best.at && this.market.exchanges.some((e) => e.isOpen(h.at)))
         best = { at: h.at, kind: 'release', label: CALENDAR_LABEL };
     return best;
+  }
+
+  /**
+   * The last public time at or before now, of the same kinds `nextMoment` looks ahead to: the stocks' open or close, a
+   * fix of an open desk's venue, a contract's expiry, a market-wide release that a venue was open for. Worked out from
+   * the clock, the listing and the feeds alone, so it does not depend on what anyone was watching: a page that begins
+   * the top speed just after a fix knows to stay exact for the tail. Null if there is none. Draws nothing.
+   */
+  lastMomentAt(): number | null {
+    const now = this.now;
+    let best = -Infinity;
+    const day0 = Math.floor(now / MS_PER_DAY);
+    for (let day = day0; day >= day0 - 4; day--) {
+      if (!isWeekday(day)) continue;
+      for (const t of [day * MS_PER_DAY + MARKET_OPEN, day * MS_PER_DAY + MARKET_CLOSE])
+        if (t <= now && t > best) best = t;
+    }
+    for (const e of this.market.exchanges) {
+      for (const a of e.spec.auctions ?? []) {
+        for (let day = day0; day >= day0 - FIX_LOOK_DAYS; day--) {
+          const at = day * MS_PER_DAY + a.at;
+          if (at <= now && isWeekday(day) && e.isOpen(at)) {
+            if (at > best) best = at;
+            break;
+          }
+        }
+      }
+    }
+    for (const series of this.content.series ?? []) {
+      if (!this.market.isDeskOpen(series.contract.desk ?? STOCKS_DESK)) continue;
+      for (let k = Math.floor((now - series.expiresAt) / series.period); k >= 0; k--) {
+        if (series.weekdays && k % 7 >= 5) continue;
+        const t = k * series.period + series.expiresAt;
+        if (t <= now && t > best) best = t;
+        break;
+      }
+    }
+    const feed = this.news.published;
+    for (let i = feed.length - 1; i >= 0; i--) {
+      const h = feed[i]!;
+      if (h.at <= best) break;
+      if (isMarketWide(h) && h.at <= now && this.market.exchanges.some((e) => e.isOpen(h.at))) {
+        best = h.at;
+        break;
+      }
+    }
+    return best === -Infinity ? null : best;
+  }
+
+  /**
+   * How long before a moment its lead is, for the rough fast-forward: a fix's whole call (`callMs`) is exact, and
+   * every other moment's lead is the watch lead. `at` is the moment's time.
+   */
+  leadOf(at: number, fallback: number): number {
+    const tod = at - Math.floor(at / MS_PER_DAY) * MS_PER_DAY;
+    let lead = fallback;
+    for (const e of this.market.exchanges)
+      for (const a of e.spec.auctions ?? []) if (a.at === tod) lead = Math.max(lead, a.callMs);
+    return lead;
+  }
+
+  /**
+   * The next time the rough fast-forward must land on, strictly after now: the soonest scheduled headline (the
+   * company's, a sector's, a market release and an open desk's own), and the next open and close of the stocks and of
+   * every venue with hours of its own. It reads the schedule and the clock, draws nothing and changes nothing; null
+   * if there is nothing (never, in practice).
+   */
+  nextLanding(): number | null {
+    const now = this.now;
+    let best = Infinity;
+    const first = this.news.scheduled[0];
+    if (first && first.at < best) best = first.at;
+    for (const n of this.deskNews) {
+      if (!this.market.isDeskOpen(n.desk)) continue;
+      const h = n.scheduled[0];
+      if (h && h.at < best) best = h.at;
+    }
+    best = Math.min(best, nextOpen(now), nextClose(now));
+    for (const e of this.market.exchanges) {
+      if (e.session) best = Math.min(best, nextOpenIn(e.session, now), nextCloseIn(e.session, now));
+    }
+    return best === Infinity ? null : best;
+  }
+
+  /**
+   * The time the last headline landed (the company's, a sector's, a release or a desk's), or null if the game has
+   * published none. Read from the feeds, which a save keeps, so a reload knows it.
+   */
+  lastHeadlineAt(): number | null {
+    let last = this.news.published[this.news.published.length - 1]?.at ?? null;
+    for (const n of this.deskNews) {
+      const at = n.published[n.published.length - 1]?.at;
+      if (at !== undefined && (last === null || at > last)) last = at;
+    }
+    return last;
   }
 
   /** Jump to a minute before the next open, in coarse steps, so overnight news lands and prices in on the way. */

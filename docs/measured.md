@@ -779,3 +779,124 @@ by stored progress. (The earlier note that stage 5 opens on the Monday of week 2
 - **The tripwire lowered**, 2026-11-10, after part 7f: every desk open read 34,272 and 34,830 (`npm run floors`, this
   session), HEAD 33,900 to 35,100 on the same hour. Chris lowered the every-desk-open floor from 35,000 to 32,000:
   slower is fine.
+
+## The rough fast-forward (plans/rough-speed.md), 2026-11-10
+
+All on the M4 Pro, node 24, nothing else of mine running except where said. `ROUGH_MS` is 500.
+
+- **The step's cost.** A bare 500 ms `Game.step`, seed 12 at 09:40, news cleared, a mean of 400 steps: stocks only
+  0.162 ms, every desk open 0.332 ms (the plan's table said 0.18 and 0.39). `nextMoment()` and `nextLanding()`, which
+  the store reads once a step, cost under 1 µs each in a quiet stretch; `snapshot()` 0.07 ms stocks only and 0.17 with
+  every desk.
+- **The new tripwire** (`test/speed.test.ts`, `rough through the quiet`): every desk open, news cleared, fifteen minutes
+  from 09:40 stepped by `strideAt` as the store steps it (the chooser's own cost in), against the same game's exact rate.
+  `FLOORS=1 npx vitest run test/speed.test.ts`: rough 1,188,020 simulated ms a wall second (1,188×), exact 71,367 (71×),
+  16.6 times, 1,800 steps, none exact. The floor asks for 10 times. The two older floors in the same run: none open
+  86,711 ticks a second (floor 75,000), every desk 34,783 (floor 32,000).
+- **What a frame buys** (a throwaway test, `createStore` with the real clock and a loop of `pump`s at a fixed frame
+  length, 09:40 on a quiet day, 60 frames, speed 300; nothing was rendered): simulated time a wall second, stocks
+  only 300× at 16.7 ms frames, 298× at 33 and 299× at 50; every desk 299×, 292× and 234×. The cap is the 300× the
+  speed asks for, until the budget cannot cover it: 8 ms of 0.33 ms steps is 24 steps, 12 s of simulated time, so a
+  frame of 50 ms (which asks for 15 s) falls short. So once the sim is cheap what limits the page is the frame:
+  the speed reached is the smaller of 300 and `BUDGET_MS / step cost × 500 ms / frame length`, and the frame length is
+  the page's own (the React render every `PUBLISH_EVERY`, layout at 375 wide), which lengthens the frame without
+  taking the sim's 8 ms. At the phone's throttle (2.5×) the arithmetic is 19 stocks-only steps and 10 every-desk steps
+  in the budget, 9.7 s and 4.8 s of simulated time a frame: 300× holds with stocks only down to a 32 ms frame (194×
+  at 50), every desk holds to 16 ms and is 144× at 33. The phone itself was not measured here.
+- **First design, blocks awake in the rough steps (superseded the same day by the sleep below).** What a rough hour earns against an exact one (`ROUGH_PACE=1 npx vitest run test/roughpace.test.ts`, 1,644 s,
+  three seeds, an hour from the open scaled to a day, dollars a day; the rough run is stepped by `strideAt` and the
+  tracker, as the store steps it at 300×; rough share of the hour 99% in every row, the rest the windows at the open
+  and after headlines; JSON in the scratchpad).
+
+  | Block (setup)                      | Exact, seeds 1 2 3     | Rough, seeds 1 2 3     | Fills an hour, exact then rough              |
+  | ---------------------------------- | ---------------------- | ---------------------- | -------------------------------------------- |
+  | momentum (home)                    | 528, -464, 190         | -4,350, -1,735, -1,757 | 574, 280, 232 then 527, 251, 279             |
+  | arbitrage (home)                   | 653, 577, 182          | -2,821, -892, -1,132   | 1,662, 1,600, 1,533 then 344, 238, 235       |
+  | arbitrage (city)                   | -1,487, 205, 74        | -5,385, -2,439, -2,911 | 3,216, 2,071, 2,188 then 716, 371, 410       |
+  | arbitrage (colo)                   | 9,324, 4,783, 3,864    | -6,802, -2,954, -3,244 | 7,295, 4,153, 3,782 then 1,389, 670, 626     |
+  | market maker (city)                | 3,630, 2,957, 4,053    | 34,118, 30,669, 31,433 | 1,570, 954, 960 then 3,885, 2,633, 2,629     |
+  | market maker (colo)                | 8,044, 6,149, 6,594    | 55,996, 53,312, 53,346 | 2,232, 1,365, 1,368 then 5,731, 4,203, 4,033 |
+  | sniper (colo)                      | 2,726, 352, 394        | -3,555, -4,189, -4,585 | 952, 268, 304 then 886, 876, 853             |
+  | index arbitrage (colo)             | -241, -724, 0          | 0, 0, 0                | 80, 169, 0 then 0, 0, 0                      |
+  | lead-lag (Prairie rack, microwave) | 2,211, 1,274, 1,875    | -2,260, -2,204, -3,563 | 1,114, 883, 990 then 520, 468, 580           |
+  | basis arbitrage (same)             | 0, 0, 0                | 0, 0, 0                | 0, 0, 0                                      |
+  | triangle (Eastholm, book)          | 631, 1,072, 1,503      | -57, -52, -30          | 301, 455, 536 then 34, 39, 35                |
+  | fix arbitrage (Thamesford)         | 195, 0, 0              | 65, 130, 0             | 4, 0, 0 then 4, 4, 4                         |
+  | option maker (Prairie rack)        | 11,756, 15,539, 16,601 | 14,153, 16,431, 11,428 | 358, 325, 329 then 357, 300, 290             |
+
+  Beyond plus or minus 50% of the exact day in every row but the option maker (1.20, 1.06, 0.69 of its exact day) and the
+  fix arbitrage (too few fills to say). Every stocks-desk block that lives on gaps between exchanges or on the speed of
+  an answer (arbitrage, the sniper, index arbitrage, lead-lag, the triangle) goes from earning to losing, with a fifth
+  to a half of its fills; the market maker earns 7 to 10 times its exact day (in the exact game it is picked off by the
+  fastest rival taking a quote in the tick before its cancel lands; in a 500 ms step that cannot happen); momentum
+  goes negative on all three seeds. A sweep of the step on seed 1, one block each (the second run stepped a fixed
+  10, 50 and 100 ms instead of by the chooser; the same hour): home momentum 528 exact, 1,022, 631, -828, then -4,350
+  at 500; home arbitrage 653, -564, -785, -2,343, then -2,821; colocated maker 8,044, 6,948, 2,083, 940, then 55,996.
+  So the arbitrage is already lost at 10 ms and the maker's edge is gone by 50, and it is not the chooser or the merged
+  delivery that does it. Not tuned: the plan asks for the stride to be reconsidered.
+
+- **Not measured:** the scripted players (`test/player.ts`) rough, which the plan also names; the phone.
+
+### Blocks sleep in the rough stretches (Chris's decision, 2026-11-10)
+
+Rough steps now put every firm's blocks to sleep (the player's and the rivals'): nothing is decided or sent, what rests
+is pulled, the crowd, prices, news, margin, rollover, storage and settlement go on. A fix's whole 30 s call, the
+player's own action (ten seconds from a hand order, a block switched, a parameter changed) and the last moment read
+from the game (not from what was watched) open exact windows.
+
+- **The tripwire** (`FLOORS=1 npx vitest run test/speed.test.ts`, every desk, fifteen quiet minutes): rough 2,688,715
+  simulated ms a wall second (2,689×), exact 69,946 (70×), **38.4 times** (16.6 with the blocks awake), 1,800 steps, none
+  exact. The two older floors in the same run: none open 86,342 ticks a second (floor 75,000), every desk 34,889 (floor
+  32,000). Nobody decides in a rough step, so the step is the crowd and the books alone.
+- **The share of a session that is exact** (`ROUGH_SHARE=1 npx vitest run test/roughpace.test.ts`, the news as
+  drawn, 09:30 to 16:00): stocks only 0.4%, 0.3%, 0.3% on seeds 1, 2, 3 (95, 60, 60 s of 23,400); every desk 0.7%, 0.5%,
+  0.4% (155, 120, 100 s). That is the open's and the close's windows and a few headlines; the blocks trade in nothing
+  else.
+- **What a slept hour earns against an exact one** (`ROUGH_PACE=1 npx vitest run test/roughpace.test.ts`, 1,000-odd
+  seconds, an hour from the open scaled to a day, dollars a day, three seeds; 98 to 99% of every hour slept; nothing
+  tuned). Exact, then slept, with the slept day as a share of the exact day:
+
+  | Block (setup)               | Exact                  | Slept                 | Slept as a share of exact |
+  | --------------------------- | ---------------------- | --------------------- | ------------------------- |
+  | momentum (home)             | 528, -464, 190         | -1,081, -574, 0       | -205%, 124%, 0%           |
+  | arbitrage (home)            | 653, 577, 182          | -19, 2, 0             | -3%, 0%, 0%               |
+  | arbitrage (city)            | -1,487, 205, 74        | -86, 11, 0            | 6%, 5%, 0%                |
+  | arbitrage (colo)            | 9,324, 4,783, 3,864    | 261, 154, -7          | 3%, 3%, 0%                |
+  | market maker (city)         | 3,630, 2,957, 4,053    | 432, 608, 0           | 12%, 21%, 0%              |
+  | market maker (colo)         | 8,044, 6,149, 6,594    | -1,570, 312, -166     | -20%, 5%, -3%             |
+  | sniper (colo)               | 2,726, 352, 394        | 158, 0, 0             | 6%, 0%, 0%                |
+  | index arbitrage (colo)      | -241, -724, 0          | 0, 0, 0               | 0%                        |
+  | lead-lag (Prairie rack)     | 2,211, 1,274, 1,875    | 217, 0, -34           | 10%, 0%, -2%              |
+  | basis arbitrage             | 0, 0, 0                | 0, 0, 0               | n/a                       |
+  | triangle (Eastholm, book)   | 631, 1,072, 1,503      | -2, 1, 17             | 0%, 0%, 1%                |
+  | fix arbitrage (Thamesford)  | 195, 0, 0              | 195, -1, 0            | 100% (4 fills)            |
+  | option maker (Prairie rack) | 11,756, 15,539, 16,601 | -1,544, 1,277, -1,011 | -13%, 8%, -6%             |
+
+  So at 300× no block earns what it earns live: between nothing and a fifth of its exact day, and a block that held a
+  position into the quiet can lose on it (momentum, the colocated maker and the option maker on seed 1). The fills are
+  1% to 5% of an exact hour's (arbitrage from home 14 against 1,662).
+
+- **The scripted players, two trading days** (`ROUGH_PLAY=1 npx vitest run test/roughplay.test.ts`; follower and sitter,
+  seeds 1, 2, 3; exact is 2 ms a step with the policy looking every 250 ms; the top speed is the store pumped 100 ms of
+  wall time at 300×, the policy looking each pump, 30 s of the game). Day P&L in dollars, then what was reached:
+
+  | Player, seed | Exact days     | Top speed days                                                                                                                      | Targets, exact    | Targets, top speed |
+  | ------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------------------ |
+  | follower 1   | -8,437, -3,081 | stopped at the first day: its 5,000-share desk order refused at 10:51, down $4,007 on the day, past the loss limit (day -27 so far) | none              | none               |
+  | follower 2   | -670, 2,920    | -282, 28                                                                                                                            | day-up            | day-up             |
+  | follower 3   | 6,454, -4,613  | stopped on day 2 at 13:11, refused, down $4,072 (day -21 so far)                                                                    | day-up, seat-back | none               |
+  | sitter 1     | 1,809, 17,586  | 413, 294                                                                                                                            | day-up, seat-back | day-up             |
+  | sitter 2     | -38, 1,991     | -282, -14                                                                                                                           | day-up            | none               |
+  | sitter 3     | -202, 4,526    | -21, 1,753                                                                                                                          | day-up            | day-up             |
+
+  The sitter (momentum from home) earns $0 to $1,750 a day at the top speed against $1,800 to $17,600 exact on the good
+  days; the follower reaches the same lessons less often (4 to 8 of the 9 against 9) and two of its three runs stop on
+  the loss limit, because a desk order is a position that nothing exits in the quiet. **The rents** (a seat's weekly
+  charge, `src/content/upgrades.ts`): $100 a week for the first rung, $160 and $1,600 for the city office, line and
+  server, $2,400 to $8,000 for racks and microwave; the blocks that would pay them (colocated arbitrage and maker, 4,000
+  to 9,000 a day exact) earn 0% to 21% of that at the top speed, so **at 300× the seats past the first rung cannot pay
+  their rent, and `seat-back` was met once in six runs where it was met in three exact**; the first stages' targets
+  (`day-up`) stay reachable on two of three seeds with momentum. Two days do not reach a Friday, so no rent was charged
+  in any of these runs (rent due $100 in each). Rents and targets were not changed.
+
+- **Not measured:** the phone with the blocks asleep (the coordinator's); the follower's 300× path past a refused order.

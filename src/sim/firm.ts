@@ -551,12 +551,23 @@ export class Firm {
     return total;
   }
 
-  /** One tick. Delivers what has arrived, decides if it is time, and sends what is due. */
-  step(now: number, market: Market, news: readonly Headline[], open: boolean): void {
-    this.tickFills = [];
-    this.tickResolved = [];
-    this.receive(now);
-    this.deliver(now, market);
+  /**
+   * One tick. Delivers what has arrived, decides if it is time, and sends what is due. `staged` says the step's
+   * beginning was done by `stage` and the messages by `deliverOne` (a rough step, where the game delivers every
+   * firm's messages together in the order they arrived: `src/sim/flow.ts`). `asleep` is a rough step: the messages
+   * on the wire still arrive and are answered, nothing is decided or sent, and what rests is pulled (`sleep`).
+   */
+  step(now: number, market: Market, news: readonly Headline[], open: boolean, staged = false, asleep = false): void {
+    if (!staged) {
+      this.tickFills = [];
+      this.tickResolved = [];
+      this.receive(now);
+      this.deliver(now, market);
+    }
+    if (asleep) {
+      this.sleep(market);
+      return;
+    }
     this.releaseHand(now, market);
     if (!open) return;
     if (this.halt && now < this.halt.until) return;
@@ -1560,66 +1571,98 @@ export class Firm {
     }
   }
 
+  /**
+   * A rough step: the firm decides nothing and sends nothing, and what it has resting is pulled off the books and
+   * returned to it, as a venue's close returns it. A message still on the wire when the stretch began has arrived and
+   * been answered by then; an order that rested from one is pulled at the next rough step. Draws nothing, and costs a
+   * look at the firm's own orders when it has none live.
+   */
+  private sleep(market: Market): void {
+    let venues: Set<string> | null = null;
+    for (const o of this.orders.values())
+      if (o.status === 'inflight' || o.status === 'resting' || o.status === 'cancelling')
+        (venues ??= new Set()).add(o.exchange);
+    if (!venues) return;
+    for (const id of venues) market.exchange(id).pullOwner(this.id);
+    for (const o of this.orders.values())
+      if (o.status === 'resting' || o.status === 'cancelling') o.status = 'cancelled';
+    this.openSeen = null;
+  }
+
+  /**
+   * The first half of a staged step: what has come back is taken in, and the messages that have reached their
+   * exchange are handed over with their arrival times, to be delivered by `deliverOne` and nothing else.
+   */
+  stage(now: number): Delayed<Outbound>[] {
+    this.tickFills = [];
+    this.tickResolved = [];
+    this.receive(now);
+    return this.outbound.popTimed(now);
+  }
+
   /** Messages that have reached their exchange act on it now; the answer starts its way back. */
   private deliver(now: number, market: Market): void {
-    for (const msg of this.outbound.pop(now)) {
-      const exchange = market.exchange(msg.exchange);
-      const back = now + this.latency(msg.exchange);
-      if (msg.kind === 'cancel') {
-        const { refused } = exchange.cancel(msg.symbol, msg.exchangeOrderId, now);
-        if (refused) this.inbound.push({ kind: 'cancelRefused', localId: msg.localId, reason: refused }, back);
-        else this.inbound.push({ kind: 'cancelled', localId: msg.localId }, back);
-        continue;
-      }
-      const mine = this.orders.get(msg.localId);
-      // A hand order notes the touch it finds, to set against the one the player clicked.
-      if (mine && mine.block === HAND_BLOCK) {
-        const q = exchange.quote(msg.symbol);
-        mine.arrivalTouch = msg.side === 'buy' ? q.ask : q.bid;
-      }
-      // Before the order goes in, read who took the quote it was sent for since the firm saw it.
-      const beatenBy =
-        mine && mine.seenAt !== null ? exchange.takersSince(msg.symbol, mine.seenAt, msg.side, msg.price, this.id) : [];
-      // The answer, now or at the next batch: refused with a reason, or acked with what remains.
-      const answer = (result: SubmitResult, arrivedAt: number) => {
-        const reply = arrivedAt + this.latency(msg.exchange);
-        if (result.refused) {
-          const kind = result.lastLook ? 'refused' : 'rejected';
-          this.inbound.push({ kind, localId: msg.localId, reason: result.refused }, reply);
-          return;
-        }
-        const o = this.orders.get(msg.localId);
-        if (o) o.arrivedAt = arrivedAt;
-        // The exchange's own trades for this order come back through onTrade, like any other fill.
-        this.inbound.push(
-          {
-            kind: 'ack',
-            localId: msg.localId,
-            exchangeOrderId: result.order.id,
-            remaining: result.order.remaining,
-            resting: result.order.remaining > 0 && !result.order.ioc,
-            arrivedAt,
-            beatenBy,
-          },
-          reply,
-        );
-      };
-      const result = exchange.submit(
-        msg.symbol,
-        {
-          owner: this.id,
-          side: msg.side,
-          price: msg.price,
-          size: msg.size,
-          ioc: msg.ioc,
-          postOnly: msg.postOnly,
-          display: msg.display,
-        },
-        now,
-        (r) => answer(r, this.batchedAt),
-      );
-      if (result) answer(result, now);
+    for (const msg of this.outbound.pop(now)) this.deliverOne(msg, now, market);
+  }
+
+  /** One message that has reached its exchange acts on it now; the answer starts its way back. */
+  deliverOne(msg: Outbound, now: number, market: Market): void {
+    const exchange = market.exchange(msg.exchange);
+    const back = now + this.latency(msg.exchange);
+    if (msg.kind === 'cancel') {
+      const { refused } = exchange.cancel(msg.symbol, msg.exchangeOrderId, now);
+      if (refused) this.inbound.push({ kind: 'cancelRefused', localId: msg.localId, reason: refused }, back);
+      else this.inbound.push({ kind: 'cancelled', localId: msg.localId }, back);
+      return;
     }
+    const mine = this.orders.get(msg.localId);
+    // A hand order notes the touch it finds, to set against the one the player clicked.
+    if (mine && mine.block === HAND_BLOCK) {
+      const q = exchange.quote(msg.symbol);
+      mine.arrivalTouch = msg.side === 'buy' ? q.ask : q.bid;
+    }
+    // Before the order goes in, read who took the quote it was sent for since the firm saw it.
+    const beatenBy =
+      mine && mine.seenAt !== null ? exchange.takersSince(msg.symbol, mine.seenAt, msg.side, msg.price, this.id) : [];
+    // The answer, now or at the next batch: refused with a reason, or acked with what remains.
+    const answer = (result: SubmitResult, arrivedAt: number) => {
+      const reply = arrivedAt + this.latency(msg.exchange);
+      if (result.refused) {
+        const kind = result.lastLook ? 'refused' : 'rejected';
+        this.inbound.push({ kind, localId: msg.localId, reason: result.refused }, reply);
+        return;
+      }
+      const o = this.orders.get(msg.localId);
+      if (o) o.arrivedAt = arrivedAt;
+      // The exchange's own trades for this order come back through onTrade, like any other fill.
+      this.inbound.push(
+        {
+          kind: 'ack',
+          localId: msg.localId,
+          exchangeOrderId: result.order.id,
+          remaining: result.order.remaining,
+          resting: result.order.remaining > 0 && !result.order.ioc,
+          arrivedAt,
+          beatenBy,
+        },
+        reply,
+      );
+    };
+    const result = exchange.submit(
+      msg.symbol,
+      {
+        owner: this.id,
+        side: msg.side,
+        price: msg.price,
+        size: msg.size,
+        ioc: msg.ioc,
+        postOnly: msg.postOnly,
+        display: msg.display,
+      },
+      now,
+      (r) => answer(r, this.batchedAt),
+    );
+    if (result) answer(result, now);
   }
 
   /** The game routes every trade to the firms in it; each fill travels back at the exchange's latency. */

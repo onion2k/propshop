@@ -833,6 +833,22 @@ export const GLOSSARY: GlossaryEntry[] = [
       'around a release: they wait, then move. Watch mode slows down for one.',
   },
   {
+    id: 'fast-forward',
+    term: 'Fast-forward',
+    short:
+      'At the top speed the quiet is skipped in half-second steps with every firm’s blocks asleep; trading happens around the moments and after headlines.',
+    long:
+      'At 300× the game would spend most of its time simulating seconds in which nothing happens, two milliseconds at a time. ' +
+      'So through the quiet it simulates half a second at a time, about twenty times cheaper, and says “fast-forward” on the bar. ' +
+      'In those stretches every firm’s blocks are asleep, yours and the rivals’: they decide nothing and send nothing, ' +
+      'and whatever they had resting is pulled and returned to them. The crowd, the prices, the news, the margin checks, the ' +
+      'rollover and the settlements go on, and what you hold is held and marked as ever. Around the open, the close, a fix ' +
+      '(its whole call), an expiry and a market release, for ten seconds after any headline, and for ten seconds after you click, ' +
+      'switch a block on or change a parameter, the game is simulated every 2 milliseconds, the blocks wake and trade, and the bar says “live”. ' +
+      'To trade through the quiet, play at 60× or slower. The same seed played at different speeds is a different game; ' +
+      'the experiments and the night’s tests are always simulated exactly, with the blocks awake.',
+  },
+  {
     id: 'watch-mode',
     term: 'Watch mode',
     short: 'A speed that runs fast through the quiet and slows to 1× around the moments worth seeing.',

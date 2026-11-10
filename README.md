@@ -113,6 +113,18 @@ http://localhost:5181.
   everything at once.
 - **A guided first week.** Ten things to see, grouped by stage, ticked off
   by the game as each happens, with what it meant revealed after.
+- **A fast-forward that puts the blocks to sleep.** At the top speed (300×)
+  the quiet stretches are simulated half a second at a time, which is what lets
+  a phone get through a session in minutes, and the top bar says
+  "fast-forward". In those stretches every firm's blocks, yours and the
+  rivals', are asleep: they decide nothing, send nothing, and whatever they had
+  resting is pulled; what you hold is held and marked as ever. Around the open,
+  the close, a fix (its whole call), an expiry and a market release, for ten
+  seconds after any headline, and for ten seconds after you click or change a
+  block, the game is simulated every 2 milliseconds, the blocks wake, and the
+  bar says "live". To trade through the quiet, play at 60× or slower. Every
+  other speed is exact, and so are the experiments and the night's tests, and
+  the day's report says how much of the session was fast-forwarded.
 - **Moments marked.** A margin call, a fine, a halt, a delivery, an option
   settled at its expiry, a closed triangle, the day's first race won and the dark web opening each put one
   line under the top bar for a few seconds, with its figure, the concept it
@@ -136,7 +148,7 @@ loses races to a named rival and scratches the leg it is left with; a market
 maker's resting quote is a free option for everyone faster; news is priced in
 over seconds, not at once; and a signal that the textbook swears by can turn
 out, measured in the market you are in, to be worth less than the spread.
-The same seed replays the same game, so anything you see can be seen again.
+The same seed replays the same game at the same speeds, so anything you see can be seen again. (The top speed steps the quiet more coarsely, so a seed played there becomes a different game from the same seed at 60×.)
 
 ## Developing it
 

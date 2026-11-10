@@ -21,6 +21,8 @@ on 2026-11-08 from commit `d20c8e3`; the figures went to `docs/measured.md`.
                          when each lesson ticks and each stage opens, for scripted players (test/player.ts)
     NIGHT_PACE=1 NIGHT_SEEDS=1 NIGHT_DAYS=1 npx vitest run test/nightpace.test.ts
                          whole days through the store, and what each night's tests and signals say (~6 min a day)
+    ROUGH_PACE=1 npx vitest run test/roughpace.test.ts
+                         what each block earns an hour fast-forwarded (as 300× steps it, blocks asleep) against exact, three seeds, JSON to ROUGH_OUT (~25 min)
     OPTION_PACE=1 OPTION_SEED=1 OPTION_DAYS=0,5 OPTION_BLOCK=optionMaker npx vitest run test/optionpace.test.ts
                          the options desk's blocks and its rival, a whole day each, by the day's regime (~5 min a day);
                          OPTION_BLOCK takes parameters (`optionMaker:hedge=0`), OPTION_SETUP=home, OPTION_QUOTER and
@@ -97,6 +99,24 @@ measure; they hold nothing.
   Nothing the firm or a block does reads it, bar one: the options desk's view carries today's release times
   (`OptionsView.releases`, from `Market.todaysReleases`, handed in as `Market.releaseTimes` by the game), for `eventVol`,
   times only, never the text, direction or size. It draws nothing.
+- **The rough fast-forward** (`plans/rough-speed.md`; Chris chose on 2026-11-10 that **blocks sleep in the rough
+  stretches**): at 300× the quiet is stepped `ROUGH_MS` (500 ms, `src/sim/tick.ts` with `TICK_MS`) at a time, about 20×
+  cheaper than 2 ms, with every firm asleep, and the page says "fast-forward" or "live" (`getStride`, the bar's `.stride`
+  slot, `ROUGH_WORDS`, glossary `fast-forward`). `src/sim/stride.ts` is `strideAt(view)`, pure: `TICK_MS` in a fine
+  window (`fineWindow`: a moment's lead, which is `WATCH_LEAD` and a fix's whole call, `Game.leadOf`; `WATCH_TAIL` after
+  each moment (`Game.lastMomentAt`, read from the clock, the listing and the feeds, not from what was watched), after
+  any headline (`Game.lastHeadlineAt`, a desk's included) and after the player's own action: a hand order, a block
+  switched or a parameter changed, which the store tells `StrideTracker.acted`), else `ROUGH_MS` on its grid, cut to
+  land on the next window, the soonest scheduled headline (rounded up to a tick) and each venue's open and close
+  (`Game.nextLanding`). `fineWindow` is also watch mode's window (`src/ui/watch.ts` reads it). The store's `runRough`
+  (`store.ts`) runs a frame's simulated ms by it, a rough step counted as one step against `MAX_TICKS_PER_ADVANCE` and
+  the budget (clock checked every step; exact ticks in a chunk of `CHUNK`), stopping where a pin is due.
+  `isRough(dt)` (over a tick, up to `ROUGH_MS`) is what the sim reads: in `flow.ts` a rough step delivers every firm's
+  due messages together by arrival time, ties in firm order (`Firm.stage`, `deliverOne`: a message already on the wire
+  when the stretch began still arrives, and a rival's earlier one still beats the player's), then each firm sleeps
+  (`Firm.step(..., asleep)`, `Firm.sleep`: no decision, no hand order released, every resting order pulled off the
+  books with `Exchange.pullOwner` and marked cancelled, as a venue's close returns them). The day report's optional
+  `roughMs` (and `roughShare`) is the session's fast-forwarded part.
 - **Rivals as characters:** `Fill.against` is the other side's owner (from `Trade.buyer`/`seller`, through
   `Firm.onTrade`), and `Fill.resting` marks a fill of a resting order that the other side crossed to take (never at a
   fix). In `Game.step`, a resting fill against a named rival (the crowd, `bg`, and the firm's own `firm` are not) is
@@ -299,7 +319,11 @@ volMove, ctx)` (`overview.ts`, pure, a full revaluation by the model, volatility
   `world:<desk>` for each other desk, one `crowd:<exchange>` each, and `dark`. No `Math.random`, no `Date.now` in the sim: the same seed replays the same game. Nothing
   the firm does may draw from `world`: that is what makes two runs of one morning the same morning.
 - Time is stepped: `game.step()` advances one fixed tick of simulated
-  time. The wall clock never reaches the sim.
+  time (`TICK_MS`, 2 ms), or `ROUGH_MS` (500 ms) through the quiet at the top speed, which `strideAt`
+  (`src/sim/stride.ts`) chooses from the game's state and the speed, never the wall clock. In a rough step every firm's
+  blocks sleep (nothing decided, nothing sent, what rests pulled). Only the store's 300× steps rough; the experiments,
+  the night's tests, the microscope, `skipToOpen` and every harness step `TICK_MS`. The same seed at different speeds
+  is a different game. The wall clock never reaches the sim.
 - Prices are integer price points (cents, for a stock) and sizes integer units: no float drift in money. Fair
   values are floats and are rounded at the book. A quantity and a price become money in `src/sim/instrument.ts`
   (`valueOf`, by the instrument's `scaleOf`) and nowhere else.
@@ -317,6 +341,18 @@ For anything new, check what it does:
   firm is still charged, still trades, and the game goes on (there is no bust). The calendar has no holidays. A run
   of an experiment or a night's test measures `realised - fees + unrealised`, which a rent never touches, and its
   window is cut before the close; `test/experiments.test.ts` pins each run's figures from before the rent.
+- **rough steps:** a step of `ROUGH_MS` lands on the open, the close, every fix, expiry and release (a fine window
+  starts before each: `WATCH_LEAD`, and a fix's whole 30 s call), on a scheduled headline at its own tick (then 2 ms
+  for `WATCH_TAIL`) and on a venue's own open and close; so `onClose`, the pins, the settlements and the margin checks
+  (`LOSS_CHECK_EVERY` is 500, the grid) run as at 2 ms. Rollover and storage use `crossed`, which holds at any step and
+  lands once. **The firms sleep:** nothing is decided or sent, so nothing trades in the quiet (about 0.3% to 0.7% of a
+  session is live, `docs/measured.md`); positions are held and marked as ever; the risk officer's halt and the margin
+  call still act (they are the game's, not a block's); a hand order waiting out its reaction time is released at the
+  next live step. Orders resting when the stretch begins are pulled at its first step; an order still on the wire rests
+  on arrival and is pulled at the next rough step (it may rest for a step or two). The player acting opens a window of
+  `WATCH_TAIL` from that moment, so a click or a block switched on is live, but a reload forgets it (like a watch
+  tail). An unannounced headline has no lead, so a rough step reveals nothing. A venue with a batch auction shorter than
+  500 ms runs one a step. A pin is landed on, so a night's test still starts on a tick.
 - **options:** expire at the stocks' 16:00 close, each weekday (a Friday's next is Monday's; none on a Saturday or
   Sunday). `Game.contracts()` settles an option at its intrinsic value against the index's settlement price (the
   fair value to the grid) and `Firm.expire(..., option)` moves cash by `valueOf(scale, qty, intrinsic)`: the long
@@ -458,6 +494,13 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 - **Watch mode's lead and tail:** `WATCH_LEAD` 5 s and `WATCH_TAIL` 10 s are drafts. A headline of a desk (`deskNews`,
   not a `news` event) does not slow it; a reload forgets a tail that was running (only the log's last open or close
   is known).
+- **The rough fast-forward:** `ROUGH_MS` (500 ms) and the windows it shares with watch mode are drafts. With the blocks
+  asleep a rough hour earns almost nothing against an exact one (`ROUGH_PACE=1 npx vitest run test/roughpace.test.ts`,
+  `ROUGH_SHARE=1` for the live share, `ROUGH_PLAY=1 npx vitest run test/roughplay.test.ts` for the scripted players at
+  300×; `docs/measured.md`), and held by nothing; the step-rate gate is a third tripwire in `test/speed.test.ts` (rough
+  at least 10× the exact rate, every desk open, in a quiet stretch). Whether the rents and the targets are reachable at
+  300× is Chris's call from those figures; neither was changed. What limits the page's speed once the sim is cheap is the
+  frame (`docs/measured.md`), not the sim.
 - **Layout shift:** held by hand. A section, desk heading, venue row or balance appearing is appended below what is there; a block card's record line has fixed height. What changes as the market runs keeps its room (fixed P&L columns, the
   scorecard and legend from the start, fixed-height rows, the top bar's slots); measured headless, not gated.
 - **The look:** no end-to-end or picture test. The UI test is React Testing Library in jsdom; the page is looked

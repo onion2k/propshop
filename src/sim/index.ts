@@ -5,6 +5,7 @@ export {
   Game,
   SPEEDS,
   TICK_MS,
+  ROUGH_MS,
   MAX_TICKS_PER_ADVANCE,
   STUFFING_ORDERS,
   STUFFING_CANCEL_SHARE,
@@ -171,6 +172,8 @@ export type { FxPair, Rate } from './instrument';
 export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';
 export { DESK_BLOCKS, DESK_REQUIRES, DESK_SEES } from './strategy';
 export { releasesBetween } from './calendar';
+export { WATCH_LEAD, WATCH_TAIL, StrideTracker, fineWindow, strideAt } from './stride';
+export type { FineWindow, StrideView } from './stride';
 // The options model, for the page's chain and what-if: pure working, no state.
 export {
   delta as optionDelta,

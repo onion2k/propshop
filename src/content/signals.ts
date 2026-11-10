@@ -465,6 +465,24 @@ export const WATCH_WORDS = {
   termOf: { open: null, close: null, fix: 'fix', expiry: 'expiry', release: 'economic-calendar' } as const,
 } as const;
 
+/**
+ * The rough fast-forward (plans/rough-speed.md): at the top speed the quiet stretches are stepped half a second at a
+ * time with the firms' blocks asleep, and the bar says which it is: "fast-forward" while they are, "live" in a window
+ * around a moment, after a headline or after the player acts. The day's report says how much of the session was
+ * fast-forwarded. Drafts.
+ */
+export const ROUGH_WORDS = {
+  rough: 'fast-forward',
+  exact: 'live',
+  /** The tooltip of the bar's word. */
+  title:
+    'At the top speed the quiet stretches are fast-forwarded: simulated in half-second steps with every firm’s blocks asleep and their resting orders pulled. Around the moments, after a headline and after you act, the game is simulated exactly and the blocks trade.',
+  term: 'fast-forward',
+  /** The day's report, once a day has any fast-forwarded time: the share of the session, and what stays exact. */
+  day: (share: string) =>
+    `Fast-forward: ${share} of this session was fast-forwarded with the blocks asleep, and nothing traded in it. The rest, around the moments, after headlines and after you acted, was simulated exactly. The night's tests replay the day exactly, 2 ms at a time, with the blocks awake, so they do not describe the quiet.`,
+} as const;
+
 /** The economic calendar: the day's market-wide releases, told by time and never by what they say. */
 export const CALENDAR_WORDS = {
   /** What one release is called: the sim's, so the snapshot and the watch line agree. */

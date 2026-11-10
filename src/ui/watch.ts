@@ -4,12 +4,10 @@
 // would tell the player it was coming. A market-wide release is different: its time is public (the economic
 // calendar), so it is a moment like a fix.
 
-import type { NextMoment } from '../sim';
+import { WATCH_LEAD, WATCH_TAIL, fineWindow, type NextMoment } from '../sim';
 
-/** Simulated ms at 1× before a public moment that watch mode slows from. A draft. */
-export const WATCH_LEAD = 5000;
-/** Simulated ms at 1× after a public moment, or after a headline lands, that watch mode stays slow for. A draft. */
-export const WATCH_TAIL = 10_000;
+export { WATCH_LEAD, WATCH_TAIL };
+
 /** The speed through the quiet: the top one. */
 export const WATCH_FAST = 300;
 /** The speed for the stretch around a moment. */
@@ -40,12 +38,7 @@ export function watchSpeed(
   lastMoment: number | null,
   lastHeadline: number | null,
 ): WatchDecision {
-  const momentEnds = lastMoment !== null && lastMoment <= now ? lastMoment + WATCH_TAIL : -Infinity;
-  const headlineEnds = lastHeadline !== null && lastHeadline <= now ? lastHeadline + WATCH_TAIL : -Infinity;
-  const inLead = next !== null && now >= next.at - WATCH_LEAD;
-  const tailUntil = Math.max(momentEnds, headlineEnds);
-  if (inLead) return { speed: WATCH_SLOW, slow: 'moment', until: next.at };
-  if (now < tailUntil)
-    return { speed: WATCH_SLOW, slow: headlineEnds > momentEnds ? 'headline' : 'moment', until: tailUntil };
-  return { speed: WATCH_FAST, slow: null, until: next ? next.at - WATCH_LEAD : Infinity };
+  const w = fineWindow(now, next ? next.at : null, lastMoment, lastHeadline);
+  if (w.slow !== null) return { speed: WATCH_SLOW, slow: w.slow as 'moment' | 'headline', until: w.until };
+  return { speed: WATCH_FAST, slow: null, until: w.until };
 }

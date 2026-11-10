@@ -163,6 +163,14 @@ button.link {
     line-height: 1.5;
   }
 }
+.speed .stride {
+  align-self: center;
+  font-size: 12px;
+  white-space: nowrap;
+  min-width: 7em;
+  height: 1.5em;
+  line-height: 1.5em;
+}
 .speed .running {
   align-self: center;
   font-size: 12px;

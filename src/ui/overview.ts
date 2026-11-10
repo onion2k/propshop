@@ -18,6 +18,8 @@ import {
 import { answerOf, type Answer } from '../content/experiments';
 import {
   BLOCKS,
+  MARKET_CLOSE,
+  MARKET_OPEN,
   MS_PER_YEAR,
   STOCKS_DESK,
   formatTime,
@@ -269,6 +271,12 @@ export function recordOverNights(nights: readonly Night[]): NightRecord[] {
 export function latestWithRuns(nights: readonly Night[]): Night | null {
   for (let i = nights.length - 1; i >= 0; i--) if (nights[i]!.runs.length > 0) return nights[i]!;
   return null;
+}
+
+/** The share of the session (09:30 to 16:00) a day was stepped rough, 0 to 1, or null where no part of it was. */
+export function roughShare(d: DayReport): number | null {
+  if (!d.roughMs) return null;
+  return Math.min(1, d.roughMs / (MARKET_CLOSE - MARKET_OPEN));
 }
 
 /** Yesterday in a sentence: the best block, and the share of races won. */

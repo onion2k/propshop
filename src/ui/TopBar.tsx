@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { SPEEDS, formatSpan, formatTime, type Snapshot } from '../sim';
-import { WATCH_WORDS } from '../content';
+import { ROUGH_WORDS, WATCH_WORDS } from '../content';
 import { money, moneyShort } from './format';
 import { Term } from './Glossary';
 import { RUNNING_SHORT, type Store, type WatchState } from './store';
@@ -25,6 +25,7 @@ export function TopBar({
   const running = useSyncExternalStore(store.subscribe, store.getRunning, store.getRunning);
   // A device that cannot step the asked speed in a frame's budget runs slower; the bar says what it reaches.
   const watch = useSyncExternalStore(store.subscribe, store.getWatchState, store.getWatchState);
+  const stride = useSyncExternalStore(store.subscribe, store.getStride, store.getStride);
   const asked = watch.on ? watch.speed : s.speed;
   const short = asked > 0 && running < asked * RUNNING_SHORT;
   return (
@@ -72,6 +73,10 @@ export function TopBar({
         {/* Holds its room whether or not watch is on, so the row does not reflow when it is switched. */}
         <span className="watching muted" data-testid="watching">
           {watch.on ? <WatchLine now={s.now} watch={watch} /> : '\u00a0'}
+        </span>
+        {/* Holds its room whether or not the top speed is on, so the row does not reflow when it is picked. */}
+        <span className="stride muted" data-testid="stride" title={stride ? ROUGH_WORDS.title : undefined}>
+          {stride ? <Term id={ROUGH_WORDS.term}>{ROUGH_WORDS[stride]}</Term> : '\u00a0'}
         </span>
         {short && (
           <span className="running muted" title="This device cannot step the asked speed in time">

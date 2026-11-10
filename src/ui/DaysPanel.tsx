@@ -1,11 +1,11 @@
 // The days: each close's report, newest first and the latest open. The chart of daily P&L is on the Overview.
 // The report says what the day was in numbers the top bar cannot: by block, by stock, by race.
 
-import { DESK_NAMES, OPTIONS_WORDS, REGIMES } from '../content';
+import { DESK_NAMES, OPTIONS_WORDS, REGIMES, ROUGH_WORDS } from '../content';
 import type { DayReport, Snapshot, Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
-import { blockName, dayCause, dayVerdict, expiryLines, rivalLines } from './overview';
+import { blockName, dayCause, dayVerdict, expiryLines, rivalLines, roughShare } from './overview';
 
 function net(t: Tally): number {
   return t.realised - t.fees;
@@ -48,6 +48,7 @@ function Report({ d }: { d: DayReport }) {
   const races = d.races.won + d.races.beaten + d.races.missed;
   const desks = deskRows(d);
   const cause = dayCause(d);
+  const rough = roughShare(d);
   return (
     <div className="report">
       <p className="day-cause">
@@ -76,6 +77,12 @@ function Report({ d }: { d: DayReport }) {
           <TallyTable rows={Object.entries(d.bySymbol).map(([k, t]) => [k, t])} />
         </div>
       </div>
+      {rough !== null && (
+        <p className="rough-share small muted">
+          <Term id={ROUGH_WORDS.term}>Fast-forward</Term>
+          {ROUGH_WORDS.day(`${Math.round(rough * 100)}%`).replace(/^Fast-forward/, '')}
+        </p>
+      )}
       {d.rent !== undefined && (
         <p className="rent">
           <Term id="rent">Rent</Term> at the close, charged on Friday for the week:{' '}

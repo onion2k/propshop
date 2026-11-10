@@ -205,6 +205,11 @@ export interface PlayOptions {
   days?: number;
   /** Stop after the player has waited this long. */
   maxWaitedMs?: number;
+  /**
+   * Play at the top speed as the page does (plans/rough-speed.md): the store pumped 100 ms of wall time at a time at
+   * 300×, the quiet fast-forwarded with the blocks asleep, the policy looking once a pump (30 s of the game).
+   */
+  topSpeed?: boolean;
 }
 
 /** Sim ms between publishes: 250, about what the page does at 10×. */
@@ -243,9 +248,22 @@ export function play(store: Store, policy: Policy, opts: PlayOptions): Run {
   store.publish();
   observe();
   act();
+  let wall = 0;
+  if (opts.topSpeed) {
+    store.setSpeed(300);
+    store.pump(wall);
+  }
   for (;;) {
-    for (let i = 0; i < PUBLISH_TICKS; i++) store.game.step();
-    run.waitedMs += PUBLISH_TICKS * TICK_MS;
+    if (opts.topSpeed) {
+      const before = store.game.now;
+      wall += 100;
+      store.pump(wall);
+      // A night skipped by the player is not waited through; the rest of the pump is.
+      run.waitedMs += store.game.now - before;
+    } else {
+      for (let i = 0; i < PUBLISH_TICKS; i++) store.game.step();
+      run.waitedMs += PUBLISH_TICKS * TICK_MS;
+    }
     store.publish();
     observe();
     const now = store.getSnapshot().now;

@@ -956,6 +956,16 @@ export class Exchange {
     this.record(symbol, result.trades);
   }
 
+  /**
+   * Take every resting order of an owner off the books, as the close does, and say whether there were any. The firms'
+   * sleep through a rough stretch (`Firm.sleep`) pulls what they have resting with this.
+   */
+  pullOwner(owner: string): boolean {
+    let any = false;
+    for (const s of this.stocks.values()) if (s.book.cancelWhere(owner, () => true).length > 0) any = true;
+    return any;
+  }
+
   /** The close: the crowd goes home and the books empty. Returns the orders of everyone else, for their owners. */
   close() {
     const others: { symbol: string; owner: string; id: number }[] = [];

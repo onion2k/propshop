@@ -2,6 +2,7 @@
 // every trade is routed to whoever made it, and the quotes are logged for the slow to catch up on later.
 
 import { isMarketOpen } from './clock';
+import { isRough } from './tick';
 import type { Firm } from './firm';
 import type { Market } from './market';
 import type { Streams } from './random';
@@ -30,8 +31,22 @@ export function tick(
     f.fx = market.fx;
     f.rates = market.rates;
     f.batchedAt = now;
-    f.step(now, market, news, open);
   }
+  // A rough step is long enough for the messages of several firms to arrive inside it. Stepping the firms in order
+  // would hand the first (the player) every race against a rival whose message arrived in the same step, so all of
+  // their due messages are delivered together, by arrival time, ties in the firms' order. A tick of 2 ms, and a long
+  // jump over closed hours, are as they always were: each firm takes in its own. The same step is one the firms sleep
+  // through (`Firm.sleep`): messages still on the wire arrive here, in this order, and nothing new is decided or sent.
+  const staged = isRough(dt);
+  if (staged) {
+    const due: { at: number; order: number; f: Firm; msg: Parameters<Firm['deliverOne']>[0] }[] = [];
+    firms.forEach((f, order) => {
+      for (const d of f.stage(now)) due.push({ at: d.at, order, f, msg: d.item });
+    });
+    due.sort((a, b) => a.at - b.at || a.order - b.order);
+    for (const d of due) d.f.deliverOne(d.msg, now, market);
+  }
+  for (const f of firms) f.step(now, market, news, open, staged, staged);
   for (const e of market.exchanges) {
     for (const { symbol, trade } of e.tickTrades) for (const f of firms) f.onTrade(e, symbol, trade, now);
     e.logQuotes(now);

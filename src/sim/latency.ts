@@ -55,6 +55,13 @@ export class DelayQueue<T> {
     return this.items.splice(0, n).map((d) => d.item);
   }
 
+  /** What `pop` returns, with each arrival time kept: for delivering several queues together in arrival order. */
+  popTimed(now: number): Delayed<T>[] {
+    let n = 0;
+    while (n < this.items.length && (this.items[n]?.at ?? Infinity) <= now) n++;
+    return this.items.splice(0, n);
+  }
+
   get length(): number {
     return this.items.length;
   }
