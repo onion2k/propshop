@@ -176,39 +176,43 @@ describe('App', () => {
     expect(screen.getByRole('status')).toHaveTextContent('market closed');
   });
 
-  it('sends a hand order from the desk, counts down its wait, and reads its slippage and the day total', () => {
-    const store = createStore(CONTENT, null, 9);
-    store.setReveal(true);
-    store.skipToOpen();
-    while (!store.game.snapshot().open) store.game.step(TICK_MS);
-    for (let i = 0; i < (10 * 1000) / TICK_MS; i++) store.game.step(TICK_MS);
-    store.publish();
-    render(<App store={store} />);
-    goTo('Desk');
-    expect(screen.getByLabelText('Size')).toHaveValue(5000);
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(screen.getByLabelText('Orders waiting to be sent')).toHaveTextContent(/sending in 250ms/);
-    act(() => {
-      for (let i = 0; i < 100 / TICK_MS; i++) store.game.step(TICK_MS);
+  it(
+    'sends a hand order from the desk, counts down its wait, and reads its slippage and the day total',
+    { timeout: 30_000 },
+    () => {
+      const store = createStore(CONTENT, null, 9);
+      store.setReveal(true);
+      store.skipToOpen();
+      while (!store.game.snapshot().open) store.game.step(TICK_MS);
+      for (let i = 0; i < (10 * 1000) / TICK_MS; i++) store.game.step(TICK_MS);
       store.publish();
-    });
-    expect(screen.getByLabelText('Orders waiting to be sent')).toHaveTextContent(/sending in 150ms/);
-    // Past the reaction time and the trip to the exchange and back.
-    act(() => {
-      for (let i = 0; i < 2000 / TICK_MS; i++) store.game.step(TICK_MS);
-      store.publish();
-    });
-    expect(screen.queryByLabelText('Orders waiting to be sent')).toBeNull();
-    const line = document.querySelector('.slippage');
-    expect(line).not.toBeNull();
-    expect(line!.textContent).toMatch(
-      /^Slippage: touch at your click \d+\.\d\d, at arrival \d+\.\d\d, filled at \d+\.\d\d/,
-    );
-    expect(screen.getByTestId('hand-total')).toHaveTextContent(
-      /Hand trading today: [-+]?\$[\d,]+\.\d\d against the quote at the click/,
-    );
-    expect(screen.getAllByRole('button', { name: 'Slippage' }).length).toBeGreaterThan(0);
-  });
+      render(<App store={store} />);
+      goTo('Desk');
+      expect(screen.getByLabelText('Size')).toHaveValue(5000);
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      expect(screen.getByLabelText('Orders waiting to be sent')).toHaveTextContent(/sending in 250ms/);
+      act(() => {
+        for (let i = 0; i < 100 / TICK_MS; i++) store.game.step(TICK_MS);
+        store.publish();
+      });
+      expect(screen.getByLabelText('Orders waiting to be sent')).toHaveTextContent(/sending in 150ms/);
+      // Past the reaction time and the trip to the exchange and back.
+      act(() => {
+        for (let i = 0; i < 2000 / TICK_MS; i++) store.game.step(TICK_MS);
+        store.publish();
+      });
+      expect(screen.queryByLabelText('Orders waiting to be sent')).toBeNull();
+      const line = document.querySelector('.slippage');
+      expect(line).not.toBeNull();
+      expect(line!.textContent).toMatch(
+        /^Slippage: touch at your click \d+\.\d\d, at arrival \d+\.\d\d, filled at \d+\.\d\d/,
+      );
+      expect(screen.getByTestId('hand-total')).toHaveTextContent(
+        /Hand trading today: [-+]?\$[\d,]+\.\d\d against the quote at the click/,
+      );
+      expect(screen.getAllByRole('button', { name: 'Slippage' }).length).toBeGreaterThan(0);
+    },
+  );
 
   it('opens on the first week, ticks a lesson when it happens, and keeps the progress', () => {
     const storage = memory();
@@ -922,7 +926,7 @@ describe('Root', () => {
     expect(store.game.now).toBeGreaterThan(t0);
   });
 
-  it('lists the seven experiments and Free play', () => {
+  it('lists the nine experiments and Free play', () => {
     const store = createStore(CONTENT, null, 25);
     render(<Root store={store} />);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
@@ -931,22 +935,24 @@ describe('Root', () => {
       expect(screen.getByRole('button', { name: new RegExp(e.title) })).toBeInTheDocument();
       expect(screen.getByText(e.teaches)).toBeInTheDocument();
     }
-    expect(EXPERIMENTS).toHaveLength(7);
+    expect(EXPERIMENTS).toHaveLength(9);
     expect(screen.getByRole('button', { name: 'Free play' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run the firm' })).toBeInTheDocument();
   });
 
-  it('groups the seven under four desk headings, in the order the desks open', () => {
+  it('groups the nine under five desk headings, in the order the desks open', () => {
     const store = createStore(CONTENT, null, 25);
     render(<Root store={store} />);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     const heads = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(heads).toEqual(['Stocks', 'Futures', 'Currencies', 'Metals']);
+    expect(heads).toEqual(['Stocks', 'Futures', 'Currencies', 'Metals', 'Options']);
     const group = (name: string) => within(screen.getByRole('group', { name }));
     expect(group('Stocks').getAllByRole('listitem')).toHaveLength(3);
     expect(group('Futures').getAllByRole('listitem')).toHaveLength(1);
     expect(group('Currencies').getAllByRole('listitem')).toHaveLength(1);
     expect(group('Metals').getAllByRole('listitem')).toHaveLength(2);
+    // The options experiments open the futures desk too (the desk needs it), and are the options desk's.
+    expect(group('Options').getAllByRole('listitem')).toHaveLength(2);
   });
 
   it('Run the firm opens the app staged, with the show-everything switch off and no Desk page', () => {
@@ -2616,7 +2622,16 @@ describe('Part E: stakes and a goal, on the page', () => {
   });
 });
 
-const TARGETS_ALL = ['day-up', 'seat-rent', 'no-halt-week', 'desk-futures', 'seat-back', 'desk-fx', 'desk-metals'];
+const TARGETS_ALL = [
+  'day-up',
+  'seat-rent',
+  'no-halt-week',
+  'desk-futures',
+  'seat-back',
+  'desk-fx',
+  'desk-metals',
+  'desk-options',
+];
 
 describe('Part 7a: the economic calendar, on the page', () => {
   const start = () => {

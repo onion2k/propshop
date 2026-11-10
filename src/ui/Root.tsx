@@ -36,9 +36,12 @@ function loadRecord(storage: Storage | null): Kept {
   }
 }
 
-/** The desk an experiment belongs to: its first desk besides the stocks', or the stocks. */
+/**
+ * The desk an experiment belongs to: the last of the desks it opens besides the stocks' (the newest, which the earlier
+ * ones are open for: the options desk needs the futures desk), or the stocks.
+ */
 function deskOf(e: Experiment): string {
-  return e.desks?.[0] ?? 'stocks';
+  return e.desks?.at(-1) ?? 'stocks';
 }
 
 export function Root({

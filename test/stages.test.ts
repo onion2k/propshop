@@ -80,6 +80,14 @@ describe('stageOf', () => {
     // A desk's lessons sit at the desk's stage and open no stage: all the stocks' done is the last stage.
     expect(lessonStage('lead')).toBe(3);
     for (const id of ['pips', 'triangle', 'refused', 'rollover']) expect(lessonStage(id)).toBe(4);
+    // The options desk's six sit at its stage, the last, and open nothing: stage 6 is the end whatever is done.
+    for (const id of DESK_LESSONS.options!) expect(lessonStage(id)).toBe(6);
+    expect(
+      stageOf({
+        ...Object.fromEntries(STAGES.flatMap((s) => [...s.lessons, ...(s.needs ?? [])]).map((id) => [id, 1])),
+        ...done(...DESK_LESSONS.options!),
+      }),
+    ).toBe(6);
     const stocks = Object.fromEntries(STAGES.flatMap((s) => s.lessons).map((id) => [id, 1]));
     expect(stageOf(stocks)).toBe(5);
     expect(stageOf({ ...stocks, ...done(...S5) })).toBe(6);

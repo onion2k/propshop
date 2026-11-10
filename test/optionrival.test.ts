@@ -209,8 +209,9 @@ describe('the rival, Bluestem Volatility', () => {
     expect(bluestem!.desk).toBe(OPTIONS_DESK);
     expect(bluestem!.location).toBe('colo-prairie');
     expect(bluestem!.computer).toBe('rack');
-    // It quotes where the venue's quoter does and looks twice a second: cheap to step, and one a fast firm can pick off.
-    expect(bluestem!.blocks).toEqual([{ id: 'optionMaker', params: { hedge: 1, every: 500, edge: 1 } }]);
+    // It quotes half a point inside the venue's quoter (the player's default is a point inside) and looks twice a
+    // second: cheap to step, and one a fast firm can pick off.
+    expect(bluestem!.blocks).toEqual([{ id: 'optionMaker', params: { hedge: 1, every: 500, edge: 2 } }]);
     expect(bluestem!.watches).toEqual(expect.arrayContaining(['futures', OPTIONS_DESK]));
   });
 

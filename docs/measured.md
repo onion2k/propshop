@@ -622,3 +622,160 @@ than at 7d (0.4% to 1.3% on that hour, 3% on this one for the same tree: the mac
 hour). The floors run at the end of `npm run check`, straight after the 130 s suite, read 35,523 (88,590 none open): the machine is warm then and the margin is 1.5%. The tripwire stays at 35,000. Not measured: a browser frame with the chain, the greeks and the what-if on the
 page (the look is by hand, headless); the snapshot's cost with twelve options held (a sum of twelve model calls, once a
 frame).
+
+## The options desk's lessons, experiments and tuning (7f), 2026-11-10
+
+`plans/desk-options.md` 7f. Node 24. Every figure is one machine's and one tree's: the tree at the end of 7f, not committed.
+The harness is `test/optionpace.test.ts` (`OPTION_PACE=1 OPTION_SEED=1 OPTION_DAYS=5 OPTION_BLOCK=optionMaker npx vitest
+run test/optionpace.test.ts`, a whole day a run, about 5 minutes; the regime and the straddle at the money come with it).
+Twelve days over seeds 1 to 3, none a Friday (no rent), from the Prairie rack on microwave with Bluestem in unless said:
+seed 1 days 0, 1, 2, 5 (trending, choppy, news, calm), seed 2 days 0, 1, 2, 5 (calm, trending, choppy, news), seed 3 days
+0, 1, 5, 6 (calm, news, choppy, trending), where a day is the weekday from the first Monday.
+
+- **What was wrong, and the order it was found in.** The first customers (`takeRate` 1 a book a second, up to a thousand
+  contracts, a coin toss for a side, nobody informed) made the player's maker $116,000 and Bluestem $129,000 on seed 1's first
+  Monday: all of it the spread, from 83,000 fills. With customers of ten contracts, net buying and a few informed, every
+  maker lost on every day at first (hedged and unhedged, $1,000 to $6,000), and four faults of the blocks, not of the market,
+  had to go before the figures below meant anything:
+  1. `requote` 1 (a resting quote is left alone while within a cent of where it would be): on a one-cent tick and an edge of
+     half a cent, a quote left a tick off is the best price on the book exactly when the market has left it. A twenty-minute
+     look at the fills' edge against the fair value: +0.10 cents a contract with it, +1.0 without. Default now 0.
+  2. A hedge that traded back and forth, tens of futures each way, every second or two (7,000 futures contracts in a day,
+     $5,000 of spread, on days with no news). Found by printing the options' contributions to the net delta: an option whose
+     whole expiry's books were one-sided for a look dropped out of the sum (no volatility to read), and the hedge sold the
+     difference and bought it back at the next look. The delta is now worked at the view's volatility for the option, then
+     its expiry's nearest, then the chain's median; with none anywhere the hedge waits (and is no longer unwound).
+  3. The same hedge traded at the index book's mid, which lags the future by seconds and drops out when one-sided: it is now
+     worked at the nearest future's price (`futureSpot`), the instrument that hedges it.
+  4. The last half hour of a day's option at the money is nearly all gamma, and the hedge chased its delta through the
+     exit, 5,000 contracts in the last thirty minutes (Bluestem 76,000 contracts and $52,000 on seed 2's news Monday).
+     `flattenBefore` is 30 minutes (it was 5) and the hedge waits while an option is being flattened.
+     Each has a test that failed before it (`test/optionblocks.test.ts`). The hedge's band is 20 contracts of the future (it
+     was 2, a trade with nearly every fill: with `hedgeBand` 2 the hedged maker lost $4,000 to $5,000 on every kind of day).
+- **The tuned market** (`POX.quoter`, `src/content/options.ts`): half-spread 2.5 volatility points (it was 1; at one point
+  the player's maker could not stand inside it by a whole tick), a customer a book about every 50 seconds (`takeRate`
+  0.02) in orders of up to 10 contracts, buy shares of 0.75 / 0.60 / 0.50 for a call out of / at / in the money and 0.92
+  / 0.65 / 0.50 for a put (over 2% of moneyness), and informed customers at 5 a second, three ticks behind a touch, up to
+  5 contracts. The maker's `edge` is 1.5 calendar-volatility points, Bluestem's 2. **On the page's trading clock**
+  (`tradingVol`, the chain's figures): a calendar point is 0.43 of a point for today's options (their whole life is
+  open hours, so the ratio is constant) and 0.63 to 0.75 for tomorrow's (the shut hours count at 7%). So the venue's
+  quoter sits 1.1 trading points either side of a today's option, the player's maker 0.65 and Bluestem 0.86; a customer
+  who buys at the maker's ask pays 0.65 points of volatility over what the book implies on the chain.
+
+**The PACE table** (dollars a day, whole days, the first column the days' mean by the regime, then the days seed by seed
+as `s<seed>d<weekday>`; hedged and unhedged are the same player with `hedge` on and off, the rest at their defaults):
+
+| Setup, from the Prairie rack unless said                        | calm (3 days) | trending (3) | choppy (3) | news (3) | weighted mean a day | the week (x5) |
+| --------------------------------------------------------------- | ------------- | ------------ | ---------- | -------- | ------------------- | ------------- |
+| `optionMaker`, hedged                                           | +3,524        | -246         | -2,715     | -401     | +428                | +2,138        |
+| `optionMaker`, unhedged                                         | +4,721        | +892         | -2,535     | +88      | +1,228              | +6,139        |
+| Bluestem alone (no player)                                      | +7,483        | +6,437       | +4,006     | +5,940   | +6,135              | +30,674       |
+| Bluestem beside the hedged player                               | +2,945        | -79          | -2,880     | +438     |                     |               |
+| `optionMaker`, hedged, from home (2 a regime, 1 choppy, 1 news) | -745          | -166         | -3,827     | +255     | -1,079              | -5,395        |
+| `parity` (2 calm, 2 trending, 1 choppy, 1 news)                 | +117          | +81          | +372       | 0        | +140                | +699          |
+| `eventVol` (the same six days)                                  | -18           | -16          | -46        | -26      | -25                 | -127          |
+
+The weighted mean weights the regimes by their draw (calm 3, trending 2, choppy 2, news 2 of 9). The days, hedged:
+calm +3,785 / +3,565 / +3,222; trending -961 / -73 / +296; choppy -321 / -4,387 / -3,437; news +1,850 / -2,538 / -516.
+Unhedged: calm +6,275 / +3,221 / +4,666; trending +4,501 / -331 / -1,495; choppy +965 / -4,672 / -3,899; news +1,783 / -722 /
+-799. Bluestem alone, by day: calm 7,529 / 6,939 / 7,980; trending 7,849 / 4,290 / 7,173; choppy 6,948 / 1,984 / 3,086;
+news 6,401 / 5,366 / 6,053.
+
+- **The three things asked of the tuning.** (1) The hedged maker earns on calm days (+3.5k, all three) and gives it back on
+  the others: trending -246 (two of three days under nought), choppy -2.7k (all three), news -401 (two of three). A week
+  of five calm days is +17,600; a week of choppy ones is -13,600; the mean week, +2,138, is a little over the Prairie
+  rack's rent ($1,600), which is what "worth having, not a fortune" comes to. (2) The hedge cuts the swing and the worst
+  of the day, and costs for it: against the unhedged maker, the standard deviation of the twelve days falls from $3,278
+  to $2,577 (21%), the worst drawdown inside a day from $6,586 to $4,279 (35%), the worst day's close from $4,672 to $4,387
+  (6%: the worst day is a choppy one, jumps and gamma and not delta), and the mean falls by $750 a day, 728 futures
+  contracts a day at about a dollar's spread. On the three trending days it is -961 / -73 / +296 against +4,501 / -331 /
+  -1,495: it gives up the day the drift was lucky for the maker and the day it was not. (3) The scale: a calm day is
+  +$3,500, a good week of them $17,000 against a futures seat's good week of $7,500 (lead-lag from the Prairie rack,
+  $1,515 a day) and Harbor Quant's $72,000 a week: the good week is twice a seat's and a quarter of the fastest rival's,
+  and the bad week loses what a good one makes. Not 100 times.
+- **Why the days differ.** The maker is short options (customers are net buyers, puts above all, so it is long delta as
+  well), so it is paid for the premium's decay on a day the index does little and charged on a day it does not. The
+  fills' edge against the fair value at the time (`edge` in the harness's JSON, dollars) is +$2,500 to +$3,100 on the calm
+  days, +$700 to +$2,400 on trending and news days (one news day -$400) and -$1,700 / -$1,500 / -$60 on the choppy ones: so
+  the quotes themselves earn on every kind of day but a choppy one (jumps 2.2 times as often, volatility 1.4 times: the
+  quotes are stale by a jump's size for the maker's 50 ms and the quoter's lag, and the informed customers take them),
+  and what separates a trending day from a calm one is the cost of holding the position, the straddle seller's side below.
+- **The straddle seller by regime** (the same twelve days; sold at the fair price of the strike nearest the index a minute
+  after the open, settled at the close, points = dollars a contract; the premium and the model are as at 7b, so these are the
+  market's and not the tuning's): calm +45 (price 82 / 67 / 68 against 12 / 20 / 50 paid out), trending +0.3, choppy -28
+  (101 / 45 / 57 against 39 / 84 / 163), news -0.3; all twelve: +4.3 a straddle on an average price of 63, price over payout
+  1.07, the seller ahead on 7 days of 12. The 15% premium is not visible in so few days (the fifty of 7b: +0.9 on 69.5,
+  price over payout 1.01; by regime then calm +24, choppy +8, trending +5, news -42): the seller is paid on a calm day and
+  by little on any other, which is the lesson and is not a gift.
+- **Home.** A laptop watches four symbols: the index, its two futures and one option. The maker there is slower and
+  blind to eleven of twelve books and loses on five of six days (-396 to -3,827; one choppy day -3,827), a hedge that had
+  traded 5,500 futures a day until the hedge learned to wait when it cannot read a volatility. It is the lesson of the rack.
+- **Parity and the event straddle** are small and should be: parity found a conversion on five of six days (10 option
+  contracts and 5 futures at most; +$167 to +$372 on three days and -$5 and -$10 on two), where the lag between the
+  future and the options' books opens a gap for a moment; the event straddle (5 contracts) bought a straddle on four
+  of six days and lost $26 to $46 on each (the spread, and a rise in price that did not cover it). On the other two there
+  was no release to trade in the session, or none after its window.
+- **The PACE rows** (`PACE=1 PACE_SEEDS=1,2,3 PACE_ONLY=options PACE_MINUTES=60 npx vitest run test/pace.test.ts`, the hour
+  after the open scaled to a day as every row is, so these are the most favourable hour and 6.5 times it, not a day):
+  `options home maker` -9,698 (2,034 / -7,083 / -24,044), `options prairie maker` 14,632 (11,756 / 15,539 / 16,601) with
+  Bluestem beside it 12,328, unhedged 12,584, `parity` -40, `eventVol` 0 (the first release is not in the hour), the
+  rival beside parity 20,420. The first hour is the busiest for customers and the quietest for gamma; the table above is
+  the whole days.
+
+- **The hedge experiment's seed, 122.** Of seeds 1 to 3,000 (`node` over `calendarOf` on the first Monday), the trending days
+  with the day's first release between 09:33 and 10:40: 14, 65, 71, 109, 113, 122, 128, 129, 158, 169, 185, 187, 200, 225, 235,
+  241, 243, 252, 261, 287, 316, 318, 337, 384, 388, 419, 423, 426, 445, 447 (the first thirty of them). Eight of those, each
+  window run from four minutes before a release with the index's path read: 122's release at 09:46:10 takes the index down
+  37 cents in the next minute (range 39); the others' biggest were 235's -46 (09:48), 169's -41 (09:45), 445's -35 (10:51) and
+  337's +29 (09:45), and the rest under 20. 122 was taken. The window is 09:42:10 to 09:47:10 (`warmMs` two minutes). From the Prairie rack, quotes of 25 contracts and up
+  to 100 held: hedged +$132 on 42 fills and a short 27 futures; the hedge off -$420 on 41 fills (worse); the hedge at 5 contracts
+  +$274 on 45 (better); the quotes at 3 points +$217 on 7 (about the same). Quotes of 5 contracts left the maker with 50
+  contracts and every answer within the $100 band.
+- **The crush experiment's seed, 54.** Of 16 calm and choppy days (3, 6, 12, 27, 31, 33, 37, 39, 52, 53, 54, 61, 62, 64, 67
+  and 72, from seeds 1 to 400 with a first release between 09:36 and 11:30) whose first release in the session falls 6 to 150
+  minutes after the open, the straddle of 20 contracts
+  bought four minutes ahead and held through, against sold sixty and twenty seconds before: held through the result ran
+  from +$278 to -$372, sold before always -$44 to -$160 (the spread). 54's release is 11:03:14 and moves the index little: 50
+  contracts held through lost $660 (bought at $27 a contract, sold at $21, the crush), sold 3 minutes before -$210,
+  sold a minute before -$160, sold 20 seconds before -$110; a hundred, held through, -$1,320. The window is 10:59:14 to
+  11:04:14. `test/experiments.test.ts` pins every run.
+- **The lessons and how a player reaches each.** All six (`insure`, `implied`, `hedge`, `gamma`, `parity`, `crush`) are
+  `DESK_LESSONS.options`, shown at stage 6 with the desk, open no stage, and have the same `go`: the Market page, the chain
+  (`data-tut="options"`, outlined by "Take me there"), where "Watch the chain" is the first step of each task. Then:
+  `insure` a put bought by hand from the Desk page and held through 16:00 (the day's report names it, `DayReport.expired`);
+  `implied` a call and a put sold at one strike by hand and held through 16:00; `hedge` ten fills of the option maker in
+  options and one in the future; `gamma` a trending or news-heavy day closed with the maker having traded; `parity` the
+  parity block's fills in a call, a put and the future; `crush` the event block's fills, bought and sold. Tests: `test/lessons.test.ts`.
+- **The target.** `desk-options` ("Options pay the Prairie rack"): a closed week in which the options blocks' net, hedge
+  included (a block's tally holds all its legs), less fees, plus what the options held to the close made, is at least the
+  futures desk's rack's rent ($1,600 at the Prairie Board). The twelve days' hedged maker nets $2,138 a week on average,
+  from -$13,600 (five choppy days) to +$17,600 (five calm ones): a week that clears the rent is a calm week and not a given.
+  `test/targets.test.ts`.
+- **The step rate.** `FLOORS=1 npx vitest run test/speed.test.ts -t "every built desk"` alone, the tree at HEAD (`e06936e`)
+  against this one, taken in turn, three times each, all four desks open (ticks a second): HEAD 34,579 / 34,407 / 34,367
+  and 34,135 / 34,328 / 34,231 in two sets; this tree 33,380 / 33,773 / 33,689 then, after the fix below, 33,373 / 34,206 /
+  34,061. None open: 86,168 / 85,916 / 86,961 (HEAD), 86,415 / 86,138 / 85,628. **The machine was about 5% slower than at 7e
+  (HEAD read 36,265 then), so HEAD itself is under the 35,000 tripwire today** on every run but one (35,075): the floor
+  cannot be passed on this machine this hour by either tree, and the tripwire was not lowered. Against HEAD this tree
+  started 2.4% down. An esbuild bundle with `--cpu-prof` (seed 12, three minutes) put the extra in the ordinary crowd's
+  `crowd` and `cancelWhere` on the other desks (+2.3 and +2.5 points of the step, inclusive), not in the options' code: `StockState`
+  had gained an optional `option` property on POX's twelve books alone, which made the property reads in the exchange loops
+  that every venue shares see one more shape. The terms now live in a map beside the books (`Exchange.terms`); the bundle
+  then read 37,691 / 37,628 / 36,944 against HEAD's 37,840 / 36,790 / 37,194, and the floor 1.0% under HEAD, inside the
+  run-to-run spread. What 7f runs per tick is the quoter's own turn: `informedTurn` reads two best prices (`OrderBook.bestPrice`,
+  which replaced a `quote()` that walked both sides and allocated).
+
+## Stage 6 in the stage harness, 2026-11-10
+
+`STAGE_PACE=1 STAGE_SEEDS=1 STAGE_DAYS=8 STAGE_PLAYERS=follower npx vitest run test/stagepace.test.ts` and the same with `sitter`
+(two processes, 30 and 53 minutes; the tree at the end of 7f). **Stage 6 does not open for either player in eight trading days.**
+The follower opens stage 2 at 1.2 trading minutes, stage 3 at 1.5, stage 4 at 1.6 and stage 5 on day 6, Monday 09:29 (1,950 trading
+minutes: 195 real minutes at 10x, 33 at 60x); the sitter stage 2 at 1.2 minutes and no more. Stage 6 needs stage 5 and the futures
+desk's three lessons (`basis`, `overnight`, `lead`), which `test/player.ts` does not play (its desk actions are the stocks'
+`hand` and `used`), so it never opens; nor do the options desk's six lessons (`insure` to `crush`) tick, which the harness now lists.
+A scripted player that plays the futures desk's lessons is not written; the stage opens in `test/stages.test.ts` and the store test
+by stored progress. (The earlier note that stage 5 opens on the Monday of week 2, about 3.25 real hours at 10x, holds: 195 minutes.)
+
+- **The tripwire lowered**, 2026-11-10, after part 7f: every desk open read 34,272 and 34,830 (`npm run floors`, this
+  session), HEAD 33,900 to 35,100 on the same hour. Chris lowered the every-desk-open floor from 35,000 to 32,000:
+  slower is fine.

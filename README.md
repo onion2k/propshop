@@ -16,8 +16,8 @@ http://localhost:5181.
   block), guess whether it will do better, the same or worse, and run the
   same morning again. The two runs sit side by side, the answer is measured
   from them, and the moments that decided it replay a hundred times slower
-  on a map of every message on the wire. Seven so far: the headline, a few
-  miles, the free option, the lead, last look, the fix and delivery. The list ends with two doors to the one game: **Run the firm**,
+  on a map of every message on the wire. Nine so far: the headline, a few
+  miles, the free option, the lead, last look, the fix, delivery, the hedge and the crush. The list ends with two doors to the one game: **Run the firm**,
   which opens a stage at a time as you learn it, and **Free play**, the open week with everything shown.
 - **A market, not a price feed.** Fourteen fictional stocks in six sectors
   and an index over twelve of them trade on three fictional exchanges, each with its
@@ -73,8 +73,15 @@ http://localhost:5181.
   lists each option held through the close and what it settled for. It has
   three blocks (an option maker that quotes from the book's own volatility and
   hedges its delta in the index future, put-call parity, and a straddle bought
-  into a release) and a rival, Bluestem Volatility, on the Prairie rack. It
-  opens at the last stage, Volatility, and in free play.
+  into a release) and a rival, Bluestem Volatility, on the Prairie rack. Its
+  customers are net buyers of options (puts above all) and a few of them are
+  informed, so a maker that fills them ends short options: it earns the premium's
+  decay on a quiet day and pays for the moves of a busy one, and the hedge takes
+  the direction away at the future's spread. It has six lessons of its own (buy
+  insurance, implied against realised, hedge the delta, gamma on a trending day,
+  find parity, watch the crush), two experiments (the hedge and the crush) and a
+  target: a week in which its blocks and the futures they hedge with net more than
+  the Prairie rack costs. It opens at the last stage, Volatility, and in free play.
 - **Strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day

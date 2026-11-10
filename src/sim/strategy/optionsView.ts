@@ -229,6 +229,19 @@ export function underlyingMid(view: OptionsInput, underlying: string): number | 
   return (f.bid.price + f.ask.price) / 2 / carryFactor(near[1], Math.floor(view.now / 1000) * 1000);
 }
 
+/**
+ * The underlying as the nearest watched future prices it: its mid less its carry, the leading price and the one a hedge
+ * in the future is traded at. Null with no such future or a one-sided book. Unlike `underlyingMid` it has one source,
+ * so it does not jump by the index book's lag when that book is one-sided for a moment.
+ */
+export function futureSpot(view: OptionsInput, underlying: string): number | null {
+  const near = futuresOn(view, underlying)[0];
+  if (!near) return null;
+  const f = bestAcross(view as MarketView, near[0]);
+  if (!f.bid || !f.ask) return null;
+  return (f.bid.price + f.ask.price) / 2 / carryFactor(near[1], Math.floor(view.now / 1000) * 1000);
+}
+
 /** What `futuresOn` found, kept for the contracts and the symbols it was asked of (both stand while the listing does). */
 const futuresKept = new WeakMap<object, WeakMap<object, Map<string, [string, ContractView][]>>>();
 

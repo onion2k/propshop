@@ -265,9 +265,9 @@ export const COMPETITORS: CompetitorSpec[] = [
     // The options desk's rival, there once the desk opens: a rack at the Prairie Board, which is where the options
     // trade, quoting every option from the book's own volatility and hedging its delta in the index future. It sees
     // the futures and the options and not the stocks (it prices the index from the future). It quotes where the
-    // venue's quoter does (an edge of one volatility point, its half-spread) and looks twice a second: a quicker or
-    // tighter rival made the every-desk-open step rate fall under its floor (docs/measured.md). The firm the player
-    // meets in the options' books. A draft name.
+    // venue's quoter does, half a point inside its two and a half (the player's default is a point inside), and looks twice a second: a
+    // quicker or tighter rival made the every-desk-open step rate fall under its floor (docs/measured.md). It hedges
+    // inside a band as wide as the player's. The firm the player meets in the options' books. A draft name.
     id: 'bluestem',
     name: 'Bluestem Volatility',
     location: 'colo-prairie',
@@ -276,7 +276,7 @@ export const COMPETITORS: CompetitorSpec[] = [
     minEdge: 0,
     desk: 'options',
     watches: ['futures', 'options'],
-    blocks: [{ id: 'optionMaker', params: { hedge: 1, every: 500, edge: 1 } }],
+    blocks: [{ id: 'optionMaker', params: { hedge: 1, every: 500, edge: 2 } }],
   },
 ];
 

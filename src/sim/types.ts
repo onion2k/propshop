@@ -236,9 +236,21 @@ export interface ExchangeSpec {
    * its belief (which follows the fair value with `lag`, as the crowd's does) less and plus a half-spread of
    * `halfSpreadVol` volatility points, turned into price by the instrument's vega (the market supplies it), and
    * re-posts only when either rounded price moves. Customer takers arrive at `takeRate` a second at full activity,
-   * each taking up to `size` at the touch, drawn from the venue's own crowd stream. No depth, no stale sweep.
+   * each taking up to `orderSize` (default `size`) at the touch, drawn from the venue's own crowd stream. No depth, no
+   * stale sweep. `buy` makes the customers net buyers of options: the share of them who buy, at the money, out of it
+   * (a call above the underlying, a put below) and in it, blended over `span` (a fraction of the underlying) of
+   * moneyness; absent, an even toss. `informed` is a second flow that comes at `rate` a second at full activity while
+   * the fair value is `ticks` ticks or more past a touch, and takes up to `size` of it: a quote that lags the fair
+   * value is picked off.
    */
-  quoter?: { halfSpreadVol: number; size: number; takeRate: number };
+  quoter?: {
+    halfSpreadVol: number;
+    size: number;
+    takeRate: number;
+    orderSize?: number;
+    buy?: { otm: number; atm: number; itm: number; span: number; puts?: { otm: number; atm: number; itm: number } };
+    informed?: { rate: number; ticks: number; size: number };
+  };
   /**
    * Its fixes: call auctions at these times of day (the sim's clock), Monday to Friday, while it is open at `at`. For
    * `callMs` before each, nothing matches on its books: orders rest uncrossed, a firm's immediate-or-cancel order is

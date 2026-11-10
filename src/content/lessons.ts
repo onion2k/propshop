@@ -3,6 +3,8 @@
 // order of the stages (see stages.ts): home, seat | gap, race, cost | maker, noise | hand, used, week.
 
 import type { Snapshot } from '../sim';
+import { IXF } from './futures';
+import { OPTION_SERIES } from './options';
 
 /** The pages a lesson can take the player to: the pages of the app. */
 export const GO_PAGES = ['overview', 'market', 'desk', 'strategy', 'reports'] as const;
@@ -476,6 +478,155 @@ LESSONS.push(
       'market’s mood. Most days the two move together and the ratio between them wanders in a band; pairs sells ' +
       'whichever is dear and buys the other, and waits. It is a bet that the link holds. A strike at the mine moves ' +
       'one leg and not the other, and then the band is no comfort.',
+  },
+);
+
+/** The options desk's symbols: a series' root and its day. A listed option is gone by the time its fills are read. */
+const OPTION_SYMBOL = new RegExp(`^(${OPTION_SERIES.map((x) => x.root).join('|')})\\d+$`);
+const FUTURE_SYMBOL = new RegExp(`^${IXF.root}\\d+$`);
+
+/** Whether a fill was of an option, and whether of a call, a put, or the index future that hedges them. */
+const kindOf = (symbol: string): 'call' | 'put' | 'future' | null => {
+  if (FUTURE_SYMBOL.test(symbol)) return 'future';
+  if (!OPTION_SYMBOL.test(symbol)) return null;
+  const root = OPTION_SERIES.find((x) => symbol.startsWith(x.root));
+  return root?.contract.right ?? null;
+};
+
+/** The options the day reports settled, every day kept. */
+const expiries = (s: Snapshot) => s.days.flatMap((d) => d.expired ?? []);
+
+/** The options desk's lessons: they open with the desk at stage 6 and open no stage (DESK_LESSONS in stages.ts). */
+LESSONS.push(
+  {
+    id: 'insure',
+    go: { page: 'market', target: 'options' },
+    title: 'Buy insurance',
+    task:
+      'The options desk is open. On the Market page press Watch the chain, then from the Desk page buy one put a ' +
+      'strike or so below the index, and hold it through the 16:00 close.',
+    watch:
+      'The premium leaving your cash at the fill, the put worth less as the afternoon runs on, and, in the day’s ' +
+      'report, what it settled at and what it made against what it cost.',
+    terms: ['put', 'premium', 'strike', 'out-of-the-money', 'intrinsic-value', 'cash-settlement'],
+    done: (s) => expiries(s).some((x) => x.right === 'put' && x.qty > 0),
+    lesson:
+      'The premium is the price of a floor. If the index finishes above the strike the put is worth nothing and the ' +
+      'premium is gone, as a year’s fire insurance is when the house does not burn. If it falls through the strike ' +
+      'the put pays the difference, whatever the index has done, and that is the most you can ever have lost on the ' +
+      'shares it protected. Most days the insurance does not pay; that is how the seller of it earns.',
+  },
+  {
+    id: 'implied',
+    go: { page: 'market', target: 'options' },
+    title: 'Implied against realised',
+    task:
+      'Press Watch the chain. Then, from the Desk page, sell one call and one put at the same strike, the one nearest ' +
+      'the index, and hold both through the close. That is a short straddle.',
+    watch:
+      'The chain’s line for the move the market expects, the implied volatility at the money against the realised, ' +
+      'and then what the index actually did by 16:00 against the premium you took in.',
+    terms: ['implied-volatility', 'realised-volatility', 'volatility-premium', 'time-value', 'premium'],
+    done: (s) => {
+      const sold = expiries(s).filter((x) => x.qty < 0);
+      return sold.some((c) => c.right === 'call' && sold.some((p) => p.right === 'put' && p.strike === c.strike));
+    },
+    lesson:
+      'An option is priced on the volatility the market expects, the implied, and settled on the volatility the ' +
+      'index delivers, the realised. A seller takes the first and pays the second. Priced a little over what usually ' +
+      'happens, the straddle seller wins on most quiet days, a few cents at a time, and loses badly on a day the ' +
+      'index runs: the premium is the reward for being the one who is run over. It is a fair price on average, not a ' +
+      'gift, and a trending or news-heavy day is where it is collected.',
+  },
+  {
+    id: 'hedge',
+    go: { page: 'market', target: 'options' },
+    title: 'Hedge the delta',
+    task:
+      'Press Watch the chain, then turn on the option maker (hedge on) from a seat that sees the Prairie Board’s ' +
+      'future quickly, and let it run for a while. Or sell a call by hand and hedge it yourself with the future.',
+    watch:
+      'The Position block’s delta for the desk, the futures it says would hedge it, and the maker’s fills in the ' +
+      'future keeping it near nothing as the options fill.',
+    terms: ['delta', 'delta-hedge', 'gamma', 'future'],
+    done: (s) => {
+      const mine = fillsFor(s, 'optionMaker').map((f) => kindOf(f.symbol));
+      return mine.filter((k) => k === 'call' || k === 'put').length >= 10 && mine.includes('future');
+    },
+    lesson:
+      'A call bought is a bet that the index goes up, half a unit for every unit it does, its delta. The maker holds ' +
+      'whatever the customers leave it, which is a bet on the index it never meant to make, so it sells the future ' +
+      'against it until the net is near nothing. What is left is not a view on direction at all: the options’ ' +
+      'curvature, their gamma, and what they cost to hold, their theta. The hedge costs the future’s spread each ' +
+      'time, which is why it works inside a band and not every tick.',
+  },
+  {
+    id: 'gamma',
+    go: { page: 'market', target: 'options' },
+    title: 'Gamma on a trending day',
+    task:
+      'Press Watch the chain, run the option maker hedged, and play on until a trending or news-heavy day has ' +
+      'closed. The day’s report names the kind of day.',
+    watch:
+      'The Position block’s gamma and theta, the maker’s result by day in the report, and which days it earned ' +
+      'on and which it gave back.',
+    terms: ['gamma', 'theta', 'regimes', 'delta-hedge'],
+    done: (s) =>
+      s.days.some((d) => (d.regime === 'trending' || d.regime === 'news') && (d.byBlock.optionMaker?.fills ?? 0) > 0),
+    lesson:
+      'Short an option, a maker is paid its theta, a little every minute, and charged its gamma: each move of the ' +
+      'index, up or down, makes the position worse in a way the hedge, chasing, always arrives a step late for. On a ' +
+      'quiet day the theta is larger and the maker keeps it. On a day the index goes one way, the moves add up and ' +
+      'the gamma costs more than the theta paid. The hedge takes away the direction and leaves exactly this: a market ' +
+      'maker in options is short the index’s movement, and is paid for it only in the days that do not.',
+  },
+  {
+    id: 'parity',
+    go: { page: 'market', target: 'options' },
+    title: 'Find parity',
+    task:
+      'Press Watch the chain, then turn on parity from a seat that sees the Prairie Board quickly, and play on past ' +
+      'a headline. A call, a put and the future are tied by one price; when they come apart it trades all three.',
+    watch:
+      'A call bought, a put sold and the future sold (or the reverse) in one moment, and the three prices at that ' +
+      'moment: the call less the put against the future less the strike.',
+    terms: ['put-call-parity', 'conversion', 'call', 'put', 'future'],
+    done: (s) => {
+      const kinds = new Set(fillsFor(s, 'parity').map((f) => kindOf(f.symbol)));
+      return kinds.has('call') && kinds.has('put') && kinds.has('future');
+    },
+    lesson:
+      'A call bought and a put sold at one strike pay exactly what the index does above the strike: it is the ' +
+      'index, bought forward. So their prices differ by the index less the strike, and a future is the index bought ' +
+      'forward too. When the options’ books are slow to follow a move the future has already made, that tie ' +
+      'breaks for a moment, and trading all three locks in the gap with no view on where the index goes. Rare, ' +
+      'small, and gone in the time it takes the slower books to catch up.',
+  },
+  {
+    id: 'crush',
+    go: { page: 'market', target: 'options' },
+    title: 'Watch the crush',
+    task:
+      'Press Watch the chain. The day’s calendar lists the market-wide releases by time. Turn on the event straddle ' +
+      'and play through one: it buys a straddle ahead of the release and sells it before it lands.',
+    watch:
+      'The at-the-money implied volatility rising as the release comes closer, and, as it lands, falling away ' +
+      'at once whichever way the index goes.',
+    terms: ['the-crush', 'economic-calendar', 'implied-volatility', 'vega'],
+    done: (s) => {
+      const sides = new Set(
+        fillsFor(s, 'eventVol')
+          .filter((f) => kindOf(f.symbol) === 'call' || kindOf(f.symbol) === 'put')
+          .map((f) => f.side),
+      );
+      return sides.has('buy') && sides.has('sell');
+    },
+    lesson:
+      'Ahead of a known release the market adds a premium for the surprise, so a straddle costs more as the minute ' +
+      'comes. Once the number is out the surprise has been spent, and the premium goes at once, whether the index ' +
+      'jumped or not: the crush. A buyer of the straddle must be right about the size of the move by more than ' +
+      'the premium; a seller before the release gives up the rise to be out of the fall. Owning volatility is not ' +
+      'owning direction, and the date of the news is public.',
   },
 );
 

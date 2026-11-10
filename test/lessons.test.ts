@@ -1,4 +1,4 @@
-import { CONTENT, GO_PAGES, GO_TABS, GO_TARGETS, LESSONS, REGIMES } from '../src/content';
+import { CONTENT, DESK_LESSONS, GO_PAGES, GO_TABS, GO_TARGETS, LESSONS, REGIMES } from '../src/content';
 import {
   Game,
   MS_PER_DAY,
@@ -10,9 +10,11 @@ import {
   regimeFor,
   type Content,
   type DayReport,
+  type Expired,
   type Snapshot,
 } from '../src/sim';
 import { infrastructureFrom } from '../src/sim/upgrades';
+import { OPTIONS_DESK } from '../src/content/options';
 import { METALS_DESK, METAL_SERIES, METAL_VENUES, SPOT } from '../src/content/metals';
 
 function fresh(): Snapshot {
@@ -22,7 +24,7 @@ function fresh(): Snapshot {
 const L = (id: string) => LESSONS.find((l) => l.id === id)!;
 
 describe('lessons', () => {
-  it("are the stocks' ten in stage order, then the futures desk's three, the currencies desk's four and the metals desk's five, each with words", () => {
+  it("are the stocks' ten in stage order, then the futures desk's three, the currencies desk's four, the metals desk's five and the options desk's six, each with words", () => {
     expect(LESSONS.map((l) => l.id)).toEqual([
       'home',
       'seat',
@@ -46,6 +48,12 @@ describe('lessons', () => {
       'delivery',
       'fix',
       'miner',
+      'insure',
+      'implied',
+      'hedge',
+      'gamma',
+      'parity',
+      'crush',
     ]);
     for (const l of LESSONS) {
       expect(l.task.length).toBeGreaterThan(20);
@@ -365,6 +373,94 @@ describe('lessons', () => {
         expect(L('delivery').done(s)).toBe(true);
       },
     );
+  });
+
+  describe("the options desk's", () => {
+    /** A snapshot with the desk open, and these fields over it. */
+    function withOptions(over: Partial<Snapshot> = {}): Snapshot {
+      const g = new Game(CONTENT, 9);
+      g.openDesk(OPTIONS_DESK);
+      return { ...g.snapshot(), ...over };
+    }
+    const fill = (block: string, symbol: string, side: 'buy' | 'sell' = 'buy') =>
+      ({ block, symbol, side }) as unknown as Snapshot['fills'][number];
+    const expired = (right: 'call' | 'put', strike: number, qty: number) =>
+      ({ symbol: `X${right}${strike}`, right, strike, qty, settled: 0, cash: 0, made: 0 }) satisfies Expired;
+    const day = (over: Partial<DayReport> = {}) => ({ byBlock: {}, ...over }) as unknown as DayReport;
+    const symbols = (s: Snapshot) => ({
+      call: s.stocks.find((r) => r.option?.right === 'call')!.symbol,
+      put: s.stocks.find((r) => r.option?.right === 'put')!.symbol,
+      future: s.stocks.find((r) => r.contract && !r.option)!.symbol,
+    });
+
+    it('all six go to the chain, where "Watch the chain" is, and are listed for the desk in order', () => {
+      expect(DESK_LESSONS.options).toEqual(['insure', 'implied', 'hedge', 'gamma', 'parity', 'crush']);
+      for (const id of DESK_LESSONS.options!) {
+        expect(L(id).go, id).toEqual({ page: 'market', target: 'options' });
+        // Each starts from the shortcut, since a block or a ticket sees only what is watched.
+        expect(L(id).task, id).toMatch(/Watch the chain/);
+      }
+    });
+
+    it('Buy insurance: done by a put held to the close, not a call, nor one sold', () => {
+      const s = withOptions();
+      expect(L('insure').done(s)).toBe(false);
+      expect(L('insure').done({ ...s, days: [day({ expired: [expired('call', 5300, 1)] })] })).toBe(false);
+      expect(L('insure').done({ ...s, days: [day({ expired: [expired('put', 5300, -1)] })] })).toBe(false);
+      expect(L('insure').done({ ...s, days: [day({ expired: [expired('put', 5300, 2)] })] })).toBe(true);
+    });
+
+    it('Implied against realised: done by a call and a put sold at one strike and held to the close', () => {
+      const s = withOptions();
+      const days = (...e: Expired[]) => [day({ expired: e })];
+      expect(L('implied').done({ ...s, days: days(expired('call', 5300, -1)) })).toBe(false);
+      expect(L('implied').done({ ...s, days: days(expired('call', 5300, -1), expired('put', 5200, -1)) })).toBe(false);
+      expect(L('implied').done({ ...s, days: days(expired('call', 5300, 1), expired('put', 5300, 1)) })).toBe(false);
+      expect(L('implied').done({ ...s, days: days(expired('call', 5300, -1), expired('put', 5300, -1)) })).toBe(true);
+    });
+
+    it('Hedge the delta: done once the option maker has traded options and the future that hedges them', () => {
+      const s = withOptions();
+      const { call, put, future } = symbols(s);
+      const options = Array.from({ length: 10 }, (_, i) => fill('optionMaker', i % 2 ? call : put));
+      expect(L('hedge').done({ ...s, fills: options })).toBe(false);
+      expect(L('hedge').done({ ...s, fills: [...options, fill('hand', future)] })).toBe(false);
+      expect(L('hedge').done({ ...s, fills: [...options.slice(0, 5), fill('optionMaker', future)] })).toBe(false);
+      expect(L('hedge').done({ ...s, fills: [...options, fill('optionMaker', future)] })).toBe(true);
+    });
+
+    it('Gamma on a trending day: done by a trending or news day closed with the option maker having traded', () => {
+      const s = withOptions();
+      const traded = { optionMaker: { fills: 12, realised: 0, fees: 0 } };
+      const closed = (regime: string, byBlock: DayReport['byBlock']) => [day({ regime, byBlock })];
+      expect(L('gamma').done({ ...s, days: closed('calm', traded) })).toBe(false);
+      expect(L('gamma').done({ ...s, days: closed('trending', {}) })).toBe(false);
+      expect(
+        L('gamma').done({ ...s, days: closed('trending', { optionMaker: { fills: 0, realised: 0, fees: 0 } }) }),
+      ).toBe(false);
+      expect(L('gamma').done({ ...s, days: closed('trending', traded) })).toBe(true);
+      expect(L('gamma').done({ ...s, days: closed('news', traded) })).toBe(true);
+    });
+
+    it('Find parity: done once the parity block has traded a call, a put and the future', () => {
+      const s = withOptions();
+      const { call, put, future } = symbols(s);
+      expect(L('parity').done({ ...s, fills: [fill('parity', call), fill('parity', put)] })).toBe(false);
+      expect(L('parity').done({ ...s, fills: [fill('hand', call), fill('parity', put), fill('parity', future)] })).toBe(
+        false,
+      );
+      expect(
+        L('parity').done({ ...s, fills: [fill('parity', call), fill('parity', put), fill('parity', future, 'sell')] }),
+      ).toBe(true);
+    });
+
+    it('Watch the crush: done once the straddle block has both bought and sold options', () => {
+      const s = withOptions();
+      const { call, put } = symbols(s);
+      expect(L('crush').done({ ...s, fills: [fill('eventVol', call), fill('eventVol', put)] })).toBe(false);
+      expect(L('crush').done({ ...s, fills: [fill('hand', call), fill('hand', put, 'sell')] })).toBe(false);
+      expect(L('crush').done({ ...s, fills: [fill('eventVol', call), fill('eventVol', put, 'sell')] })).toBe(true);
+    });
   });
 });
 

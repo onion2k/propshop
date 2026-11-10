@@ -2,6 +2,7 @@
 // few seeds and an hour of each, scaled to a day. PACE_MINUTES and PACE_SEEDS change the length and the seeds.
 import { CONTENT } from '../src/content';
 import { Game, MS_PER_MINUTE, TICK_MS, isMarketOpen } from '../src/sim';
+import { isOption } from '../src/sim/instrument';
 import { HAND_BLOCK, type Firm } from '../src/sim/firm';
 import { blockById, paramsFrom, type MarketView } from '../src/sim/strategy';
 import { infrastructureFrom } from '../src/sim/upgrades';
@@ -30,6 +31,11 @@ const FX_PAIRS = ['EURUSD', 'USDJPY', 'EURJPY'];
 const THAMESFORD_RACK = { location: 'colo-thamesford', network: 'fibre', computer: 'rack' };
 const HUDSON_RACK = { location: 'colo-hudson', network: 'fibre', computer: 'rack' };
 const METAL_BLOCK_IDS = ['curve', 'fixArb', 'crossPairs'];
+// The options desk's: from home, and from the rack at the Prairie Board that serves it, on microwave
+// (plans/desk-options.md 7f). A block of the desk opens it (and the futures desk) and watches the index, its futures
+// and the options first. The hour from the open holds the first of the day's trades only: a day's maker is read
+// from whole days by regime, `OPTION_PACE=1 npx vitest run test/optionpace.test.ts` (see docs/measured.md).
+const OPTION_BLOCK_IDS = ['optionMaker', 'parity', 'eventVol'];
 
 type Config = [
   string,
@@ -89,6 +95,13 @@ const CONFIGS: Config[] = [
   ['metals home fixArb', HOME, ['fixArb']],
   ['metals thamesford fixArb', THAMESFORD_RACK, ['fixArb']],
   ['metals hudson fixArb', HUDSON_RACK, ['fixArb']],
+  ['options home maker', HOME, ['optionMaker']],
+  ['options prairie maker', PRAIRIE_MW, ['optionMaker']],
+  ['options prairie maker unhedged', PRAIRIE_MW, ['optionMaker'], { optionMaker: { hedge: 0 } }],
+  ['options home parity', HOME, ['parity']],
+  ['options prairie parity', PRAIRIE_MW, ['parity']],
+  ['options home eventVol', HOME, ['eventVol']],
+  ['options prairie eventVol', PRAIRIE_MW, ['eventVol']],
   ['metals home crossPairs', HOME, ['crossPairs']],
   ['metals thamesford crossPairs', THAMESFORD_RACK, ['crossPairs']],
   ['metals hudson crossPairs', HUDSON_RACK, ['crossPairs']],
@@ -123,6 +136,8 @@ measure('paces', { timeout: 3_600_000 }, () => {
       if (fx) g.openDesk('fx');
       const metals = blocks.some((b) => METAL_BLOCK_IDS.includes(b));
       if (metals) g.openDesk('metals');
+      const options = blocks.some((b) => OPTION_BLOCK_IDS.includes(b));
+      if (options) g.openDesk('options');
       g.firm.infra = infrastructureFrom(CONTENT, infra);
       for (const b of g.firm.blocks) b.enabled = blocks.includes(b.id);
       for (const [id, p] of Object.entries(params ?? {})) g.setBlock(id, { params: p });
@@ -133,7 +148,8 @@ measure('paces', { timeout: 3_600_000 }, () => {
         ...(fx ? FX_PAIRS : []),
         ...(metals ? ['XAU', 'RDG', ...g.market.live('GC').slice(0, 2), 'XAG', ...g.market.live('SI')] : []),
         'IDX',
-        ...(desk ? g.market.live('IXF') : []),
+        ...(desk || options ? g.market.live('IXF') : []),
+        ...(options ? g.market.stocks.filter(isOption).map((x) => x.symbol) : []),
         ...CONTENT.stocks.filter((s) => !s.constituents).map((s) => s.symbol),
       ]);
       g.skipToOpen();
@@ -197,6 +213,9 @@ measure('paces', { timeout: 3_600_000 }, () => {
           for (const c of g.competitors.filter((x) => x.name === 'Kestrel Currency'))
             add(`bot Kestrel (${name.slice(3)})`, c.equity(g.market, g.now) - kestrelStart, c.stats.fillsReceived);
       }
+      if (options && name.includes('prairie'))
+        for (const c of g.competitors.filter((x) => x.name === 'Bluestem Volatility'))
+          add(`bot Bluestem (${name.slice(8)})`, pnl(c, g), c.stats.fillsReceived);
       if (name === 'prairie leadLag mw')
         for (const c of g.competitors.filter((x) => x.name === 'Prairie Partners'))
           add(`bot ${c.name} (desk open)`, pnl(c, g), c.stats.fillsReceived);

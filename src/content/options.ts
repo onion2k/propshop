@@ -11,9 +11,15 @@ export const OPTIONS_DESK = 'options';
 /**
  * Stocks' hours (09:30 to 16:00, Monday to Friday: no `session`), in the Prairie Board's building. The same fee and
  * lag as the Board's. Its books are quoted by a model quoter, not the ordinary crowd (plans/desk-options.md 7c): one
- * bid and one ask of 1,000 contracts a book, at the belief less and plus a half-spread of one volatility point (about
- * half a cent at the money today, a cent and a bit tomorrow; the tick is a cent, so a far option's is the tick),
- * and customers taking up to the quoter's size at the touch about once a second a book. Drafts, tuned in 7f.
+ * bid and one ask of 1,000 contracts a book, at the belief less and plus a half-spread of two and a half volatility
+ * points (about 1.3 cents at the money today, three tomorrow; the tick is a cent, so a far option's is the tick).
+ *
+ * The customers that take them were tuned in 7f (docs/measured.md): they come about once in fifty seconds a book, in
+ * orders of up to ten contracts, not a thousand a second; they are net buyers of options, most of all of the ones out
+ * of the money (insurance, lottery tickets), and of puts more than calls (the calls are overwritten and sold); and a
+ * few of them are informed, taking a quote the fair value has left three ticks behind, five times a second at most.
+ * A maker that fills them ends short options, so short gamma and long delta: it earns the premium's decay on a quiet
+ * day and pays for the moves of a busy one. All drafts, all drawn from the venue's own stream.
  */
 export const POX: ExchangeSpec = {
   id: 'POX',
@@ -23,7 +29,14 @@ export const POX: ExchangeSpec = {
   lag: 50,
   noise: 0.3,
   desk: OPTIONS_DESK,
-  quoter: { halfSpreadVol: 1, size: 1000, takeRate: 1 },
+  quoter: {
+    halfSpreadVol: 2.5,
+    size: 1000,
+    takeRate: 0.02,
+    orderSize: 10,
+    buy: { otm: 0.75, atm: 0.6, itm: 0.5, span: 0.02, puts: { otm: 0.92, atm: 0.65, itm: 0.5 } },
+    informed: { rate: 5, ticks: 3, size: 5 },
+  },
 };
 
 /**

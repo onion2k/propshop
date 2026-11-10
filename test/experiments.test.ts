@@ -55,10 +55,26 @@ const BEFORE_RENT: Record<string, Record<string, [number, number, number]>> = {
   lastlook: { base: [14877, 32, 50], book: [36893, 101, 2035], home: [7133, 4, 25], 'book-home': [4701, 7, 155] },
   fix: { base: [203008, 17, 42], fix: [137500, 8, 0], sweep: [161359, 10, 41], rack: [203009, 16, 41] },
   delivery: { base: [30740, 18, 60], roll: [-2980, 57, 180], close: [13080, 37, 120], home: [30240, 19, 60] },
+  // The options desk's two, pinned as they were first measured (2026-11-10, after the customers were tuned).
+  hedge: { base: [13236, 42, 14], off: [-42000, 41, 0], close: [27430, 45, 20], wide: [21739, 7, 11] },
+  crush: { base: [-66000, 6, 1000], before: [-16000, 7, 1000], early: [-21000, 6, 1000], bigger: [-132000, 6, 2000] },
 };
 
-it('are the five, then the metals desk’s two: the fix and delivery', () => {
-  expect(EXPERIMENTS.map((e) => e.id)).toEqual(['headline', 'miles', 'option', 'lead', 'lastlook', 'fix', 'delivery']);
+it('are the five, the metals desk’s two (the fix and delivery), then the options desk’s two (the hedge and the crush)', () => {
+  expect(EXPERIMENTS.map((e) => e.id)).toEqual([
+    'headline',
+    'miles',
+    'option',
+    'lead',
+    'lastlook',
+    'fix',
+    'delivery',
+    'hedge',
+    'crush',
+  ]);
+  // Each of the options desk's opens the futures desk too, and is the options desk's on the cover.
+  for (const e of EXPERIMENTS.filter((x) => x.id === 'hedge' || x.id === 'crush'))
+    expect(e.desks).toEqual(['futures', 'options']);
   expect(FIX_LOTS).toBeGreaterThan(10);
   expect(DELIVERY_LOTS).toBeGreaterThan(0);
 });
@@ -89,6 +105,23 @@ describe.each(EXPERIMENTS.map((e) => [e.id, e] as const))('experiment %s', (_id,
       expect(base.moments.some((m) => m.kind === 'expiry')).toBe(true);
       expect(base.measures.ledger?.held.XAU?.qty).toBe(DELIVERY_LOTS);
     }
+    // The hedge: a market-wide release lands in the window, the maker is filled by customers in the options and hedges
+    // in the future, and the run without the hedge trades none.
+    if (e.id === 'hedge') {
+      expect(base.moments.map((m) => m.kind)).toEqual(expect.arrayContaining(['headline', 'entry', 'hedge']));
+      const traded = base.measures.ledger!.traded;
+      expect(Object.entries(traded).some(([sym, t]) => sym.startsWith('IXF') && t.sold + t.bought > 0)).toBe(true);
+      expect(Object.keys(traded).some((sym) => sym.startsWith('O'))).toBe(true);
+    }
+    // The crush: the release is in the window, the straddle is bought before it and sold after it, all of it.
+    if (e.id === 'crush') {
+      expect(base.moments.map((m) => m.kind)).toEqual(expect.arrayContaining(['headline', 'entry', 'exit']));
+      const traded = base.measures.ledger!.traded;
+      expect(traded.OC00?.bought).toBe(50);
+      expect(traded.OP00?.bought).toBe(50);
+      expect(traded.OC00?.sold).toBe(50);
+      expect(traded.OP00?.sold).toBe(50);
+    }
     expect(base.measures.fills).toBeGreaterThan(0);
     // The rent changes no experiment's answer: every run's figures are those from before it.
     const pinned = (id: string, m: Measures) => {
@@ -116,6 +149,16 @@ describe.each(EXPERIMENTS.map((e) => [e.id, e] as const))('experiment %s', (_id,
         const t = b.measures.ledger!.traded.XAU!;
         expect(t.bought).toBe(FIX_LOTS);
         expect(t.buyValue).toBe(fix.price! * FIX_LOTS);
+      }
+      // Without the hedge, no future is traded.
+      if (e.id === 'hedge' && change.id === 'off')
+        expect(Object.keys(b.measures.ledger!.traded).some((sym) => sym.startsWith('IXF'))).toBe(false);
+      // Sold before the release, the straddle is out earlier and the window ends flat in options.
+      if (e.id === 'crush' && change.id === 'before') {
+        expect(b.moments.find((m) => m.kind === 'exit')!.at).toBeLessThan(
+          b.moments.find((m) => m.kind === 'headline')!.at,
+        );
+        expect(b.measures.ledger!.held.OC00?.qty ?? 0).toBe(0);
       }
       // Rolled, nothing is delivered: the next contract is held instead.
       if (e.id === 'delivery' && change.id === 'roll') expect(b.measures.ledger!.held.XAU?.qty ?? 0).toBe(0);

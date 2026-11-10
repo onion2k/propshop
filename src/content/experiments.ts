@@ -6,7 +6,9 @@
 import type { Game, GameEvent, Ledger, Measures, Moment, MomentSource, OpenOrder, Setup } from '../sim';
 import { MS_PER_HOUR, MS_PER_MINUTE, MS_PER_SECOND } from '../sim';
 import { CONTENT } from './index';
+import { IXF } from './futures';
 import { CALL_MS, GC, STORAGE_RATE } from './metals';
+import { OPTION_SERIES } from './options';
 import { COMPETITORS } from './upgrades';
 
 const OPEN = 9 * MS_PER_HOUR + 30 * MS_PER_MINUTE;
@@ -1265,7 +1267,327 @@ const DELIVERY: Experiment = {
     'A trader who wants the exposure rolls to the next contract before expiry, and pays two spreads for it.',
 };
 
-export const EXPERIMENTS: readonly Experiment[] = [HEADLINE, MILES, OPTION, LEAD, LOOK, FIX, DELIVERY];
+// ---- 8. The hedge ------------------------------------------------------------------------------------------
+
+/** The options desk's chain as a rack watches it: the index, the week's two futures and every option, today's and tomorrow's. */
+function chainWatched(day: number): string[] {
+  const week = Math.floor(day / 7);
+  return [
+    'IDX',
+    `${IXF.root}${week}`,
+    `${IXF.root}${week + 1}`,
+    ...OPTION_SERIES.flatMap((x) => [0, 1].map((k) => `${x.root}${day + k}`)),
+  ];
+}
+
+/**
+ * Seed 122, a trending Monday: a market-wide release lands at 09:46:10 and the index falls 37 cents over the next
+ * minute (a trending day's drift is a hundred and twenty basis points over the session; the release is the jump). Read
+ * from the calendar (`calendarOf`) for a trending day whose releases fall early, then the index's move in each window
+ * (docs/measured.md). The window opens four minutes before it, so the maker has quoted and been filled by then.
+ */
+const HEDGE_SEED = 122;
+const HEDGE_START = 34_930_000;
+
+/** Quotes of 25 contracts, up to 100 held in each option: a position the release can move in a few minutes. */
+const HEDGE_QUOTES = { hedge: 1, size: 25, maxPosition: 100 };
+
+const hedgeBase: Setup = {
+  location: 'colo-prairie',
+  network: 'microwave',
+  computer: 'rack',
+  watched: chainWatched(0),
+  blocks: [block('optionMaker', HEDGE_QUOTES)],
+};
+
+function hedgeTracker(): Tracker {
+  let release: Moment | null = null;
+  let entry: Moment | null = null;
+  let hedge: Moment | null = null;
+  const source: MomentSource = (_g, events) => {
+    for (const e of events) {
+      if (e.kind === 'news' && !release && e.headline.sector === null && e.headline.symbols.length > 1) {
+        release = {
+          at: e.at,
+          from: e.at - 100,
+          kind: 'headline',
+          label: 'A market-wide release lands, and the index moves',
+        };
+      }
+      if (e.kind !== 'fill' || e.fill.block !== 'optionMaker') continue;
+      const future = e.fill.symbol.startsWith(IXF.root);
+      if (!future && !entry) {
+        entry = {
+          at: e.at,
+          from: e.at - 80,
+          kind: 'entry',
+          label: `A customer takes your quote: you ${e.fill.side === 'buy' ? 'buy' : 'sell'} ${e.fill.size} ${e.fill.symbol}`,
+          symbol: e.fill.symbol,
+          exchange: e.fill.exchange,
+        };
+      }
+      if (future && !hedge) {
+        hedge = {
+          at: e.at,
+          from: e.at - 80,
+          kind: 'hedge',
+          label: `The hedge: you ${e.fill.side === 'buy' ? 'buy' : 'sell'} ${e.fill.size} ${e.fill.symbol} against what the options left you holding`,
+          symbol: e.fill.symbol,
+          exchange: e.fill.exchange,
+        };
+      }
+    }
+    return [];
+  };
+  return {
+    source,
+    pick: () => [entry, release, hedge].filter((m): m is Moment => m !== null).sort(byAt),
+  };
+}
+
+/** The contracts of options held at the end of a run, and of the index future, net. */
+function chainHeld(m: Measures): { options: number; future: number } {
+  const held = m.ledger?.held ?? {};
+  let options = 0;
+  let future = 0;
+  for (const [symbol, h] of Object.entries(held)) {
+    if (symbol.startsWith(IXF.root)) future += h.qty;
+    else if (OPTION_SERIES.some((x) => symbol.startsWith(x.root))) options += Math.abs(h.qty);
+  }
+  return { options, future };
+}
+
+const HEDGE: Experiment = {
+  id: 'hedge',
+  title: 'The hedge',
+  teaches: 'A market maker in options is left holding the index. The future takes it off, at a price.',
+  briefing:
+    'A trending Monday morning, from a rack at the Prairie Board, where the options trade. The option maker quotes ' +
+    'all twelve options a point and a half of volatility either side of what the book implies, in twenty-five ' +
+    'contracts, and the customers who come are mostly buyers, of puts above all: it sells them, and is left holding a ' +
+    'bet on the index it never meant to make (its delta). Four minutes in, a market-wide release lands and the index ' +
+    'falls. As given, the maker hedges: it trades the index future to keep the net delta near nothing. The change ' +
+    'takes the hedge off, or tightens it, or widens the quotes.',
+  terms: ['delta', 'delta-hedge', 'gamma', 'option'],
+  seed: HEDGE_SEED,
+  desks: ['futures', 'options'],
+  warmMs: 2 * MS_PER_MINUTE,
+  ledger: true,
+  startAt: HEDGE_START,
+  windowMs: 5 * MS_PER_MINUTE,
+  symbol: 'OC00',
+  baseline: hedgeBase,
+  baselineLabel: 'the option maker, hedged, from the Prairie rack',
+  changes: [
+    {
+      id: 'off',
+      label: 'Turn the hedge off',
+      detail:
+        'The maker keeps its quotes and its options and trades no future: whatever the customers leave it holding, it holds.',
+      apply: (s) => ({ ...s, blocks: [block('optionMaker', { ...HEDGE_QUOTES, hedge: 0 })] }),
+    },
+    {
+      id: 'close',
+      label: 'Hedge closely',
+      detail: 'The hedge keeps the net delta within 5 contracts of the future instead of 20: it trades far more often.',
+      apply: (s) => ({ ...s, blocks: [block('optionMaker', { ...HEDGE_QUOTES, hedgeBand: 5 })] }),
+    },
+    {
+      id: 'wide',
+      label: 'Quote wider',
+      detail: 'Three volatility points either side instead of one and a half: fewer customers, more for each.',
+      apply: (s) => ({ ...s, blocks: [block('optionMaker', { ...HEDGE_QUOTES, edge: 3 })] }),
+    },
+  ],
+  tracker: hedgeTracker,
+  explain: (a, b, change) => {
+    const ha = chainHeld(a);
+    const hb = chainHeld(b);
+    const out = [
+      `As given, the maker made ${dollars(a.pnl)} on ${a.fills} fills and ended holding ${ha.options} option ` +
+        `contracts and ${ha.future} of the future. After “${change.label}” it made ${dollars(b.pnl)} on ${b.fills} fills ` +
+        `and ended holding ${hb.options} option contracts and ${hb.future} of the future.`,
+    ];
+    if (change.id === 'off') {
+      out.push(
+        `With the hedge on the maker held ${Math.abs(ha.future)} of the index future against its options, ${ha.future < 0 ? 'short' : 'long'}, ` +
+          'and each trade was at the future’s spread and fee. Without it the options’ delta carried the maker with the ' +
+          'index: the release moved the index and the maker moved with it, a swing the hedge had taken away. It cannot ' +
+          'take away the gamma or the vega, which is what is left to earn or lose.',
+      );
+    }
+    if (change.id === 'close') {
+      out.push(
+        hb.future !== ha.future || b.fills !== a.fills
+          ? `A band of 5 contracts instead of 20 brings the hedge back more often (${b.fills - a.fills} more trades): the swing it ` +
+              'takes away is smaller and the future’s spread, paid each time, is more.'
+          : 'The delta stayed inside both bands, so the closer hedge had nothing more to do in this window.',
+      );
+    }
+    if (change.id === 'wide') {
+      out.push(
+        'Quotes three points away are filled less often and earn more when they are; there is less delta to hedge ' +
+          'only because there is less of everything.',
+      );
+    }
+    return out.join(' ');
+  },
+  takeaway:
+    'A maker that sells options is paid the spread and is left holding the index, long when it has sold puts, short ' +
+    'when it has sold calls. Hedged in the future the swing is gone and the cost is the future’s spread, every time ' +
+    'the delta strays: a hedge is insurance, with a premium. What it cannot take away is gamma, the option’s curve, ' +
+    'which costs the maker on every day the index runs.',
+};
+
+// ---- 9. The crush ------------------------------------------------------------------------------------------
+
+/**
+ * Seed 54, a calm Monday: the day's first market-wide release lands at 11:03:14, the first in the session, and moves the
+ * index little. Read from the calendar (`calendarOf`) for the first release inside the session of a calm or choppy day
+ * between 09:36 and 11:30, then each window run with the straddle held through and sold before (docs/measured.md); this
+ * one held through loses most. The window opens four minutes before it and closes a minute after.
+ */
+const CRUSH_SEED = 54;
+const CRUSH_START = 39_554_000;
+const CRUSH_CONTRACTS = 50;
+
+const crushWith = (params: Record<string, number>): Setup => ({
+  location: 'colo-prairie',
+  network: 'microwave',
+  computer: 'rack',
+  watched: chainWatched(0),
+  blocks: [block('eventVol', { contracts: CRUSH_CONTRACTS, ...params })],
+});
+
+const crushBase = crushWith({ through: 1, sellAfter: 20 });
+
+function crushTracker(): Tracker {
+  let release: Moment | null = null;
+  let entry: Moment | null = null;
+  let exit: Moment | null = null;
+  const source: MomentSource = (_g, events) => {
+    for (const e of events) {
+      if (e.kind === 'news' && !release && e.headline.sector === null && e.headline.symbols.length > 1) {
+        release = { at: e.at, from: e.at - 100, kind: 'headline', label: 'The day’s first market-wide release lands' };
+      }
+      if (e.kind !== 'fill' || e.fill.block !== 'eventVol') continue;
+      if (e.fill.side === 'buy' && !entry) {
+        entry = {
+          at: e.at,
+          from: e.at - 80,
+          kind: 'entry',
+          label: `The straddle: you buy ${e.fill.size} ${e.fill.symbol} at ${(e.fill.price / 100).toFixed(2)}, the first leg of it`,
+          symbol: e.fill.symbol,
+          exchange: e.fill.exchange,
+        };
+      }
+      if (e.fill.side === 'sell' && entry) {
+        // The last sale: the straddle's second leg is the one that is out.
+        exit = {
+          at: e.at,
+          from: e.at - 80,
+          kind: 'exit',
+          label: `The straddle goes: you sell ${e.fill.size} ${e.fill.symbol} at ${(e.fill.price / 100).toFixed(2)}`,
+          symbol: e.fill.symbol,
+          exchange: e.fill.exchange,
+        };
+      }
+    }
+    return [];
+  };
+  return {
+    source,
+    pick: () => [entry, release, exit].filter((m): m is Moment => m !== null).sort(byAt),
+  };
+}
+
+/** What a run bought and sold of the options, contracts and the average a contract in dollars. */
+function optionTrades(m: Measures): { bought: number; paid: number; sold: number; got: number } {
+  let bought = 0;
+  let buyValue = 0;
+  let sold = 0;
+  let sellValue = 0;
+  for (const [symbol, t] of Object.entries(m.ledger?.traded ?? {})) {
+    if (!OPTION_SERIES.some((x) => symbol.startsWith(x.root))) continue;
+    bought += t.bought;
+    buyValue += t.buyValue;
+    sold += t.sold;
+    sellValue += t.sellValue;
+  }
+  // A price is in cents of the option, a contract a hundred times it: a cent a contract is a dollar.
+  return { bought, paid: bought > 0 ? buyValue / bought : 0, sold, got: sold > 0 ? sellValue / sold : 0 };
+}
+
+const CRUSH: Experiment = {
+  id: 'crush',
+  title: 'The crush',
+  teaches: 'Volatility is priced into a release and leaves when it lands, whichever way the index goes.',
+  briefing:
+    'A calm Monday, from a rack at the Prairie Board. The calendar says the day’s first market-wide release lands at ' +
+    '11:03; what it says, and which way it moves the market, are not on it. The event straddle block buys ' +
+    `${CRUSH_CONTRACTS} calls and ${CRUSH_CONTRACTS} puts at the money four minutes ahead, and the options are dearer the nearer the number ` +
+    'comes. As given, it holds them through the release and sells twenty seconds after. The change sells before it lands.',
+  terms: ['the-crush', 'economic-calendar', 'implied-volatility', 'vega'],
+  seed: CRUSH_SEED,
+  desks: ['futures', 'options'],
+  warmMs: 2 * MS_PER_MINUTE,
+  ledger: true,
+  startAt: CRUSH_START,
+  windowMs: 5 * MS_PER_MINUTE,
+  symbol: 'OC00',
+  baseline: crushBase,
+  baselineLabel: 'the straddle bought four minutes ahead and held through the release',
+  changes: [
+    {
+      id: 'before',
+      label: 'Sell it a minute before',
+      detail:
+        'The straddle is sold sixty seconds before the release, having taken the rise into it, and is not held through.',
+      apply: () => crushWith({ through: 0, sellBefore: 60 }),
+    },
+    {
+      id: 'early',
+      label: 'Sell it three minutes before',
+      detail: 'The same, a few minutes sooner: less of the rise, and less time for the clock to eat the straddle.',
+      apply: () => crushWith({ through: 0, sellBefore: 180 }),
+    },
+    {
+      id: 'bigger',
+      label: 'Hold twice the size',
+      detail: 'A hundred calls and a hundred puts, held through as before.',
+      apply: () => crushWith({ through: 1, sellAfter: 20, contracts: 2 * CRUSH_CONTRACTS }),
+    },
+  ],
+  tracker: crushTracker,
+  explain: (a, b, change) => {
+    const ta = optionTrades(a);
+    const tb = optionTrades(b);
+    const out = [
+      `Held through, the block bought ${ta.bought} contracts at ${dollars(ta.paid * 100)} each on average and sold ${ta.sold} at ` +
+        `${dollars(ta.got * 100)}: ${dollars(a.pnl)} for the window, after ${dollars(a.fees)} of fees. After “${change.label}” it ` +
+        `bought ${tb.bought} at ${dollars(tb.paid * 100)} and sold ${tb.sold} at ${dollars(tb.got * 100)}: ${dollars(b.pnl)}.`,
+    ];
+    if (change.id === 'bigger') {
+      out.push(
+        'Twice the contracts is twice the result, whichever way it points: size multiplies the bet and does not change it.',
+      );
+    } else {
+      out.push(
+        b.pnl > a.pnl
+          ? 'Out before the number, the straddle had kept what the nearing release added to its price and missed the crush: the volatility that was in it for the surprise went when the surprise came, and the index did not move far enough to pay for it.'
+          : 'Out before the number, it gave up the move the release made, which here was worth more than the rise in price that was banked.',
+      );
+    }
+    return out.join(' ');
+  },
+  takeaway:
+    'A release known in advance is priced in advance: the options rise into it, and the premium for the surprise leaves ' +
+    'the moment the number is out, whatever it says. Held through, a straddle wins only if the index moves by more than ' +
+    'the price had in it, and a calm number leaves it with the crush alone. Sold ahead, it keeps the rise and none of the ' +
+    'risk of the number. Owning volatility is not owning direction, and the date is public.',
+};
+
+export const EXPERIMENTS: readonly Experiment[] = [HEADLINE, MILES, OPTION, LEAD, LOOK, FIX, DELIVERY, HEDGE, CRUSH];
 
 export function experiment(id: string): Experiment | undefined {
   return EXPERIMENTS.find((e) => e.id === id);

@@ -289,8 +289,19 @@ describe('optionMaker', () => {
   describe('the expiry', () => {
     const expiryDay = (ms: number) => OPT_EXPIRY[0] - 5 * MIN + ms;
 
-    it('quotes today’s options until the last five minutes, flattens them from 15:55, and quotes no more of them', () => {
+    it('flattens in the last half hour and requotes at once by default: the last minutes are all gamma, and a quote a cent off is stale', () => {
       const { block, p } = use('optionMaker', { hedge: 0 });
+      expect(p.flattenBefore).toBe(30);
+      expect(p.requote).toBe(0);
+      const held = { OC00: 12 };
+      const mk = (now: number) => optionWorld({ now, half: 0.25, held: { optionMaker: held }, positions: held });
+      const at = (before: number) => OPT_EXPIRY[0] - before;
+      expect(ordersOf(block.decide(mk(at(31 * MIN)), p)).some((o) => o.ioc && o.symbol === 'OC00')).toBe(false);
+      expect(ordersOf(block.decide(mk(at(29 * MIN)), p)).some((o) => o.ioc && o.symbol === 'OC00')).toBe(true);
+    });
+
+    it('quotes today’s options until the last five minutes, flattens them from 15:55, and quotes no more of them', () => {
+      const { block, p } = use('optionMaker', { hedge: 0, flattenBefore: 5 });
       const held = { OC00: 12, OP00: -7, OC01: 4 };
       const mk = (now: number, extra: Partial<Parameters<typeof optionWorld>[0]> = {}) =>
         optionWorld({ now, half: 0.25, held: { optionMaker: held }, positions: held, ...extra });
@@ -329,7 +340,7 @@ describe('optionMaker', () => {
     });
 
     it('is flat in them at the close when it has had the five minutes', () => {
-      const { block, p } = use('optionMaker', { hedge: 0 });
+      const { block, p } = use('optionMaker', { hedge: 0, flattenBefore: 5 });
       // Playing the fills in: the block's IOCs are taken at the touch in full, position by position.
       const held: Record<string, number> = { OC00: 12, OP00: -7, OPp0: 5 };
       for (let step = 0; step < 3; step++) {
@@ -355,6 +366,79 @@ describe('optionMaker', () => {
       const out = text(block.decide(v, p));
       expect(out.some((x) => x.includes('OC00') && x.endsWith('ioc'))).toBe(true);
       expect(out.filter((x) => x.includes('IXF1'))).toEqual([]);
+    });
+
+    it('works the delta of what it holds at the hedge’s own price: the index book lagging, or one-sided, moves nothing', () => {
+      const { block, p } = use('optionMaker', { hedge: 1, hedgeBand: 2, flattenBefore: 5 });
+      const held = { OC00: 40, OP00: -25 };
+      const at = OPT_EXPIRY[0] - 90 * MIN;
+      const hedgeOf = (indexLag: number) => {
+        const v = optionWorld({ now: at, half: 0.25, held: { optionMaker: held }, positions: held });
+        // The spot the options are priced from is the index book's mid, a few seconds behind the future's, cents off: it
+        // flips between that and the future's whenever the index book is one-sided. The hedge is traded in the future.
+        for (const c of Object.values(v.options!.chain)) (c as { spot: number | null }).spot! += indexLag;
+        return text(block.decide(v, p)).filter((x) => x.includes('IXF1'));
+      };
+      const still = hedgeOf(0);
+      expect(still).toHaveLength(1);
+      expect(hedgeOf(-20)).toEqual(still);
+      expect(hedgeOf(25)).toEqual(still);
+    });
+
+    it('keeps counting an option whose whole expiry has gone one-sided: the hedge does not drop its delta and pick it up again', () => {
+      const { block, p } = use('optionMaker', { hedge: 1, hedgeBand: 2, flattenBefore: 5 });
+      const held = { OC00: 40 };
+      const at = OPT_EXPIRY[0] - 90 * MIN;
+      const hedge = (empty: Record<string, 'bid' | 'ask' | 'both'>) => {
+        const v = optionWorld({ now: at, half: 0.25, held: { optionMaker: held }, positions: held, empty });
+        return text(block.decide(v, p)).filter((x) => x.includes('IXF1'));
+      };
+      const todays = Object.fromEntries(
+        ['OCm0', 'OC00', 'OCp0', 'OPm0', 'OP00', 'OPp0'].map((s) => [s, 'both' as const]),
+      );
+      const full = hedge({});
+      expect(full).toHaveLength(1);
+      // Every book of today's expiry without a bid or an ask for a look: no volatility of its own to read, and the
+      // delta of the forty calls is still there to hedge, worked at the chain's.
+      const bare = hedge(todays);
+      expect(bare).toHaveLength(1);
+      expect(bare[0]!.split(' ')[0]).toBe(full[0]!.split(' ')[0]);
+    });
+
+    it('leaves the hedge alone when it cannot read a volatility for what it holds: it does not unwind it for a look', () => {
+      const { block, p } = use('optionMaker', { hedge: 1, hedgeBand: 2, flattenBefore: 5 });
+      const at = OPT_EXPIRY[0] - 90 * MIN;
+      const all = Object.fromEntries(
+        ['OCm', 'OC0', 'OCp', 'OPm', 'OP0', 'OPp'].flatMap((r) => [0, 1].map((d) => [`${r}${d}`, 'both' as const])),
+      );
+      const v0 = optionWorld({ now: at, half: 0.25, held: { optionMaker: { OC00: 40 } } });
+      const hedge = -Math.round(netDelta(v0, { OC00: 40 }));
+      expect(hedge).not.toBe(0);
+      const held = { OC00: 40, IXF1: hedge };
+      // Every book empty: no volatility anywhere in the chain. The delta is unknown, not nought.
+      const blind = optionWorld({ now: at, half: 0.25, held: { optionMaker: held }, positions: held, empty: all });
+      expect(text(block.decide(blind, p)).filter((x) => x.includes('IXF1'))).toEqual([]);
+      // Seen again, in place: nothing to do either.
+      const seen = optionWorld({ now: at, half: 0.25, held: { optionMaker: held }, positions: held });
+      expect(text(block.decide(seen, p)).filter((x) => x.includes('IXF1'))).toEqual([]);
+    });
+
+    it('does not chase the hedge while it is getting out of the options: the delta is falling to nothing by itself', () => {
+      const { block, p } = use('optionMaker', { hedge: 1, hedgeBand: 2, flattenBefore: 5 });
+      // Forty contracts of today's call and no hedge: far outside the band, as a position being closed is.
+      const held = { OC00: 40 };
+      const v = optionWorld({ now: expiryDay(0), half: 0.25, held: { optionMaker: held }, positions: held });
+      expect(Math.abs(netDelta(v, held))).toBeGreaterThan(p.hedgeBand!);
+      const out = text(block.decide(v, p));
+      expect(out.some((x) => x.includes('OC00') && x.endsWith('ioc'))).toBe(true);
+      expect(out.filter((x) => x.includes('IXF1'))).toEqual([]);
+      // Nor, with tomorrow's held as well: the hedge waits until the flattening is done, then is set to what is left.
+      const both = { OC00: 40, OC01: 40 };
+      const w = optionWorld({ now: expiryDay(0), half: 0.25, held: { optionMaker: both }, positions: both });
+      expect(text(block.decide(w, p)).filter((x) => x.includes('IXF1'))).toEqual([]);
+      const rest = { OC01: 40 };
+      const x = optionWorld({ now: expiryDay(0), half: 0.25, held: { optionMaker: rest }, positions: rest });
+      expect(text(block.decide(x, p)).filter((y) => y.includes('IXF1')).length).toBe(1);
     });
 
     it('takes its future hedge off once the options it hedged are gone', () => {

@@ -125,6 +125,8 @@ export interface SavedExchange {
 export class Exchange {
   readonly spec: ExchangeSpec;
   readonly stocks = new Map<string, StockState>();
+  /** The terms of each listed option (the contract's spec): what its customers' bias is read from. */
+  private readonly terms = new Map<string, { right?: 'call' | 'put'; strike?: number; underlying?: string }>();
   /** The rules this exchange runs, settable from the lab. */
   rules: ExchangeRules = { ...DEFAULT_RULES };
   /**
@@ -190,7 +192,21 @@ export class Exchange {
   }
 
   /** List an instrument from now: a new book, the crowd's belief at its fair value. */
-  list(spec: { symbol: string; tickSize?: number; crowdLot?: number }, fair: number): void {
+  list(
+    spec: {
+      symbol: string;
+      tickSize?: number;
+      crowdLot?: number;
+      right?: 'call' | 'put';
+      strike?: number;
+      underlying?: string;
+    },
+    fair: number,
+  ): void {
+    // An option's terms, for its customers' bias: the contract's own spec, so a strike restored from a save shows here
+    // too. Kept apart from the book's state, whose shape every venue's loops read, and not saved: it comes from the
+    // content when the contract is listed.
+    if (spec.right !== undefined) this.terms.set(spec.symbol, spec);
     if (this.stocks.has(spec.symbol)) return;
     this.stocks.set(spec.symbol, {
       book: new OrderBook(),
@@ -213,6 +229,7 @@ export class Exchange {
       s.book.cancel(o.id);
     }
     this.stocks.delete(symbol);
+    this.terms.delete(symbol);
     this.pending = this.pending.filter((p) => p.symbol !== symbol);
     return gone;
   }
@@ -677,7 +694,8 @@ export class Exchange {
       const pull = Math.min(1, span / lag);
       s.belief += (target - s.belief) * pull + this.spec.noise * Math.sqrt(span / 1000) * random.normal();
       if (activity <= 0) continue;
-      if (this.spec.quoter) this.quoterTurn(symbol, s, now, span, activity, random, halfSpreads?.get(symbol));
+      if (this.spec.quoter)
+        this.quoterTurn(symbol, s, now, span, activity, random, halfSpreads?.get(symbol), target, fair);
       else this.crowd(symbol, s, now, span, activity, random, sweep, inCall);
     }
   }
@@ -704,6 +722,8 @@ export class Exchange {
     activity: number,
     random: Random,
     half: number | undefined,
+    target: number,
+    fair: ReadonlyMap<string, number>,
   ): void {
     const quoter = this.spec.quoter!;
     const tick = tickOf(s, this.rules.tickSize);
@@ -719,12 +739,59 @@ export class Exchange {
       this.quoterSide(symbol, s, 'sell', askP, tick, now, quoter.size);
     }
     if (quoter.takeRate > 0 && random.chance((quoter.takeRate * activity * dt) / 1000)) {
-      const side = random.chance(0.5) ? 'buy' : 'sell';
+      const side = random.chance(this.buyShare(symbol, fair)) ? 'buy' : 'sell';
       const q = s.book.quote();
       const touch = side === 'buy' ? q.ask : q.bid;
-      const size = random.int(1, quoter.size);
+      const size = random.int(1, quoter.orderSize ?? quoter.size);
       if (touch !== null) this.submit(symbol, { owner: BACKGROUND, side, price: touch, size, ioc: true }, now);
     }
+    if (quoter.informed) this.informedTurn(symbol, s, now, dt, activity, random, target, tick, quoter.informed);
+  }
+
+  /**
+   * The share of customers who buy an option: `buy.atm` at the money, drifting to `buy.otm` out of the money and
+   * `buy.itm` in it over `buy.span` of the underlying (a put's own, `buy.puts`, where it is set). An even toss where the quoter has no bias set or the book is
+   * not an option.
+   */
+  private buyShare(symbol: string, fair: ReadonlyMap<string, number>): number {
+    const buy = this.spec.quoter?.buy;
+    const o = this.terms.get(symbol);
+    if (!buy || o?.right === undefined || o.strike === undefined || o.underlying === undefined) return 0.5;
+    const under = fair.get(o.underlying);
+    if (under === undefined || under <= 0) return buy.atm;
+    const out = (o.right === 'call' ? o.strike - under : under - o.strike) / under;
+    const w = Math.min(1, Math.abs(out) / buy.span);
+    const shares = o.right === 'put' && buy.puts ? buy.puts : buy;
+    return shares.atm + ((out > 0 ? shares.otm : shares.itm) - shares.atm) * w;
+  }
+
+  /**
+   * The informed customers: they know the fair value, so where it is `ticks` ticks or more over the ask they buy, and
+   * where it is that far under the bid they sell, at the touch, up to `size`, with chance `rate` a second at full
+   * activity. Draws only while a touch is mispriced that far (a chance, then a size when one comes).
+   */
+  private informedTurn(
+    symbol: string,
+    s: StockState,
+    now: number,
+    dt: number,
+    activity: number,
+    random: Random,
+    target: number,
+    tick: number,
+    informed: NonNullable<NonNullable<ExchangeSpec['quoter']>['informed']>,
+  ): void {
+    // Runs every turn for every option book, so it reads the two best prices and nothing else.
+    const margin = informed.ticks * tick;
+    const ask = s.book.bestPrice('sell');
+    const bid = s.book.bestPrice('buy');
+    let side: Side | null = null;
+    if (ask !== null && target - ask >= margin) side = 'buy';
+    else if (bid !== null && bid - target >= margin) side = 'sell';
+    if (side === null || !random.chance((informed.rate * activity * dt) / 1000)) return;
+    const touch = side === 'buy' ? ask : bid;
+    const size = random.int(1, informed.size);
+    if (touch !== null) this.submit(symbol, { owner: BACKGROUND, side, price: touch, size, ioc: true }, now);
   }
 
   /** One side of the quoter's book, kept at `price` (none at or under nought): see `quoterTurn`. */

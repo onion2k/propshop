@@ -86,6 +86,41 @@ function deskTarget(desk: string, title: string, explain: string): Target {
   };
 }
 
+/** The blocks of the options desk, whose tallies hold the options and the futures that hedge them. */
+const OPTION_BLOCKS = ['optionMaker', 'parity', 'eventVol'];
+
+/**
+ * The options desk's net in a day: what its blocks made, the hedge in the future included (a block's tally holds all
+ * its legs), less their fees, and what the options held to the close made against their cost, which no fill told.
+ */
+const optionsNet = (d: DayReport): number =>
+  sum(OPTION_BLOCKS.map((b) => (d.byBlock[b] ? d.byBlock[b].realised - d.byBlock[b].fees : 0))) +
+  sum((d.expired ?? []).map((x) => x.made));
+
+/**
+ * The options desk has no rack of its own: the futures desk's Prairie rack serves both, at a tenth of a millisecond
+ * from each, so its rent is that rack's. A target for a desk is its net against a rack's rent.
+ */
+function optionsTarget(title: string, explain: string): Target {
+  const rackDesk = 'futures';
+  return {
+    id: 'desk-options',
+    title,
+    explain,
+    stage: featureStage('desk:options'),
+    desk: 'options',
+    terms: ['rent'],
+    done: (s) => {
+      const rent = deskRent(s, rackDesk);
+      return rent > 0 && closedWeeks(s.days).some((w) => sum(w.map(optionsNet)) >= rent);
+    },
+    progress: (s) => {
+      const { days } = thisWeek(s);
+      return { have: Math.max(0, sum(days.map(optionsNet))), of: deskRent(s, rackDesk), unit: 'cents' };
+    },
+  };
+}
+
 export const TARGETS: readonly Target[] = [
   {
     id: 'day-up',
@@ -163,6 +198,12 @@ export const TARGETS: readonly Target[] = [
     'Metals pay their rack',
     'A week in which the metals desk nets more than its rack costs. Storage and the lease are not counted: only ' +
       'what the fills made, less their fees.',
+  ),
+  optionsTarget(
+    'Options pay the Prairie rack',
+    'A week in which the options blocks, the futures they hedge with included, and the options held to the close net ' +
+      'more than the rack at the Prairie Board costs: it serves the options as well as the futures, and is the only ' +
+      'rack the desk has. A maker that is short volatility has to be paid for the days that run against it.',
   ),
 ];
 

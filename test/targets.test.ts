@@ -56,9 +56,7 @@ const week = (n: number, pnls: number[], over: (i: number) => Partial<DayReport>
 
 describe('the targets', () => {
   it('are one or more a stage, each listed from its stage, the desks’ at their desk’s stage', () => {
-    // Stage 6, Volatility, has no target yet: the options desk's is 7f's (plans/desk-options.md), a week above the
-    // Prairie rack's rent, and the desk has no rack of its own to read it from.
-    for (const st of STAGES.filter((x) => x.id <= 5))
+    for (const st of STAGES)
       expect(
         TARGETS.some((t) => t.stage === st.id),
         `stage ${st.id}`,
@@ -66,10 +64,12 @@ describe('the targets', () => {
     expect(target('desk-futures').stage).toBe(3);
     expect(target('desk-fx').stage).toBe(4);
     expect(target('desk-metals').stage).toBe(5);
+    expect(target('desk-options').stage).toBe(6);
     // A target for a stage not yet shown is not listed.
     expect(targetsShown(1).map((t) => t.id)).toEqual(['day-up']);
     expect(targetsShown(2).map((t) => t.id)).toEqual(['day-up', 'seat-rent']);
-    expect(targetsShown(5)).toHaveLength(TARGETS.length);
+    expect(targetsShown(5).map((t) => t.id)).not.toContain('desk-options');
+    expect(targetsShown(6)).toHaveLength(TARGETS.length);
     expect(new Set(TARGETS.map((t) => t.id)).size).toBe(TARGETS.length);
   });
 
@@ -145,6 +145,52 @@ describe('the targets', () => {
     expect(t.progress(snap({ shop: idle })).of).toBe(160_000);
     // A desk with no rack offered (not open) can not be met.
     expect(t.done(snap({ days: week(1, [0, 0, 0, 0, 0], () => byDesk(1e9)()) }))).toBe(false);
+  });
+
+  it('the options desk pays the Prairie rack: the option blocks’ net, hedge and expiry in, above the rack’s rent', () => {
+    const t = target('desk-options');
+    // The options desk has no rack of its own: the futures desk's Prairie rack serves it, so that is the rent.
+    const shop = [
+      offer('location', 'colo-prairie', 8_000_000, 160_000, true, 'futures'),
+      offer('location', 'colo-eastholm', 8_000_000, 999_999, false, 'fx'),
+    ];
+    const block = (id: string, net: number) => ({ [id]: { fills: 5, realised: net + 50, fees: 50 } });
+    const made = (cents: number) => ({ expired: [{ symbol: 'OC00', right: 'call', qty: -1, made: cents }] });
+    const days = (net: number, over: Partial<DayReport> = {}) =>
+      week(1, [0, 0, 0, 0, 0], (i) => (i < 4 ? { byBlock: block('optionMaker', net / 4), ...over } : {}));
+    expect(t.done(snap({ shop, days: days(160_000) }))).toBe(true);
+    expect(t.done(snap({ shop, days: days(159_996) }))).toBe(false);
+    // The hedge is part of it: the futures the maker traded are in its block's tally, the same one.
+    expect(
+      t.done(
+        snap({
+          shop,
+          days: week(1, [0, 0, 0, 0, 0], (i) => (i === 0 ? { byBlock: block('optionMaker', 160_000) } : {})),
+        }),
+      ),
+    ).toBe(true);
+    // Another block's money is not the desk's, and an option held to the close counts at what it made.
+    expect(
+      t.done(
+        snap({ shop, days: week(1, [0, 0, 0, 0, 0], (i) => (i < 4 ? { byBlock: block('momentum', 99_999) } : {})) }),
+      ),
+    ).toBe(false);
+    expect(
+      t.done(
+        snap({
+          shop,
+          days: week(1, [0, 0, 0, 0, 0], (i) =>
+            i === 1 ? ({ byBlock: block('parity', 100_000), ...made(60_000) } as Partial<DayReport>) : {},
+          ),
+        }),
+      ),
+    ).toBe(true);
+    expect(deskRent({ shop } as unknown as Snapshot, 'futures')).toBe(160_000);
+    // Not at a rack of the desk, the cheapest it offers is what to beat; no rack at all, nothing can be met.
+    const idle = [offer('location', 'colo-prairie', 8_000_000, 160_000, false, 'futures')];
+    expect(t.progress(snap({ shop: idle })).of).toBe(160_000);
+    expect(t.progress(snap({ shop, days: days(80_000) }))).toEqual({ have: 80_000, of: 160_000, unit: 'cents' });
+    expect(t.done(snap({ days: days(1e9) }))).toBe(false);
   });
 
   it('closedWeeks keeps only the weeks whose Friday has closed', () => {

@@ -30,7 +30,8 @@ describe('The step rate', () => {
     process.stderr.write(`${desks.join('+')} open: ${Math.round(rate)} ticks/s\n`);
     // A tripwire, not the top speed: with metals, every desk open read about 38,800 to 39,000 alone on 2026-11-09
     // (docs/measured.md), a game day at top speed about 580 s. A new desk that pulls this under is part of that
-    // desk's work. Set at 35,000 by Chris after part 6.
-    expect(rate).toBeGreaterThan(35_000);
+    // desk's work. Set at 35,000 by Chris after part 6; lowered to 32,000 by Chris after part 7f (2026-11-10), when the
+    // machine read HEAD at 33,900 to 35,100 and the options desk with its tuned customers 34,300 to 34,800: slower is fine.
+    expect(rate).toBeGreaterThan(32_000);
   });
 });

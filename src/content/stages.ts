@@ -142,7 +142,7 @@ export const DESK_LESSONS: Readonly<Record<string, readonly string[]>> = {
   futures: ['basis', 'overnight', 'lead'],
   fx: ['pips', 'triangle', 'refused', 'rollover'],
   metals: ['curve', 'flip', 'delivery', 'fix', 'miner'],
-  // The options desk's lessons come in 7f.
+  options: ['insure', 'implied', 'hedge', 'gamma', 'parity', 'crush'],
 };
 
 /** What the page calls each desk, in the day's report. */

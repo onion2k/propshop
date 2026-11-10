@@ -1,6 +1,6 @@
 # The options desk: part 7 of the trading roadmap
 
-State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7d built 2026-11-10, 7e built 2026-11-10 (not committed, not yet looked at headless), 7f next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
+State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7f built 2026-11-10, **the desk built**. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
 and looked at headless by this session, committed and pushed on its own before the next part starts. The house rule
 is to build on `sonnet`; the metals desk was built on Opus at Chris's word, and the model menu is his.
 
@@ -779,3 +779,100 @@ inverted volatility plus or minus the edge on the same time). But **`optionMaker
 therefore in calendar-volatility points**: a point is about 2.3 times smaller in trading terms at 10:30 today (the
 ratio is the displayed figure over the calendar one), and the ratio grows towards the close. The parameter's wording
 ("volatility points") and 7f's tuning should know it.
+
+## Result for 7f
+
+(Built 2026-11-10, on sonnet by the `builder` agent, tests first, not committed. Figures in `docs/measured.md`, "The options desk's lessons, experiments and tuning (7f)".)
+
+**Built.** The tuning (the heart of it, below); `DESK_LESSONS.options`, six lessons, all with `go: market / options` and a task
+that begins "Watch the chain" (`insure`, `implied`, `hedge`, `gamma`, `parity`, `crush`: `src/content/lessons.ts`, told apart by
+the symbols of the fills since a day's options are gone from the snapshot the next day); the experiments "the hedge" (seed 122, a
+trending Monday, the release at 09:46:10 four minutes into the window) and "the crush" (seed 54, a calm Monday, the first release
+at 11:03:14), both `desks: ['futures', 'options']` and filed under Options on the cover (`Root` reads the last desk an experiment
+opens); the PACE rows `options home/prairie maker`, `unhedged`, `parity`, `eventVol` and Bluestem beside them (`test/pace.test.ts`),
+and `test/optionpace.test.ts` rewritten to run a seed, a weekday and a block a run and report the day's regime and the straddle at the
+money; the target `desk-options` ("Options pay the Prairie rack", `optionsTarget` in `src/content/targets.ts`), the options blocks' net
+(hedge in the future included) and the options held to the close over a closed week against the futures desk's rack's rent, and the "a
+target every stage" test restored to every stage.
+
+**The tuning: what was changed and why.**
+
+- _The market_ (`POX.quoter`, new fields in `ExchangeSpec.quoter`): customers a book about every 50 seconds (was a second), in orders of
+  up to 10 contracts (was up to 1,000), net buyers by moneyness and by right (`buy`: 0.75 / 0.60 / 0.50 for a call out of / at / in the
+  money, 0.92 / 0.65 / 0.50 for a put, so a maker ends short options and long delta), a few informed (`informed`: while the fair value is
+  three ticks past a touch, 5 a second, up to 5 contracts: a stale quote is picked off), and the half-spread 2.5 volatility points
+  (was 1, so the maker could not stand a whole tick inside it). Drawn only from `crowd:POX`; nothing when the desk is closed.
+- _The blocks_ (defaults, `optionMaker`): `requote` 0 (was 1: a quote a cent off is the best price just when the market has left it:
+  +0.10 cents a contract of edge with it, +1.0 without), `edge` 1.5 calendar points (was 0.5), `hedgeBand` 20 (was 2: a trade with nearly
+  every fill), `flattenBefore` 30 minutes (was 5: the last half hour is all gamma). Bluestem: edge 2 (was 1), the rest default.
+- _Four faults in the hedge_ found on the way and fixed with tests that failed first: an option whose expiry's books were all one-sided
+  for a look dropped out of the net delta and the hedge traded the difference each way every second or two (7,000 futures contracts a day;
+  Bluestem 76,000 and -$52,000 on one news Monday); the delta was worked at the index book's mid, which lags the future and drops out
+  when one-sided (now the nearest future's price); the delta was worked at a volatility that flipped with whether a quote of the block's
+  own was the touch (now the view's); the hedge chased the delta through the flattening (now it waits, and waits when it can read no
+  volatility at all).
+- _Before and after:_ seed 1's first Monday, the player's maker +$116,048 and Bluestem +$128,988 with the first customers; now the hedged
+  maker -$961 on that (trending) day, Bluestem alone +$7,849. Over twelve days of three seeds (hedged, from the Prairie rack, by the day's
+  regime, dollars a day): calm +3,524, trending -246, choppy -2,715, news -401; weighted +428 a day, +2,138 a week against the rack's $1,600.
+  Unhedged: +4,721, +892, -2,535, +88, +1,228 a day. The hedge cuts the standard deviation of the days 21% ($3,278 to $2,577), the worst
+  drawdown inside a day 35% ($6,586 to $4,279) and the worst close 6% ($4,672 to $4,387: that day is choppy, and its loss is jumps and
+  gamma, not delta), and costs $750 a day (728 futures contracts at about a dollar's spread). Bluestem alone +$6,135 a day, +$30,674 a
+  week (0.4 of Harbor Quant's day); beside a hedged player about +$100 a day, calm +2,945, choppy -2,880. From home (a laptop watches
+  four symbols) the maker loses on five of six days. `parity` +$140 a day on the days it trades (10 contracts), `eventVol` -$25.
+  The straddle seller by regime over those twelve days: calm +45, trending +0.3, choppy -28, news -0.3 points a straddle (+4.3 on
+  average, price over payout 1.07, 7 days of 12), the 50 days of 7b +0.9: the 15% premium is not visible in so few days and was not
+  touched, since it fixes a closed option's fair value and so every held fingerprint.
+- _Edge on the page's clock._ `optionMaker`'s `edge` is in calendar-volatility points. On the chain's trading clock a point is 0.43 of a
+  point for today's options and 0.63 to 0.75 for tomorrow's: the player's 1.5 is 0.65 for today's, Bluestem's 2 is 0.86, the quoter's 2.5
+  is 1.1. The parameter's wording says so.
+
+**The lessons, and how a player reaches each.** All six: Take me there to the chain on the Market page, press Watch the chain, then
+`insure` buy a put by hand and hold it through 16:00; `implied` sell a call and a put at one strike by hand and hold both; `hedge` turn
+on the option maker and let it trade options and the future; `gamma` play the maker through a trending or news-heavy day; `parity` turn on
+the parity block through a headline; `crush` turn on the event straddle through a release. `done` is a pure function of the snapshot in each.
+
+**The experiments.** The hedge: baseline the hedged maker, +$132 on 42 fills; turn the hedge off -$420 (worse), hedge closely (5 contracts)
++$274 (better), quote wider +$217 on 7 fills (about the same). The crush: baseline 50 calls and puts bought four minutes ahead and held
+through the release, -$660 (bought at $27 a contract, sold at $21); sell a minute before -$160 (better), three minutes before -$210
+(better), twice the size -$1,320 (worse). `test/experiments.test.ts` holds what each promises (the release in the window, the moments, the
+future traded or not, the straddle bought and sold in full) and pins their runs; the existing seven are unchanged to the bit.
+
+**Stage harness.** See "Stage 6" in `docs/measured.md`.
+
+**Held to the bit.** Every fingerprint in `test/instruments.test.ts` and `test/metalblocks.test.ts` and every figure in
+`test/experiments.test.ts` for the first seven experiments: the options desk is closed in them all.
+
+**Step rate.** Taken in turn with HEAD, three times each: HEAD 34,579 / 34,407 / 34,367 and 34,135 / 34,328 / 34,231; this tree
+33,380 / 33,773 / 33,689 at first and, after a cut, 33,373 / 34,206 / 34,061. **Under the 35,000 tripwire in all of them, HEAD's
+included** (the machine ran about 5% slower than at 7e, where HEAD read 36,265); not lowered by the builder. Reviewed: this session read
+34,272 and 34,830, and Chris lowered the tripwire to 32,000 ("slower is fine", 2026-11-10). The cut: an optional `option` property
+on POX's twelve `StockState` objects made the property reads in the exchange loops every venue shares see another shape, +2.4% on the
+step; the terms now live in a map. 1.0% under HEAD is left, inside the spread.
+
+**Checks.** `npm run check`: prettier, types and lint clean, 1,011 tests pass (7 skipped, the harnesses); the step-rate floor fails
+(34,596 ticks a second every desk open against the 35,000 tripwire, 85,261 with none open, which passes), as HEAD does on this machine
+today (above); green once the tripwire was lowered to 32,000. One test, `sends a hand order from the desk` (3.5 s alone, at HEAD too, against a 5 s limit), timed out under the full
+parallel run and was given a 30 s timeout; the options report tests (3 s each) are as near their limit and passed. Written first and seen
+to fail: the customers' bias, size and informed tests (4 of 8 failed before the exchange had them; the puts' own shares were written
+with the code), the lessons, the stage and the target tests, the hedge tests (chase, hedge's own price, one-sided expiry, unreadable
+volatility), and two existing save tests that caught a real fault of the first build (a save from the previous tick did not load to the
+same future: the option's terms for the customers were not restored). Written after the code, not seen to fail: the default
+`requote` and `flattenBefore` test, the experiments' pins and promises.
+
+**Not done or not checked.**
+
+- The look: the page was not opened (no dev server, as asked). The chain's first-time view with the lessons, the Options group on the
+  cover and the experiments' pages at 1280 and 375 wide are untested by eye.
+- Three seeds and twelve days are not a pace: one day a cell, the regimes' means rest on three days each. The hedge's cut of the worst
+  close is small (6%) and rests on one choppy day.
+- Bluestem's loss of $52,000 on seed 2's news Monday was found in the harness and fixed, and not seen again; Bluestem was not run on more
+  than those twelve days after the fixes.
+- The stage harness ran one seed, with both scripted players, for eight days.
+- The PACE hour rows are the first hour scaled to a day (the busiest hour for customers and the quietest for gamma): read the whole days.
+- The 15% premium still does not show in the straddle seller's figures; the volatility numbers were left because they fix every closed
+  option's fair value.
+- Parity trades only 10 contracts on a day and the lesson's done needs a call, a put and the future: on a day with no gap it does not tick.
+
+**What I noticed and left alone.** `optionMaker`'s `size` (5) and `maxPosition` (20) are the numbers the tuning was done at; the hedge
+experiment's quotes of 25 and 100 are the experiment's own. `OrderBook.firstOf` is still used only by a test. The scripted players of
+`test/player.ts` do not play the futures desk's lessons, so they never open stage 6.

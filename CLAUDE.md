@@ -21,6 +21,10 @@ on 2026-11-08 from commit `d20c8e3`; the figures went to `docs/measured.md`.
                          when each lesson ticks and each stage opens, for scripted players (test/player.ts)
     NIGHT_PACE=1 NIGHT_SEEDS=1 NIGHT_DAYS=1 npx vitest run test/nightpace.test.ts
                          whole days through the store, and what each night's tests and signals say (~6 min a day)
+    OPTION_PACE=1 OPTION_SEED=1 OPTION_DAYS=0,5 OPTION_BLOCK=optionMaker npx vitest run test/optionpace.test.ts
+                         the options desk's blocks and its rival, a whole day each, by the day's regime (~5 min a day);
+                         OPTION_BLOCK takes parameters (`optionMaker:hedge=0`), OPTION_SETUP=home, OPTION_QUOTER and
+                         OPTION_BLUESTEM lay JSON over the venue's customers and the rival's parameters
 
 Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
 
@@ -30,7 +34,7 @@ Node 24 (`.nvmrc`): npm 10 under Node 23 cannot resolve Vitest 5's peers.
 formatting (Prettier), types (`tsc`, both configs), lint (ESLint, which also keeps `src/sim` free of React, the
 DOM and `src/content`) and the unit tests. No gate keeps a baseline: the performance floors are two tests in
 `test/speed.test.ts`, `steps fast enough for the top speed` (no desk open, 75,000 ticks a second) and `steps fast
-enough with every built desk open` (35,000). The check runs them alone after the rest (`npm run floors`; `npm test`
+enough with every built desk open` (32,000). The check runs them alone after the rest (`npm run floors`; `npm test`
 skips them), since beside the other files they fail under load (see `docs/measured.md`). The harnesses above
 measure; they hold nothing.
 
@@ -159,8 +163,8 @@ measure; they hold nothing.
   exchange) and re-posted only when a rounded price moves or an order is worn under half its size; a bid at or under
   nought is not posted; no depth, no sweep. The half-spread in price points is worked out with the option's price in
   `Market.optionFair` (`quoterVolPoints` × a hundredth of `vega`), kept in `quoteHalf` (a book a listed option) and
-  saved as `half` beside `vol`. Takers come at `takeRate` a second at full activity, each up to `size` at the touch,
-  drawn from `crowd:POX` only (none drawn at rate 0). Tests: `test/quoter.test.ts`. A side is held at the price it
+  saved as `half` beside `vol`. Takers come at `takeRate` a second at full activity at the touch, drawn from
+  `crowd:POX` only (none drawn at rate 0); who they are and how big, since 7f, is below. Tests: `test/quoter.test.ts`. A side is held at the price it
   would be posted at once tucked inside the best order of anyone else on the far side (`OrderBook.bestOutside`), so a
   firm's order across the belief no longer makes the quoter re-post every turn; a side worn under half its size is
   topped up behind what is left (the front of the queue is kept), at most `MAX_QUOTER_ORDERS` (4) orders a side at
@@ -182,18 +186,35 @@ measure; they hold nothing.
   (50 ms; Bluestem 500) is its pace, and what keeps the rival cheap enough for the step rate. `optionMaker` rests a post-only bid and ask a size either side of the book's implied volatility ± `edge`
   (rounded outward, always inside the touch it sees without its own orders), keeps the net delta of its options
   inside `hedgeBand` contracts of the index future when `hedge` is on, and flattens an option from `flattenBefore`
-  minutes (15:55) before its expiry; `parity` trades a call, a put and the future (a conversion or a reversal) at the
+  minutes (30, from 15:30) before its expiry; `parity` trades a call, a put and the future (a conversion or a reversal) at the
   touch when the gap clears `threshold` after fees, holds to expiry, and puts back whatever the other legs did not
   match (the future it is left with after the options settle too); `eventVol` buys the strike nearest the index's
   straddle `buyBefore` minutes ahead of the day's first release inside the session and sells it `sellBefore` seconds
   before it, or `sellAfter` seconds after it with `through`. The rival is Bluestem Volatility (`bluestem`, desk
-  `options`, `optionMaker` hedged with an edge of one volatility point (the quoter's own half-spread, so it queues at the
-  touch and is not inside the spread) and a pace of 500 ms, on the Prairie rack, watching the futures and the options
-  and not the stocks, so it prices the index from the future). A quicker or tighter Bluestem took the every-desk-open
-  step rate under its floor; the player's `optionMaker` at its defaults (edge 0.5, inside the quoter's spread, 50 ms)
-  makes far more, see `docs/measured.md`. Tests: `test/optionblocks.test.ts` (each block by hand on `optionWorld` in
+  `options`, `optionMaker` hedged with an edge of two volatility points (half a point inside the quoter's two and a half,
+  so it queues behind the player's maker, which is a point inside) and a pace of 500 ms, on the Prairie rack, watching
+  the futures and the options and not the stocks, so it prices the index from the future). A quicker or tighter
+  Bluestem took the every-desk-open step rate under its floor, and the one it has is slower than the player's 50 ms and
+  earns less for it, see `docs/measured.md`. Tests: `test/optionblocks.test.ts` (each block by hand on `optionWorld` in
   `test/fixtures.ts`), `test/optionrival.test.ts` (the view, the rival, replay, saves, margin, the books);
   `test/optionpace.test.ts` measures a day (skipped unless `OPTION_PACE` is set).
+  **The customers and the tuning (7f).** The quoter's spec also carries `orderSize` (customers come in orders of up to
+  ten contracts, not a thousand), `buy` (the share who buy, by how far the option is out of the money, a put's own in
+  `puts`: net buyers, of puts above all, so a maker ends short options and long delta) and `informed` (a second flow:
+  while the fair value is `ticks` ticks or more past a touch, `rate` a second, up to `size`, it takes that touch).
+  `Exchange.buyShare` and `Exchange.informedTurn` are the two; the option's terms are read from `Exchange.terms` (the contract's
+  own spec, set when it is listed and so by a load, so the strike a save gave is the one read; kept in a map beside the books,
+  not on `StockState`, whose shape every venue's loops read: an optional property on POX's twelve alone cost the step 2.4%), and
+  informed draws only while a touch is that far off. All from `crowd:POX`. The tuned numbers are in `src/content/options.ts` and the table of what a maker earns by
+  the kind of day in `docs/measured.md`; the harness is `test/optionpace.test.ts` (`OPTION_PACE`, one run a seed and day
+  and block, the regime and the straddle at the money reported with it). `optionMaker`'s defaults were set with it:
+  `edge` 1.5 vol points, `requote` 0 (a quote left a cent off is the best price just when the market has left it),
+  `hedgeBand` 20 contracts, `flattenBefore` 30 minutes (the last half hour of an option at the money is all gamma). The
+  delta it hedges is worked at the view's volatility for each option (the one with its own quotes taken out flips with
+  whether a quote of ours is the touch), at its expiry's nearest, then the chain's median, when its books are one-sided,
+  and at the nearest future's price rather than the index book's mid, and the hedge waits while any held option is
+  inside its flattening window: each of those was a hedge that traded tens of futures each way every second or two. Tests:
+  `test/customers.test.ts`, `test/optionblocks.test.ts`.
   **The page (7e).** The chain is `src/ui/OptionsDesk.tsx` on the Market page, a section (`data-tut="options"`, named
   "Index options") between the watchlist and the selected symbol's detail, while the desk is open. `src/ui/options.ts`
   is its pure working over the snapshot (`chainOf`, `straddleOf`, `timeToGo`, `chainWatched`, `watchChain`): a table an
@@ -234,8 +255,18 @@ volMove, ctx)` (`overview.ts`, pure, a full revaluation by the model, volatility
   stage opens. Stages hide things in the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
   `propshop.stages.v1` (the last stage whose intro was seen; a save without it is from before the stages and
   opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again, and Free play sets
-  it). `experiments.ts` is the four experiments: seed, desks open, window, setup, changes, the moments worth replaying,
-  and the result sentence written from the two runs' numbers. The browser keeps `propshop.experiments.v1`,
+  it). `experiments.ts` is the nine experiments: seed, desks open, window, setup, changes, the moments worth replaying,
+  and the result sentence written from the two runs' numbers. The options desk's two, the hedge (a trending Monday,
+  seed 122, a release at 09:46:10 four minutes into the window) and the crush (a calm Monday, seed 54, the day's first
+  release at 11:03:14), open the futures desk and the options (`desks: ['futures', 'options']`, so `Root` files an
+  experiment under the last desk it opens, here Options), start later in the day (`warmMs`) and keep a ledger; the
+  seeds were found by reading `calendarOf` and then each window run (`docs/measured.md`). The options desk's six
+  lessons are in `DESK_LESSONS.options` (`insure`, `implied`, `hedge`, `gamma`, `parity`, `crush`), open no stage, are
+  all `go: market / options` and begin from "Watch the chain" (a block or a ticket sees only what is watched); the
+  fills are told apart by symbol (`kindOf` in `lessons.ts`), since a day's options are gone from the snapshot by the
+  next day. Stage 6's target is `desk-options` (`optionsTarget` in `targets.ts`): the options blocks' net, hedge
+  included (a block's tally holds all its legs), and the options held to the close (`DayReport.expired`), over a
+  closed week against the Prairie rack's rent (the futures desk's rack: the options desk has none of its own). The browser keeps `propshop.experiments.v1`,
   `{ done, called }`: the ones done and whether the first guess was right. It also keeps `propshop.targets.v1`
   (target id to the simulated time it was first met; shown in Free play too, cleared by Start again).
 - `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, `experiments.test.ts` for the
@@ -305,6 +336,19 @@ For anything new, check what it does:
   `marginedHeld` names it). A sell order is weighed for the part past what is held long. A long option is paid in
   full and counts at its premium toward the leverage cap. The call flattens short options with the futures, and a rival's
   too (Bluestem is margined like any firm: `marginedHeld` names its short options and its future together).
+- **the options' customers:** drawn only from `crowd:POX`, and nothing when the desk is closed (every held fingerprint is
+  as it was). They are net buyers (more of the options out of the money, more of puts than calls), come in orders of up
+  to ten contracts about once in fifty seconds a book, and a few are informed: they take a touch the fair value has left
+  three ticks behind, so a maker slower than a jump is picked off by exactly the jump. An option's book is quoted two and
+  a half volatility points either side of its belief, so the player's maker (a point and a half) stands a tick or two
+  inside it, and a maker at the quoter's edge or wider queues behind it. A save from the previous tick loads to the same
+  future: the option's terms for the customers' bias are the contract's own spec, which a load restores.
+- **the hedge:** hedged inside a band of contracts of the future, the options' delta is worked at the future's price and
+  at a volatility that does not flip with this block's own quotes, and the hedge is frozen while an option is being
+  flattened (its delta is falling to nothing by itself). An option whose book, and its expiry's, are one-sided for a
+  look keeps its delta in the sum (the expiry's nearest volatility, then the chain's median): dropped, a near-the-money
+  position changed the hedge by twenty-odd futures each look and the block traded it back and forth, 7,000 contracts a
+  day, $5,000 of spread, for nothing.
 - **an options block:** `optionMaker` quotes only an option whose book is two-sided without its own orders and whose
   volatility can be implied (at nought days a deep one in the money cannot: its mid is under its intrinsic value), so
   at the open only the options near the money are quoted; it does nothing in closed hours (the books are empty) and
@@ -369,18 +413,26 @@ For anything new, check what it does:
   (0.83), closed weight (0.07), half-life, start and floor are drafts (`src/content/options.ts`), set from the
   index's measured day (variance ratios near one from a minute to a session, so the second-sampled realised figure
   is sound; quoted on a trading year and counted in trading time). Seller's split by regime and the ratios are in
-  `docs/measured.md`; tuned further in 7f, held by nothing. The options are re-priced each `OPTION_REPRICE_MS`
-  (100) or when the index has moved `OPTION_REPRICE_CENTS` (0.2), and not while the stocks are shut. The quoter's
-  numbers (half-spread one volatility point, size 1,000, one taker a second a book) are drafts, as is the tick: the
-  options trade on a one-cent grid, so a far option's spread is the tick whatever the half-spread.
-- **The options blocks' parameters:** `optionMaker`'s edge (0.5 volatility points), size (5), position limit (20),
-  hedge band (2 contracts) and flatten time (5 min), `parity`'s threshold (1 cent an index unit) and `eventVol`'s
-  windows (10 min, 20 s, 60 s) are drafts, tuned in 7f; Bluestem's size is the maker's default, its edge and pace
-  were set by the step rate and not by what a rival would earn. What each makes in a day is in `docs/measured.md`, held by nothing.
-- **The money in the options:** the player's `optionMaker` at its defaults makes about $116,000 a day, Bluestem about
-  $129,000, because the quoter's customers are uninformed and nobody takes the quotes in the informed way
-  (`docs/measured.md`). With the desk open at stage 6 and in free play that is reachable: it is 7f's to tune, held by
-  nothing, and 7e leaves it.
+  `docs/measured.md`; held by nothing, and **not moved by 7f**: the premium and the rest fix a closed option's fair
+  value, so changing one moves every held fingerprint, and the twelve days of 7f's table put the straddle seller at +4.3
+  points a straddle (price over payout 1.07, ahead on 7 days of 12: calm +45, trending 0, choppy -28, news 0), the fifty
+  of 7b at +0.9: a fair price, not yet a visible 15%. The options are re-priced each `OPTION_REPRICE_MS` (100) or when the
+  index has moved `OPTION_REPRICE_CENTS` (0.2), and not while the stocks are shut. The quoter's numbers (half-spread 2.5
+  volatility points, size 1,000, and the customers: a book a customer about every 50 seconds, up to 10 contracts, buy shares
+  0.75 / 0.60 / 0.50 for a call and 0.92 / 0.65 / 0.50 for a put, informed at 5 a second three ticks behind, up to 5) are
+  drafts tuned in 7f against three seeds, held by nothing, as is the tick: the options trade on a one-cent grid, so a far
+  option's spread is the tick whatever the half-spread.
+- **The options blocks' parameters:** `optionMaker`'s edge (1.5 volatility points, in calendar time: 0.65 of a point on the
+  chain's trading clock for today's options), size (5), position limit (20), hedge band (20 contracts), requote (0) and
+  flatten time (30 min), `parity`'s threshold (1 cent an index unit) and `eventVol`'s windows (10 min, 20 s, 60 s) are
+  drafts; the maker's were tuned in 7f. Bluestem's size is the maker's default, its edge (2) and pace (500 ms) were set by
+  the step rate and by leaving the player room inside it. What each makes in a day is in `docs/measured.md`, held by nothing.
+- **The money in the options:** over twelve days of three seeds the hedged `optionMaker` makes +$3,500 on a calm day, about
+  nought on a trending one, -$2,700 on a choppy one and -$400 on a news-heavy one: about +$430 a day, $2,100 a week,
+  against the Prairie rack's $1,600 rent; unhedged, +$1,200 a day with a worse worst. Bluestem alone makes +$6,100 a day
+  (+$30,000 a week, 0.4 of Harbor Quant's day), and about +$100 a day beside a hedged player, who takes half its flow.
+  **The first customers made the maker $116,000 and Bluestem $129,000 a day: that is gone** (`docs/measured.md`, 7f).
+  Three seeds and twelve days are not a pace: held by nothing.
 - **The chain and the what-if:** the chain's three strikes a side, the straddle's nearest-strike reading, the ±2% and
   ±5 points of the sliders, the volatility floor of the what-if (1%) and the watch shortcut's priority (index, its
   futures, the options soonest and nearest first) are drafts, looked at by hand and held by nothing. The layout is held
@@ -393,13 +445,16 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 
 - **The economy's pacing:** measured by the PACE and night harnesses, tuned by hand, held by nothing. The PACE
   harness scales an hour to a day, which understates momentum, so momentum's pace is read from whole days.
-- **When the stages open:** measured by the stage harness, held by nothing; the stage harness has not been run with the sixth stage, and the options desk's lessons and target are 7f's (stage 6 has no target yet).
+- **When the stages open:** measured by the stage harness, held by nothing; run on 2026-11-10 with the sixth stage (seed 1, eight
+  days, both scripted players): stage 5 opens on day 6 (195 real minutes at 10x) for the follower and stage 6 for neither, since it
+  needs the futures desk's three lessons, which the scripted players do not play (`docs/measured.md`).
 - **Frames, the frame budget and the stalls** (a pin, the close, a save): measured headless with Playwright,
   borrowed from `~/projects/artshape-game-template` (there is none here), held by nothing. A worker would lift
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
   cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 38,800 to 39,000 ticks a
-  second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 35,000
-  (36,200 to 36,500 with the options desk and Bluestem in, 2026-11-10: see `docs/measured.md`).
+  second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 32,000
+  (36,200 to 36,500 with the options desk and Bluestem in at 7e; 34,300 to 34,800 after 7f on a slower hour, 2026-11-10,
+  when Chris lowered it from 35,000: slower is fine. See `docs/measured.md`).
 - **Watch mode's lead and tail:** `WATCH_LEAD` 5 s and `WATCH_TAIL` 10 s are drafts. A headline of a desk (`deskNews`,
   not a `news` event) does not slow it; a reload forgets a tail that was running (only the log's last open or close
   is known).

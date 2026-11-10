@@ -466,6 +466,11 @@ export class OrderBook {
     }
   }
 
+  /** The best resting price on a side, or null: `quote()` for one number, without the walk or the object. */
+  bestPrice(side: Side): number | null {
+    return (side === 'buy' ? this.bids : this.asks)[0]?.price ?? null;
+  }
+
   /** The best price on a side among the orders of anyone but `owner`, or null: where the book is without that owner. */
   bestOutside(owner: string, side: Side): number | null {
     for (const o of side === 'buy' ? this.bids : this.asks) if (o.owner !== owner) return o.price;
