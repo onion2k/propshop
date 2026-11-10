@@ -440,3 +440,59 @@ test/experiments.test.ts`: the slices $2,403.83 an ounce, 6¢ over the mid, $2,0
   read 80,764 and 37,042.
 - **The tripwire re-set**, 2026-11-09: Chris set the every-desk-open floor to 35,000 from these figures. A game
   day at top speed with every desk open is about 580 s (450 s at 50,000, scaled to 38,900).
+
+## The weekly rent (Part E of `plans/play-and-learn.md`), 2026-11-09
+
+The rents are drafts, held by nothing. "Before" is a copy of `HEAD` (`bc2b3b8`, before the rent) in a scratch directory;
+"after" is the working tree. Node 24. Every figure here is one machine's.
+
+- **What a seat earns, from the PACE harness before the rent**, `PACE=1 PACE_SEEDS=1,2,3 PACE_MINUTES=20 PACE_ONLY="home
+momentum,city momentum,city arb+mm,colo mm,colo arb,home arb,prairie leadLag mw,fx eastholm triangle book,metals
+thamesford fixArb,metals hudson fixArb,colo pairs,home mm" npx vitest run test/pace.test.ts` (twenty minutes from
+  the open of three seeds, scaled to a day, so a week is five times the figure; it understates momentum, and its hour has
+  no fix, so the metals rows read nought), dollars a day, mean (seeds 1, 2, 3): home momentum −812 (−1,055, −716, −666);
+  city momentum −1,154; city arbitrage with the maker 4,411 (1,427, 4,942, 6,864); colocated maker 7,329 (6,805,
+  7,410, 7,771); colocated arbitrage 6,191 (11,021, 4,763, 2,789); Prairie rack lead-lag on microwave 1,657 (2,097,
+  1,405, 1,469); the triangle from Eastholm on the book 1,725 (842, 956, 3,378); Harbor Quant 14,465. Added for the
+  seats the harness has no row for (a scratch test, same method, arbitrage): lakeside rack on fibre and a server 855
+  (1,809, 275, 480); Pacific rack on fibre and a server 1,405 (3,116, 349, 750); racks at HARBOR and LAKESIDE on
+  microwave and a rack 3,423 (7,083, 1,620, 1,565); racks at all three on laser and an FPGA 13,235 (30,455, 4,093,
+  5,156), and 15,838 with the maker (26,132, 10,314, 11,067); the city rung on arbitrage alone −680.
+- **The rents** (cents a week in the content; the first draft was 2% of the price for all), against the setup the
+  harness measured, a week being five days of the median seed (the mean is dominated by seed 1):
+
+  | Seat (office, line, computer)                | Price      | Rent a week | Earns a week (median seed; mean) |
+  | -------------------------------------------- | ---------- | ----------- | -------------------------------- |
+  | Home, consumer, laptop                       | $0         | $0          | whole days: about $28,500 mean   |
+  | City, fibre, server                          | $18,000    | $360        | arb + maker $24,710; $22,055     |
+  | Lakeside rack, fibre, server                 | $90,000    | $1,800      | $2,400; $4,275                   |
+  | Pacific rack, fibre, server                  | $90,000    | $1,800      | $3,750; $7,025                   |
+  | Harbor rack, microwave, rack                 | $260,000   | $5,200      | maker $37,050; arb $23,815       |
+  | Harbor and Lakeside racks, microwave, rack   | $430,000   | $6,600      | $8,100; $17,115                  |
+  | All three, laser, FPGA                       | $1,400,000 | $18,000     | arb $25,780; $66,175             |
+  | Prairie rack, microwave, rack (futures)      | $260,000   | $5,200      | lead-lag $7,025 worst seed       |
+  | Eastholm rack, fibre, rack (currencies)      | $145,000   | $2,900      | triangle $4,210 worst seed       |
+  | Thamesford or Hudson rack (metals), the rack | $80,000    | $50 (rack)  | fixArb $60 to $150 (nine fixes)  |
+
+  Each line: office, line and computer rents are in `src/content/upgrades.ts` and the desks' files (city $160, fibre
+  $100, server $100; each Harbor, Lakeside, Pacific or desk rack $1,600; Harbor and Lakeside racks $3,000; all three
+  $8,000; microwave $2,400; laser $5,000; the rack computer $1,200; the FPGA $5,000; the metals racks $50). The
+  first draft at 2% put the Harbor-and-Lakeside seat at $8,600 and the all-three seat at $28,000 a week, which the
+  median seed did not cover ($8,100 and $25,780), so the dearest were lowered to $3,000, $8,000, $5,000 and $5,000
+  (1.2% to 1.4% of their prices). The economy was not touched.
+
+- **The metals desk cannot cover 2%.** The 6f tuning harness (nine fixes, Monday 10:00 to Friday 10:00; see the
+  section above) puts `fixArb` from the Thamesford rack at $150, $60 and $140 a week and from Hudson at $75, $10 and
+  $100, with the curve and the cross pairs losing from every seat. A $1,600 rack rent would make the metals target
+  unreachable, so the two racks pay $50 (0.06%), which the desk's own net beats on every seed from Thamesford; the
+  rack computer and the line it needs ($1,300 together) are not covered by any metals setup measured. Not tuned
+  further: a metals seat that earns its whole setup needs a bigger `fixArb` than the harness runs, for Chris.
+- **Unchanged by the rent:** the same PACE rows after, to the dollar (`diff` of the `$/day` lines; the hour holds no
+  Friday close); one day of the night harness, `NIGHT_PACE=1 NIGHT_SEEDS=1 NIGHT_DAYS=1 npx vitest run
+test/nightpace.test.ts` (seed 1, Monday, the starting setup), the JSON identical before and after (day P&L $13.52,
+  fees $22.97, seven variants' windows and verdicts); the seven experiments' runs (`test/experiments.test.ts` now pins
+  them: all 28 runs' P&L, fills and fees are those from before); the pinned fingerprints in `test/instruments.test.ts`
+  did not move. The night harness takes about 4.4 minutes a day here; a Friday was not run.
+- **A load at the close.** A game saved the tick before a close and loaded does not empty the crowd's books at that
+  close (so on a Monday as on a Friday: found while writing the save test, not looked into), so the save test compares
+  the firms and the days, which are all the rent touches.

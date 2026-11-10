@@ -113,6 +113,7 @@ export const COLO_EASTHOLM: LocationSpec = {
   id: 'colo-eastholm',
   name: 'Rack in Eastholm',
   price: 80 * 100_000,
+  rent: 1600 * 100,
   desk: FX_DESK,
   distance: { HARBOR: 4, LAKESIDE: 10, PACIFIC: 33, PRAIRIE: 21, EASTHOLM: 0.1, ASHFORD: 0.1 },
   explain:

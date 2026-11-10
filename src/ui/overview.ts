@@ -10,6 +10,7 @@ import {
   RIVAL_TERM,
   shows,
   type StageId,
+  type TargetProgress,
 } from '../content';
 import { answerOf, type Answer } from '../content/experiments';
 import {
@@ -451,7 +452,7 @@ export function blockVerdict(r: BlockRecord): { kind: BlockVerdictKind; text: st
 }
 
 export interface DayCause {
-  kind: 'fees' | 'fines' | 'rollover' | 'storage' | 'block' | 'symbol' | 'rival' | 'quiet';
+  kind: 'fees' | 'fines' | 'rent' | 'rollover' | 'storage' | 'block' | 'symbol' | 'rival' | 'quiet';
   /** Cents, signed: what it did to the day. */
   amount: number;
   text: string;
@@ -459,7 +460,7 @@ export interface DayCause {
 }
 
 /**
- * Of fees, fines, rollover, storage, the worst block's net and the worst stock's net, the largest loss, for a day
+ * Of fees, fines, rent, rollover, storage, the worst block's net and the worst stock's net, the largest loss, for a day
  * that lost; for a day that earned, the largest gain among the ones that can gain. A tie goes to the first listed.
  */
 export function dayCause(d: DayReport): DayCause {
@@ -470,6 +471,7 @@ export function dayCause(d: DayReport): DayCause {
   };
   add('fees', -d.fees, DAY_CAUSE_WORDS.fees);
   add('fines', -d.fines, DAY_CAUSE_WORDS.fines);
+  add('rent', -(d.rent ?? 0), DAY_CAUSE_WORDS.rent);
   if (d.rollover !== undefined) add('rollover', d.rollover, (a) => DAY_CAUSE_WORDS.rollover(a, gain));
   if (d.storage !== undefined) add('storage', d.storage, (a) => DAY_CAUSE_WORDS.storage(a, gain));
   const pick = (tallies: Record<string, { realised: number; fees: number }>) => {
@@ -570,7 +572,8 @@ export function rivalLines(d: Pick<DayReport, 'takenBy' | 'beatenBy'>): RivalLin
     }
     lines.push({
       name,
-      text: `${parts.join(', ')}.`,
+      // A name that is not a proper one ("the crowd") still opens the sentence with a capital.
+      text: `${parts.join(', ').replace(/^./, (c) => c.toUpperCase())}.`,
       term: RIVAL_TERM,
       weight: (taken?.count ?? 0) + (beaten?.count ?? 0),
     });
@@ -607,4 +610,10 @@ export function rivalRows(s: Pick<Snapshot, 'competitors' | 'takenToday' | 'days
       week: { count: open.count + sum(mine.map((t) => t.count)), cents: open.cents + sum(mine.map((t) => t.cents)) },
     };
   });
+}
+
+/** A target's two figures as the page shows them: "$1,240 of $2,000", "3 of 5 days". */
+export function progressText(p: TargetProgress): string {
+  if (p.unit === 'cents') return `${money(p.have)} of ${money(p.of)}`;
+  return `${p.have} of ${p.of} ${p.of === 1 ? 'day' : 'days'}`;
 }

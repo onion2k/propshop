@@ -76,6 +76,12 @@ function Report({ d }: { d: DayReport }) {
           <TallyTable rows={Object.entries(d.bySymbol).map(([k, t]) => [k, t])} />
         </div>
       </div>
+      {d.rent !== undefined && (
+        <p className="rent">
+          <Term id="rent">Rent</Term> at the close, charged on Friday for the week:{' '}
+          <span className="num down">{money(-d.rent, true)}</span>. It is counted in this day’s result.
+        </p>
+      )}
       {d.rollover !== undefined && (
         <p className="rollover">
           <Term id="rollover">Rollover</Term> at 17:00, after the close:{' '}

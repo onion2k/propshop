@@ -2,7 +2,7 @@
 // whatever the sim speed, and saves. React subscribes through useSyncExternalStore. The wall clock is read
 // here and nowhere further in: the sim only ever sees how many ms it is being asked for.
 
-import { LAST_STAGE, LESSONS, shows, signals, stageOf, type Feature, type StageId } from '../content';
+import { LAST_STAGE, LESSONS, TARGETS, shows, signals, stageOf, type Feature, type StageId } from '../content';
 import {
   BACKTEST_WINDOW_MS,
   BLOCKS,
@@ -57,6 +57,8 @@ export const RUNNING_SHORT = 0.85;
 export const SAVE_KEY = 'propshop.save.v1';
 export const PROGRESS_KEY = 'propshop.progress.v1';
 export const TUTORIAL_KEY = 'propshop.tutorial.v1';
+/** Which targets are met: id to the simulated time it was first met. A target once met stays met. Cleared by Start again. */
+export const TARGETS_KEY = 'propshop.targets.v1';
 /**
  * The stages: `{ seen }`, the last stage whose intro card was shown. A new game writes it at once, so a save
  * with no such key is one from before the stages, and opens every stage. Cleared by Start again, and written
@@ -71,6 +73,9 @@ export type Tutorial = { state: 'fresh' } | { state: 'at'; step: number } | { st
 
 /** Which lessons are done, and the simulated time each was. One object per change, so React can compare it. */
 export type Progress = Readonly<Record<string, number>>;
+
+/** Which targets are met, and the simulated time each was first. One object per change. */
+export type Met = Readonly<Record<string, number>>;
 
 /** What watch mode is doing, for the top bar: `on`, why it is slow (if it is), and the next public moment. */
 export interface WatchState {
@@ -88,6 +93,8 @@ const NOT_WATCHING: WatchState = { on: false, slow: null, speed: 0, next: null, 
 export interface Store {
   getSnapshot: () => Snapshot;
   getProgress: () => Progress;
+  /** The targets met so far, each with the time it was first met. */
+  getTargets: () => Met;
   getTutorial: () => Tutorial;
   setTutorial: (t: Tutorial) => void;
   /** The stage in force: every stage if the switch is on or the save is from before the stages. */
@@ -191,6 +198,7 @@ export function createStore(
   let running = 0;
   let snapshot = game.snapshot();
   let progress: Progress = loadProgress(storage);
+  let met: Met = loadMap(storage, TARGETS_KEY);
   let tutorial: Tutorial = loadTutorial(storage);
   // A save from before the stages has no stages key; a new game writes it now.
   const stagesRaw = storage?.getItem(STAGES_KEY) ?? null;
@@ -559,6 +567,15 @@ export function createStore(
       }
     }
     if (changed) saveProgress(storage, progress);
+    // The targets likewise: one newly met is kept with the time, and never taken back.
+    let metChanged = false;
+    for (const t of TARGETS) {
+      if (met[t.id] === undefined && t.done(snapshot)) {
+        met = { ...met, [t.id]: snapshot.now };
+        metChanged = true;
+      }
+    }
+    if (metChanged) saveMap(storage, TARGETS_KEY, met);
     for (const l of listeners) l();
   };
 
@@ -577,6 +594,7 @@ export function createStore(
     getSnapshot: () => snapshot,
     getRunning: () => running,
     getProgress: () => progress,
+    getTargets: () => met,
     getTutorial: () => tutorial,
     getStage: stageNow,
     getIntro() {
@@ -715,6 +733,7 @@ export function createStore(
       storage?.removeItem(SAVE_KEY);
       storage?.removeItem(PROGRESS_KEY);
       storage?.removeItem(TUTORIAL_KEY);
+      storage?.removeItem(TARGETS_KEY);
       game = new Game(content, newSeed);
       watching = false;
       writeWatch(storage, false);
@@ -731,6 +750,7 @@ export function createStore(
       storage?.removeItem(TESTS_KEY);
       changed();
       progress = {};
+      met = {};
       tutorial = { state: 'fresh' };
       seen = 1;
       legacy = false;
@@ -795,7 +815,12 @@ function loadOrNew(content: Content, raw: string | null, seed: number): Game {
 }
 
 function loadProgress(storage: Storage | null): Progress {
-  const raw = storage?.getItem(PROGRESS_KEY);
+  return loadMap(storage, PROGRESS_KEY);
+}
+
+/** A map of id to a simulated time, as the lessons and the targets keep them; nothing but numbers is read back. */
+function loadMap(storage: Storage | null, key: string): Record<string, number> {
+  const raw = storage?.getItem(key);
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -809,8 +834,12 @@ function loadProgress(storage: Storage | null): Progress {
 }
 
 function saveProgress(storage: Storage | null, progress: Progress): void {
+  saveMap(storage, PROGRESS_KEY, progress);
+}
+
+function saveMap(storage: Storage | null, key: string, map: Readonly<Record<string, number>>): void {
   try {
-    storage?.setItem(PROGRESS_KEY, JSON.stringify(progress));
+    storage?.setItem(key, JSON.stringify(map));
   } catch {
     // Storage can be full or forbidden; the lessons still tick on screen.
   }

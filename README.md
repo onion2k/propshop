@@ -92,6 +92,12 @@ http://localhost:5181.
   triangle, the day's first race won and the dark web opening each put one
   line under the top bar for a few seconds, with its figure, the concept it
   is, and a link to the place on the page.
+- **Something at stake, and something to play for.** Every office, line and
+  computer past the free ones costs a weekly rent, charged at Friday's close
+  to you and to every rival, so a fast seat has to earn its keep. Each stage
+  has a target (end a day up, earn the seat's rent, a week with no halt, a
+  desk that pays for its rack) and there is one standing goal: beat Harbor
+  Quant's week. A target is only ever met; the firm can never go bust.
 - **A report every close,** by block, by stock and by race, with a chart of
   the days.
 - **A glossary** behind every underlined term: order books, the spread,

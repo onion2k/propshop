@@ -61,7 +61,7 @@ import {
   type Params,
 } from './strategy';
 import type { Setup } from './experiment';
-import { buyUpgrade, catalogue, infrastructureFrom, type UpgradeKind, type UpgradeOffer } from './upgrades';
+import { buyUpgrade, catalogue, infrastructureFrom, rentOf, type UpgradeKind, type UpgradeOffer } from './upgrades';
 import { DEFAULT_RULES, type Content, type ExchangeRules, type InstrumentSpec, type RegimeSpec } from './types';
 
 /** One tick of simulated time, in ms. A colocated firm is within a tick of its exchange; a home office is twenty
@@ -187,6 +187,11 @@ export interface DayReport {
    * written in and counted in `pnl` and `equityAtClose` as the rollover is. Absent where no metal was held then.
    */
   storage?: number;
+  /**
+   * The week's rent, charged at this Friday's close on what was in use, in cents paid (positive): counted in `pnl`
+   * and `equityAtClose`. Present on a Friday where the setup in use had a rent; absent otherwise and before rent.
+   */
+  rent?: number;
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -300,6 +305,9 @@ export interface Snapshot {
   unrealised: number;
   feesPaid: number;
   finesPaid: number;
+  /** Rent paid in all, cents, and what Friday's close will charge on the setup in use now (the full week). */
+  rentPaid: number;
+  rentDue: number;
   heat: number;
   heatLine: number;
   risk: RiskSettings;
@@ -438,6 +446,8 @@ export interface Snapshot {
     latency: Record<string, number>;
     fills: number;
     pnl: number;
+    /** Its equity's move since today's open while the market is open, else nought: the week's figure adds the closed days. */
+    todayPnl: number;
     /** Where it sits (its location's name) and the ids of the blocks it runs. */
     location: string;
     runs: string[];
@@ -921,11 +931,23 @@ export class Game {
     }
   }
 
+  /** Friday's rent from every firm on what it has in use; the player's, in cents. Draws from no stream. */
+  private chargeRent(): number {
+    let mine = 0;
+    for (const f of this.firms()) {
+      const paid = f.payRent();
+      if (f === this.firm) mine = paid;
+    }
+    return mine;
+  }
+
   private onClose(): void {
     this.regulate();
     this.settleMarkouts(true);
-    const equity = this.firm.equity(this.market, this.now);
     const c = calendar(this.now);
+    // The week's rent, at the stocks' close on Friday, to every firm, before the day is added up: it is Friday's cost.
+    const rent = c.weekday === 'Fri' ? this.chargeRent() : 0;
+    const equity = this.firm.equity(this.market, this.now);
     const pnl = equity - this.dayStartEquity;
     const latency: Record<string, number> = {};
     for (const e of this.market.exchanges) latency[e.id] = this.firm.latency(e.id);
@@ -960,6 +982,7 @@ export class Game {
       takenBy: Object.fromEntries(Object.entries(this.today.takenBy ?? {}).map(([name, t]) => [name, { ...t }])),
       dropped: this.firm.stats.ordersDropped - this.today.statsAtOpen.ordersDropped,
       ...(this.today.byDesk ? { byDesk: this.byDesk() } : {}),
+      ...(rent > 0 ? { rent } : {}),
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -1189,6 +1212,8 @@ export class Game {
       unrealised,
       feesPaid: firm.feesPaid,
       finesPaid: firm.finesPaid,
+      rentPaid: firm.rentPaid,
+      rentDue: rentOf(firm.infra),
       heat: firm.heat,
       heatLine: HEAT_FINE_LINE,
       risk: { ...firm.risk },
@@ -1280,6 +1305,9 @@ export class Game {
           latency: l,
           fills: c.stats.fillsReceived,
           pnl: c.realised - c.feesPaid + c.unrealised(this.market, now),
+          todayPnl: open
+            ? c.equity(this.market, now) - (this.today.rivalsAtOpen[c.id] ?? c.equity(this.market, now))
+            : 0,
           location: c.infra.location.name,
           runs: c.enabledBlocks().map((b) => b.id),
         };

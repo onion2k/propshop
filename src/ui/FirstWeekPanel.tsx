@@ -13,10 +13,11 @@ import {
   type Lesson,
   type StageId,
 } from '../content';
-import { useContext } from 'react';
+import { useContext, useSyncExternalStore } from 'react';
 import { formatTime } from '../sim';
 import { GoContext } from './Go';
 import { Term } from './Glossary';
+import { Targets } from './Targets';
 import type { Progress, Store } from './store';
 
 /** Lessons not yet done, in the stages that are open (all of them by default). */
@@ -38,6 +39,8 @@ export function FirstWeekPanel({
   const current = LESSONS.find((l) => progress[l.id] === undefined && (lessonStage(l.id) ?? 1) <= stage);
   const left = lessonsLeft(progress, stage);
   const tutorial = store.getTutorial();
+  const met = useSyncExternalStore(store.subscribe, store.getTargets, store.getTargets);
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const number = new Map(LESSONS.map((l, i) => [l.id, i + 1]));
   return (
     <div className="first-week">
@@ -106,6 +109,8 @@ export function FirstWeekPanel({
             </ol>
           </section>
         ))}
+      {/* Appended below the lessons, and growing downward as stages open. */}
+      <Targets s={snapshot} met={met} stage={stage} full />
     </div>
   );
 }

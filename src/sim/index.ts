@@ -98,6 +98,7 @@ export { REFUSED_CROSSED } from './orderbook';
 export type { Fix } from './exchange';
 export { MAX_FIXES, REFUSED_IN_FIX } from './exchange';
 export type { UpgradeKind, UpgradeOffer } from './upgrades';
+export { rentOf } from './upgrades';
 export { DEFAULT_RULES } from './types';
 export type {
   Content,

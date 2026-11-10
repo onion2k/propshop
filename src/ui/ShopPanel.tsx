@@ -1,7 +1,8 @@
 // The shop: offices, networks and computers, with what each does to the latency to each exchange.
 
+import { RENT_WORDS } from '../content';
 import type { Snapshot, UpgradeKind, UpgradeOffer } from '../sim';
-import { moneyShort, ms } from './format';
+import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
 import { shopLatency } from './overview';
 import type { Store } from './store';
@@ -21,6 +22,9 @@ export function ShopPanel({ s, store }: { s: Snapshot; store: Store }) {
           .map(([e, l]) => `${e} ${ms(l)}`)
           .join(', ')}
         . Cash {moneyShort(s.cash)}.
+      </p>
+      <p className="muted small shop-rent" data-testid="shop-rent">
+        {RENT_WORDS.due(money(s.rentDue))} {RENT_WORDS.rule} <Term id="rent">Read more</Term>
       </p>
       {KINDS.map(({ kind, title, term }) => (
         <div key={kind}>
@@ -61,6 +65,15 @@ function Offer({ o, s, store }: { o: UpgradeOffer; s: Snapshot; store: Store }) 
           </details>
         )}
         <p className="small">{o.spec.explain}</p>
+        <p className="small offer-rent">
+          {o.spec.rent ? (
+            <>
+              {RENT_WORDS.offer(money(o.spec.rent))} <Term id="rent">Rent</Term>
+            </>
+          ) : (
+            <span className="muted">No rent.</span>
+          )}
+        </p>
       </div>
       <button type="button" disabled={o.inUse || !o.affordable} onClick={() => store.buyUpgrade(o.kind, o.spec.id)}>
         {o.inUse

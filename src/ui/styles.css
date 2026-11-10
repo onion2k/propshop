@@ -1766,3 +1766,28 @@ code {
     }
   }
 }
+
+/* Part E: rent and targets. Each is a line or a list appended below what is already there. */
+.offer-rent,
+.shop-rent,
+.ov-rent {
+  margin: 0.25em 0 0;
+}
+.targets ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.target {
+  padding: 0.2em 0;
+}
+.target-mark {
+  display: inline-block;
+  width: 1.4em;
+}
+.target.met strong {
+  font-weight: 600;
+}
+.target-standing {
+  margin: 0.5em 0 0;
+}

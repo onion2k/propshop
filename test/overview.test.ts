@@ -9,6 +9,7 @@ import {
   blockVerdict,
   comingLine,
   dayCause,
+  progressText,
   ordersToday,
   rivalLines,
   rivalRows,
@@ -369,6 +370,30 @@ describe('why a day lost or earned', () => {
     expect(sym.text).toContain('QNT');
   });
 
+  it('names Friday’s rent when it is the largest loss, and not when a bigger thing lost, nor on a day that earned', () => {
+    const rent = dayCause(day(4, { pnl: -160_000, rent: 160_000, fees: 100, byBlock: { momentum: t(100, 100) } }));
+    expect(rent.kind).toBe('rent');
+    expect(rent.amount).toBe(-160_000);
+    expect(rent.text).toContain('$1,600.00');
+    expect(rent.text).toMatch(/Rent took/);
+    expect(rent.term).toBe('day-cause');
+    // The block lost more than the rent: the block is named.
+    const bigger = dayCause(day(4, { pnl: -300_000, rent: 16_000, byBlock: { momentum: t(-280_000, 1_000) } }));
+    expect(bigger.kind).toBe('block');
+    // A day that earned after the rent is explained by what earned, not by the rent.
+    const up = dayCause(day(4, { pnl: 50_000, rent: 16_000, byBlock: { momentum: t(70_000, 4_000) } }));
+    expect(up.kind).toBe('block');
+    // A day with no rent field is as it was.
+    expect(dayCause(day(3, { pnl: -900, fees: 700 })).kind).toBe('fees');
+  });
+
+  it('words a target’s two figures, and the glossary has the rent entry the page links to', () => {
+    expect(progressText({ have: 124_000, of: 200_000, unit: 'cents' })).toBe('$1,240.00 of $2,000.00');
+    expect(progressText({ have: 3, of: 5, unit: 'days' })).toBe('3 of 5 days');
+    expect(progressText({ have: 0, of: 1, unit: 'days' })).toBe('0 of 1 day');
+    expect(glossary('rent')).toBeDefined();
+  });
+
   it('names the largest gain of a day that earned', () => {
     const c = dayCause(day(1, { pnl: 3000, fees: 50, byBlock: { momentum: t(3200, 100), arbitrage: t(10, 5) } }));
     expect(c.kind).toBe('block');
@@ -504,8 +529,26 @@ describe('rivals as characters', () => {
   it('rows each rival with what it runs, where it sits, and what it took today and this week', () => {
     const rows = rivalRows({
       competitors: [
-        { id: 'bot:a', name: 'Harbor Quant', latency: {}, fills: 0, pnl: 0, location: 'Colo', runs: ['arbitrage'] },
-        { id: 'bot:b', name: 'Midtown Capital', latency: {}, fills: 0, pnl: 0, location: 'City', runs: ['anticipate'] },
+        {
+          id: 'bot:a',
+          name: 'Harbor Quant',
+          latency: {},
+          fills: 0,
+          pnl: 0,
+          todayPnl: 0,
+          location: 'Colo',
+          runs: ['arbitrage'],
+        },
+        {
+          id: 'bot:b',
+          name: 'Midtown Capital',
+          latency: {},
+          fills: 0,
+          pnl: 0,
+          todayPnl: 0,
+          location: 'City',
+          runs: ['anticipate'],
+        },
       ],
       takenToday: { 'Harbor Quant': { count: 2, cents: 100 } },
       calendar: { week: 2, open: true } as Snapshot['calendar'],
@@ -524,7 +567,16 @@ describe('rivals as characters', () => {
   it('counts today once after the close, when the day is already among the kept days', () => {
     const rows = rivalRows({
       competitors: [
-        { id: 'bot:a', name: 'Harbor Quant', latency: {}, fills: 0, pnl: 0, location: 'Colo', runs: ['arbitrage'] },
+        {
+          id: 'bot:a',
+          name: 'Harbor Quant',
+          latency: {},
+          fills: 0,
+          pnl: 0,
+          todayPnl: 0,
+          location: 'Colo',
+          runs: ['arbitrage'],
+        },
       ],
       takenToday: { 'Harbor Quant': { count: 3, cents: 200 } },
       calendar: { week: 2, open: false } as Snapshot['calendar'],

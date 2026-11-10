@@ -36,6 +36,7 @@ import {
   TAPE_VIEW,
 } from './strategy';
 import type { Headline, Infrastructure, MarginSpec, StockSpec } from './types';
+import { rentOf } from './upgrades';
 
 /** The desk each desk's own block belongs to; a block not named is the stocks'. */
 const BLOCK_DESK: ReadonlyMap<string, string> = new Map(
@@ -299,6 +300,8 @@ export interface SavedFirm {
   realised: number;
   feesPaid: number;
   finesPaid: number;
+  /** Rent paid in all, cents; absent in a save from before the rent, and while none has been paid. */
+  rentPaid?: number;
   heat: number;
   blocks: BlockSetting[];
   risk?: RiskSettings;
@@ -348,6 +351,8 @@ export class Firm {
   realised = 0;
   feesPaid = 0;
   finesPaid = 0;
+  /** Rent paid in all, cents. */
+  rentPaid = 0;
   /** The regulator's interest, from zero; it climbs with tips bought and cools each day. */
   heat = 0;
   infra: Infrastructure;
@@ -1609,6 +1614,15 @@ export class Firm {
     this.finesPaid += cents;
   }
 
+  /** The week's rent on what is in use, out of cash; says what it charged, in cents. Draws nothing. */
+  payRent(): number {
+    const cents = rentOf(this.infra);
+    if (cents === 0) return 0;
+    this.cash -= cents;
+    this.rentPaid += cents;
+    return cents;
+  }
+
   save(): SavedFirm {
     return {
       id: this.id,
@@ -1627,6 +1641,7 @@ export class Firm {
       realised: this.realised,
       feesPaid: this.feesPaid,
       finesPaid: this.finesPaid,
+      ...(this.rentPaid > 0 ? { rentPaid: this.rentPaid } : {}),
       heat: this.heat,
       blocks: this.blocks,
       risk: this.risk,
@@ -1664,6 +1679,7 @@ export class Firm {
     f.realised = s.realised;
     f.feesPaid = s.feesPaid;
     f.finesPaid = s.finesPaid;
+    f.rentPaid = s.rentPaid ?? 0;
     f.heat = s.heat;
     if (s.risk) f.risk = { ...s.risk };
     f.halt = s.halt ?? null;

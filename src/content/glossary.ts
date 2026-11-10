@@ -325,6 +325,18 @@ export const GLOSSARY: GlossaryEntry[] = [
       'stepping away on news.',
   },
   {
+    id: 'rent',
+    term: 'Rent: a fixed cost',
+    short: 'What the office, line and computer in use cost each week, whether the firm earned or not.',
+    long:
+      'A fee is paid when a trade happens; rent is paid because the seat exists. At Friday’s close the firm is charged ' +
+      'a week’s rent on every office, line and computer it has in use, and so is every rival, and it counts in that ' +
+      'day’s result. The full week is charged whenever in the week the seat was bought. This is why a fast seat has to ' +
+      'earn its keep: a colocated rack that trades a little loses money every week it sits there. Real firms pay for ' +
+      'racks, cross-connects and market data by the month, and the faster the seat the larger the bill. The home ' +
+      'office, the consumer line and the laptop are free, so the cheapest way to lose is to buy speed you do not use.',
+  },
+  {
     id: 'day-cause',
     term: 'Why a day made or lost money',
     short: 'The one thing that most of a day’s result came from: a charge, a block or a stock.',

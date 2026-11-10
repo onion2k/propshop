@@ -206,6 +206,11 @@ export interface LocationSpec {
   id: string;
   name: string;
   price: number;
+  /**
+   * Cents a week, charged at Friday's close while it is in use (the full week, whenever in the week it was bought);
+   * absent is free. A draft: about two per cent of the price.
+   */
+  rent?: number;
   /** A desk's location (a rack at its venue) is offered only once that desk is open; absent, always. */
   desk?: string;
   /** One-way distance an order travels to each exchange, in ms of light through fibre. */
@@ -222,6 +227,11 @@ export interface NetworkSpec {
   id: string;
   name: string;
   price: number;
+  /**
+   * Cents a week, charged at Friday's close while it is in use (the full week, whenever in the week it was bought);
+   * absent is free. A draft: about two per cent of the price.
+   */
+  rent?: number;
   /** Multiplies the distance: fibre is one, microwave is less. */
   factor: number;
   /** Fixed ms added to every hop, for the gear at each end. */
@@ -233,6 +243,11 @@ export interface ComputerSpec {
   id: string;
   name: string;
   price: number;
+  /**
+   * Cents a week, charged at Friday's close while it is in use (the full week, whenever in the week it was bought);
+   * absent is free. A draft: about two per cent of the price.
+   */
+  rent?: number;
   /** How many strategy blocks can run at once. */
   maxBlocks: number;
   /** How many orders it can send in a second of simulated time. */

@@ -1,9 +1,14 @@
 // The shop. Distances are one-way milliseconds through fibre; a network multiplies them and adds its own overhead.
 // Prices are cents, sized so the whole path from home to colocation is about eighty trading days of what the
-// blocks earn on the way (see test/pace.test.ts), a couple of hours at the top speed.
+// blocks earn on the way (see test/pace.test.ts), a couple of hours at the top speed. Each seat, line and computer
+// past the free ones also costs a weekly rent, charged at Friday's close: about two per cent of its price for the
+// first rungs and about a point less for the dearest, so that a seat's week (median seed, PACE harness) covers its rent
+// with room: drafts, held by nothing (docs/measured.md has what each seat earns a week against them).
 import type { CompetitorSpec, ComputerSpec, LocationSpec, NetworkSpec } from '../sim';
 
 const K = 100_000;
+/** A dollar, in cents: the rents below are written in dollars a week. */
+const DOLLAR = 100;
 
 export const LOCATIONS: LocationSpec[] = [
   {
@@ -19,6 +24,7 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'city',
     name: 'Office in Harbor City',
     price: 8 * K,
+    rent: 160 * DOLLAR,
     distance: { HARBOR: 2, LAKESIDE: 7, PACIFIC: 30 },
     explain: 'Downtown, a few miles from the HARBOR data centre. Latency to HARBOR falls to a couple of milliseconds.',
   },
@@ -26,6 +32,7 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'colo-harbor',
     name: 'Colocation at HARBOR',
     price: 80 * K,
+    rent: 1600 * DOLLAR,
     distance: { HARBOR: 0.1, LAKESIDE: 7, PACIFIC: 30 },
     explain:
       'A rack in the exchange building itself. Orders reach the matching engine in microseconds. ' +
@@ -35,6 +42,7 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'colo-lakeside',
     name: 'Colocation at LAKESIDE',
     price: 80 * K,
+    rent: 1600 * DOLLAR,
     distance: { HARBOR: 7, LAKESIDE: 0.1, PACIFIC: 20 },
     explain: 'A rack inside LAKESIDE. Fastest there, a long link from HARBOR and a longer one from PACIFIC.',
   },
@@ -42,6 +50,7 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'colo-pacific',
     name: 'Colocation at PACIFIC',
     price: 80 * K,
+    rent: 1600 * DOLLAR,
     distance: { HARBOR: 30, LAKESIDE: 20, PACIFIC: 0.1 },
     explain: 'A rack inside PACIFIC, the slowest crowd in the game: a fast firm here is first to every gap it has.',
   },
@@ -49,6 +58,7 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'colo-harbor-lakeside',
     name: 'Racks at HARBOR and LAKESIDE',
     price: 250 * K,
+    rent: 3000 * DOLLAR,
     distance: { HARBOR: 0.1, LAKESIDE: 0.1, PACIFIC: 30 },
     dataDistance: { HARBOR: 0.1, LAKESIDE: 7, PACIFIC: 30 },
     explain:
@@ -61,6 +71,7 @@ export const LOCATIONS: LocationSpec[] = [
     id: 'colo-all',
     name: 'Racks at all three',
     price: 600 * K,
+    rent: 8000 * DOLLAR,
     distance: { HARBOR: 0.1, LAKESIDE: 0.1, PACIFIC: 0.1 },
     dataDistance: { HARBOR: 0.1, LAKESIDE: 7, PACIFIC: 30 },
     explain:
@@ -82,6 +93,7 @@ export const NETWORKS: NetworkSpec[] = [
     id: 'fibre',
     name: 'Leased fibre',
     price: 5 * K,
+    rent: 100 * DOLLAR,
     factor: 1,
     overhead: 1,
     explain:
@@ -91,6 +103,7 @@ export const NETWORKS: NetworkSpec[] = [
     id: 'microwave',
     name: 'Microwave link',
     price: 120 * K,
+    rent: 2400 * DOLLAR,
     factor: 0.55,
     overhead: 0.5,
     explain:
@@ -101,6 +114,7 @@ export const NETWORKS: NetworkSpec[] = [
     id: 'laser',
     name: 'Laser link',
     price: 400 * K,
+    rent: 5000 * DOLLAR,
     factor: 0.5,
     overhead: 0.3,
     explain:
@@ -127,6 +141,7 @@ export const COMPUTERS: ComputerSpec[] = [
     id: 'server',
     name: 'Server',
     price: 5 * K,
+    rent: 100 * DOLLAR,
     maxBlocks: 2,
     ordersPerSecond: 100,
     decisionEveryMs: 20,
@@ -137,6 +152,7 @@ export const COMPUTERS: ComputerSpec[] = [
     id: 'rack',
     name: 'Rack with custom hardware',
     price: 60 * K,
+    rent: 1200 * DOLLAR,
     maxBlocks: 4,
     ordersPerSecond: 500,
     decisionEveryMs: 10,
@@ -147,6 +163,7 @@ export const COMPUTERS: ComputerSpec[] = [
     id: 'fpga',
     name: 'FPGA',
     price: 400 * K,
+    rent: 5000 * DOLLAR,
     maxBlocks: 4,
     ordersPerSecond: 1000,
     decisionEveryMs: 2,

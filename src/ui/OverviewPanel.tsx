@@ -3,14 +3,15 @@
 // behind it. All numbers are worked out in overview.ts and the store; this file arranges and words them.
 
 import { useSyncExternalStore } from 'react';
-import { REGIMES, shows, signals as readSignals, type Signal } from '../content';
+import { REGIMES, RENT_WORDS, shows, signals as readSignals, type Signal, type StageId } from '../content';
 import { calendar, MARKET_CLOSE, MARKET_OPEN, MS_PER_MINUTE, type Snapshot } from '../sim';
 import { Comparisons } from './Comparisons';
 import { balance, money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
 import { Section } from './OverviewSection';
 import { Legend, LineChart, PnlChart, lineStyle, type Line } from './OverviewCharts';
-import type { Store } from './store';
+import { Targets } from './Targets';
+import type { Met, Store } from './store';
 import {
   blockDays,
   blockName,
@@ -38,6 +39,7 @@ const upDown = (cents: number) => (cents > 0 ? 'up' : cents < 0 ? 'down' : '');
 export function OverviewPanel({ s, store }: { s: Snapshot; store: Store }) {
   const stage = useSyncExternalStore(store.subscribe, store.getStage, store.getStage);
   const tests = useSyncExternalStore(store.subscribe, store.getTests, store.getTests);
+  const met = useSyncExternalStore(store.subscribe, store.getTargets, store.getTargets);
   const sigs = readSignals(s.days, s, { shown: (f) => shows(f, stage) });
   // Position and Today from the first minute; the rest as the game has something to put in them. A section that
   // appears is appended below what is there, so nothing already on the page moves.
@@ -45,7 +47,7 @@ export function OverviewPanel({ s, store }: { s: Snapshot; store: Store }) {
   const coming = comingLine(shown);
   return (
     <main className="layout single overview">
-      <Position s={s} />
+      <Position s={s} met={met} stage={stage} />
       <Today s={s} stage={stage} />
       {coming && <p className="ov-coming muted small">{coming}</p>}
       {shown.trends && <Trends s={s} stage={stage} />}
@@ -55,7 +57,7 @@ export function OverviewPanel({ s, store }: { s: Snapshot; store: Store }) {
   );
 }
 
-function Position({ s }: { s: Snapshot }) {
+function Position({ s, met, stage }: { s: Snapshot; met: Met; stage: StageId }) {
   const last = s.days[s.days.length - 1];
   const today = s.open ? s.dayPnl : 0;
   const week = weekPnl(s.days, s.calendar.week, today);
@@ -134,6 +136,13 @@ function Position({ s }: { s: Snapshot }) {
         <span className="muted">Setup: </span>
         {setupLine(s)}
       </p>
+      {(s.rentDue > 0 || s.rentPaid > 0) && (
+        // Appears with the first seat that has a rent, below the setup line; a line of its own.
+        <p className="small ov-rent" data-testid="ov-rent">
+          {RENT_WORDS.due(money(s.rentDue))} {s.rentPaid > 0 && RENT_WORDS.paid(money(s.rentPaid))}{' '}
+          <Term id="rent">Read more</Term>
+        </p>
+      )}
       <p className="ov-line small">
         {last ? (
           <>
@@ -161,6 +170,8 @@ function Position({ s }: { s: Snapshot }) {
           </span>
         )}
       </p>
+      {/* Appended below the yesterday line; it grows downward as stages open. */}
+      <Targets s={s} met={met} stage={stage} />
     </Section>
   );
 }

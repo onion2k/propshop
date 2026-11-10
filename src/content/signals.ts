@@ -364,6 +364,8 @@ export const BLOCK_VERDICT_WORDS: Readonly<
 export const DAY_CAUSE_WORDS = {
   fees: (amount: string) => `Fees took ${amount}: the exchanges' charge on every fill, win or lose.`,
   fines: (amount: string) => `Fines took ${amount}: the regulator's charge for how the orders were sent.`,
+  rent: (amount: string) =>
+    `Rent took ${amount}: the week's charge for the office, line and computer in use, taken at Friday's close.`,
   rollover: (amount: string, gain: boolean) =>
     gain
       ? `Rollover earned ${amount}: the interest on the currencies held at 17:00.`
@@ -447,4 +449,29 @@ export const WATCH_WORDS = {
   term: 'watch-mode',
   /** The glossary entry each kind of moment links to, where there is one. */
   termOf: { open: null, close: null, fix: 'fix', expiry: 'expiry' } as const,
+} as const;
+
+/** The rent, in the shop, in Position and on the Friday's report. */
+export const RENT_WORDS = {
+  /** A shop offer's line: what it costs a week. The rule is said once, above the offers (`rule`). */
+  offer: (rent: string) => `Rent ${rent} a week.`,
+  /** The shop's rule, once: the whole week is charged whenever in the week a thing is bought. */
+  rule: 'A week is charged in full whenever in the week you buy: the first is due this Friday.',
+  /** Position's line: the total due at the coming Friday close on the setup in use, and what has been paid. */
+  due: (due: string) => `Rent due at Friday's close: ${due}, for the office, line and computer in use.`,
+  paid: (paid: string) => `Paid so far: ${paid}.`,
+  /** The Friday's report line. */
+  report: (rent: string) => `Rent at the close: ${rent}, the week's charge for what was in use.`,
+} as const;
+
+/** The targets' words on the page. */
+export const TARGET_WORDS = {
+  heading: 'Targets',
+  intro:
+    'Something to play for at each stage. A target opens nothing and the firm cannot go bust: a target is only ever met, and stays met.',
+  met: (time: string) => `met ${time}`,
+  noSeat: 'needs a seat with a rent: buy one in the Shop',
+  standing: (rival: string, you: string, them: string, winning: boolean) =>
+    `${winning ? 'Ahead of' : 'Behind'} ${rival} this week: you ${you}, ${rival} ${them}. Both are after the rent.`,
+  standingHeading: 'Beat the best rival’s week',
 } as const;

@@ -215,6 +215,8 @@ export const COLO_THAMESFORD: LocationSpec = {
   id: 'colo-thamesford',
   name: 'Rack at Thamesford',
   price: 80 * 100_000,
+  // Not two per cent: the tuning harness's best metals week from a rack is $150 (docs/measured.md, Part E).
+  rent: 50 * 100,
   desk: METALS_DESK,
   distance: {
     HARBOR: 28,
@@ -237,6 +239,8 @@ export const COLO_HUDSON: LocationSpec = {
   id: 'colo-hudson',
   name: 'Rack at Hudson',
   price: 80 * 100_000,
+  // Not two per cent: the tuning harness's best metals week from a rack is $150 (docs/measured.md, Part E).
+  rent: 50 * 100,
   desk: METALS_DESK,
   distance: {
     HARBOR: 1,

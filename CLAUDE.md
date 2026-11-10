@@ -95,6 +95,17 @@ measure; they hold nothing.
   and `rivalRows` (`overview.ts`), the page in `DaysPanel.tsx` and `RivalsPanel.tsx`; `dayCause` has `rival`. Tests:
   `test/rivals.test.ts`, `test/overview.test.ts`, `test/ui.test.tsx` "Part B". `experiment.ts` does not measure a
   picked-off quote, so nothing was reused.
+- **Rent and targets (Part E of `plans/play-and-learn.md`).** `rent?` (cents a week) is on `LocationSpec`,
+  `NetworkSpec` and `ComputerSpec`; the home office, consumer line and laptop have none, the rest about 2% of the price
+  (about 1.2% for the dearest three, the metals racks $50; each in `src/content/upgrades.ts` or its desk's file). `Game.onClose` on a
+  Friday charges `Firm.payRent()` (`rentOf(infra)`, `src/sim/upgrades.ts`) to every firm, rivals too, before the day is
+  added up: the day's `DayReport.rent` (cents paid, positive) is in its `pnl` and `equityAtClose`, and the firm keeps
+  `rentPaid` (saved only when above nought, so a save with none is as before). The snapshot carries `rentDue` (what
+  the setup in use will be charged), `rentPaid` and, on each competitor, `todayPnl`. The targets are `src/content/targets.ts`,
+  pure over the snapshot (`done`, `progress` as the two figures, `standingGoal` for Harbor Quant's week, both after
+  rent); the store keeps the met ones under `propshop.targets.v1` (id to simulated time, never taken back, cleared by
+  Start again), and `src/ui/Targets.tsx` lists them in Position and the First week tab. Tests: `test/rent.test.ts`,
+  `test/targets.test.ts`, `test/ui.test.tsx` "Part E".
 - `src/sim/experiment.ts` runs an experiment: `startOf` builds the starting save, `Run` runs a window from it
   under a setup and measures it, `Prepare` pins a save before each chosen moment, `replayAt` gives the game at
   one. A save is about 7 MB (the exchanges' quote logs), so a run keeps its start and at most `MAX_PINNED`
@@ -124,7 +135,8 @@ measure; they hold nothing.
   opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again, and Free play sets
   it). `experiments.ts` is the four experiments: seed, desks open, window, setup, changes, the moments worth replaying,
   and the result sentence written from the two runs' numbers. The browser keeps `propshop.experiments.v1`,
-  `{ done, called }`: the ones done and whether the first guess was right.
+  `{ done, called }`: the ones done and whether the first guess was right. It also keeps `propshop.targets.v1`
+  (target id to the simulated time it was first met; shown in Free play too, cleared by Start again).
 - `test/` is Vitest, one file per sim module, `stages.test.ts` for the stages, `experiments.test.ts` for the
   experiments' seeds, and `ui.test.tsx` for the UI.
 
@@ -167,6 +179,12 @@ measure; they hold nothing.
 
 For anything new, check what it does:
 
+- **rent:** charged once, at the stocks' close on a Friday (a minute-stepped skip over a weekend still passes that
+  close once), on what is in use then, not on what is owned; a seat bought on Thursday pays the whole week. A desk not
+  open offers no rack and has no rival, so no rent. No draw from any stream. Equity below nought changes nothing: the
+  firm is still charged, still trades, and the game goes on (there is no bust). The calendar has no holidays. A run
+  of an experiment or a night's test measures `realised - fees + unrealised`, which a rent never touches, and its
+  window is cut before the close; `test/experiments.test.ts` pins each run's figures from before the rent.
 - **closed hours:** the books are empty, nothing fills, and a block sends nothing; skipping to the open lands
   the overnight news on the way. Hours are each venue's: one without a `session` keeps the stocks' (the clock),
   one with its own opens, quiets and closes on it, empties its books at its own close and refuses an order that
@@ -214,6 +232,10 @@ For anything new, check what it does:
   leave it out.
 
 ## What is not held
+
+- **The rents:** drafts (about 2% of a price a week, a point less for the dearest, the metals racks $50), measured against what each seat earns a
+  week by the PACE harness and held by nothing; `docs/measured.md` has the figures. The pace harness understates
+  momentum, so the starting rung's cover is read from whole days.
 
 The figures behind each line are in `docs/measured.md`, with their dates.
 

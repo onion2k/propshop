@@ -14,6 +14,7 @@ export const COLO_PRAIRIE: LocationSpec = {
   id: 'colo-prairie',
   name: 'Rack at the Prairie Board',
   price: 80 * 100_000,
+  rent: 1600 * 100,
   desk: FUTURES_DESK,
   distance: { HARBOR: 18, LAKESIDE: 9, PACIFIC: 14, PRAIRIE: 0.1 },
   explain:

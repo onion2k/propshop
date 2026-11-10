@@ -29,6 +29,11 @@ export function infrastructureFrom(
   return { location, network, computer };
 }
 
+/** What a setup costs a week to keep, in cents: the rent of the office, the line and the computer in use. */
+export function rentOf(infra: Infrastructure): number {
+  return (infra.location.rent ?? 0) + (infra.network.rent ?? 0) + (infra.computer.rent ?? 0);
+}
+
 export function withUpgrade(
   infra: Infrastructure,
   kind: UpgradeKind,

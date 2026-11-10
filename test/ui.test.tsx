@@ -4,6 +4,7 @@ import { CONTENT, DESK_NAMES, LESSONS, glossary, type Lesson } from '../src/cont
 import { TICK_MS, type DayReport, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
+import { ShopPanel } from '../src/ui/ShopPanel';
 import { DeskPanel } from '../src/ui/DeskPanel';
 import { NewsPanel } from '../src/ui/NewsPanel';
 import { App } from '../src/ui/App';
@@ -15,7 +16,7 @@ import { ExperimentPage } from '../src/ui/ExperimentPage';
 import { EXPERIMENTS, type Experiment } from '../src/content/experiments';
 import { EXPERIMENTS_KEY } from '../src/ui/Root';
 import { MARKET_OPEN } from '../src/sim/clock';
-import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, type Storage } from '../src/ui/store';
+import { createStore, PROGRESS_KEY, SAVE_KEY, STAGES_KEY, TARGETS_KEY, type Storage } from '../src/ui/store';
 import { TESTS_KEY, type Night } from '../src/ui/nights';
 import { dollarPrice, money, pointsFrom, price, priceStep } from '../src/ui/format';
 
@@ -2480,3 +2481,135 @@ describe('Part D: watch mode, on the page', () => {
     expect(slot).toHaveTextContent('Watching: a headline');
   });
 });
+
+describe('Part E: stakes and a goal, on the page', () => {
+  const report = (day: number, extra: Partial<DayReport> = {}): DayReport => ({
+    day,
+    weekday: (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const)[day % 7]!,
+    week: Math.floor(day / 7) + 1,
+    pnl: 0,
+    equityAtClose: 0,
+    byBlock: {},
+    bySymbol: {},
+    races: { won: 0, beaten: 0, missed: 0 },
+    fees: 0,
+    fines: 0,
+    headlines: [],
+    latency: {},
+    rivals: [],
+    ...extra,
+  });
+  const withDay = (store: ReturnType<typeof createStore>, d: DayReport) =>
+    act(() => {
+      store.game.days.push(d);
+      store.game.version++;
+      store.publish();
+    });
+  const free = (storage?: Storage) => {
+    const store = createStore(CONTENT, storage ?? null, 61);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    return store;
+  };
+
+  it('the shop says each offer’s rent beside its price, that the whole week is charged, and what is due', () => {
+    const store = free();
+    render(<ShopPanel s={store.getSnapshot()} store={store} />);
+    const offers = [...document.querySelectorAll('.offer')];
+    const colo = offers.find((o) => o.textContent.includes('Colocation at HARBOR'))!;
+    expect(colo.querySelector('.offer-rent')!.textContent).toMatch(/Rent \$1,600\.00 a week/);
+    expect(screen.getByTestId('shop-rent')).toHaveTextContent(/charged in full.*this Friday/);
+    const home = offers.find((o) => o.textContent.includes('Home office'))!;
+    expect(home.querySelector('.offer-rent')!.textContent).toMatch(/No rent/);
+    // Every offer with a price has a rent line, and the glossary term is linked.
+    for (const o of offers) expect(o.querySelector('.offer-rent')).not.toBeNull();
+    expect(screen.getByTestId('shop-rent')).toHaveTextContent("Rent due at Friday's close: $0.00");
+    cleanup();
+    act(() => store.game.buyUpgrade('location', 'colo-harbor'));
+    act(() => store.publish());
+    render(<ShopPanel s={store.getSnapshot()} store={store} />);
+    expect(screen.getByTestId('shop-rent')).toHaveTextContent("Rent due at Friday's close: $1,600.00");
+    expect(screen.getAllByRole('button', { name: 'Rent' }).length).toBeGreaterThan(5);
+  });
+
+  it('Position says what is due on Friday and what has been paid, once there is a rent', () => {
+    const store = free();
+    render(<App store={store} />);
+    expect(screen.queryByTestId('ov-rent')).toBeNull();
+    act(() => store.game.buyUpgrade('location', 'city'));
+    act(() => store.publish());
+    expect(screen.getByTestId('ov-rent')).toHaveTextContent("Rent due at Friday's close: $160.00");
+    act(() => {
+      store.game.firm.rentPaid = 32_000;
+      store.game.version++;
+      store.publish();
+    });
+    expect(screen.getByTestId('ov-rent')).toHaveTextContent('Paid so far: $320.00.');
+  });
+
+  it('the Friday’s report shows the rent, and its sentence names it as the cause of a day it sank', () => {
+    const store = free();
+    render(<App store={store} />);
+    withDay(store, report(4, { pnl: -160_000, rent: 160_000 }));
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /Days/ }));
+    expect(document.querySelector('.rent')!.textContent).toMatch(/Rent.*-\$1,600\.00/);
+    expect(document.body.textContent).toMatch(/Rent took \$1,600\.00/);
+  });
+
+  it('lists a target for a stage when it is shown, with its progress, and not before', () => {
+    const store = createStore(CONTENT, null, 62);
+    store.setTutorial({ state: 'done' });
+    render(<App store={store} />);
+    // Stage 1: the first target alone, with its figures; the others are not listed.
+    const ids = () =>
+      [...document.querySelectorAll('[data-testid="targets"] [data-target]')].map((e) => e.getAttribute('data-target'));
+    expect(ids()).toEqual(['day-up']);
+    expect(document.querySelector('[data-target="day-up"]')!.textContent).toMatch(/0 of 1 day/);
+    act(() => store.setReveal(true));
+    expect(ids()).toEqual(TARGETS_ALL);
+  });
+
+  it('ticks a target when it is met, keeps it under propshop.targets.v1, and Start again clears it', () => {
+    const storage = memory();
+    const store = free(storage);
+    render(<App store={store} />);
+    expect(storage.data.has(TARGETS_KEY)).toBe(false);
+    withDay(store, report(0, { pnl: 1_200 }));
+    const row = () => document.querySelector('[data-target="day-up"]')!;
+    expect(row()).toHaveClass('met');
+    expect(row().textContent).toMatch(/met Mon/);
+    const kept = JSON.parse(storage.data.get(TARGETS_KEY)!) as Record<string, number>;
+    expect(Object.keys(kept)).toEqual(['day-up']);
+    expect(kept['day-up']).toBe(store.getSnapshot().now);
+    // A target once ticked stays ticked, though the day that met it is gone and a loss follows.
+    act(() => {
+      store.game.days.length = 0;
+      store.game.days.push(report(1, { pnl: -5_000 }));
+      store.game.version++;
+      store.publish();
+    });
+    expect(row()).toHaveClass('met');
+    // A new store on the same storage still has it.
+    expect(createStore(CONTENT, storage, 61).getTargets()['day-up']).toBe(kept['day-up']);
+    act(() => store.reset(9));
+    expect(storage.data.has(TARGETS_KEY)).toBe(false);
+    expect(store.getTargets()).toEqual({});
+    expect(row()).not.toHaveClass('met');
+  });
+
+  it('shows the targets, with their words, in the First week tab, and the standing goal in Position', () => {
+    const store = free();
+    render(<App store={store} />);
+    expect(screen.getByTestId('standing-goal').textContent).toMatch(
+      /Harbor Quant this week: you .*Both are after the rent/,
+    );
+    goTo('Reports');
+    fireEvent.click(screen.getByRole('tab', { name: /First week/ }));
+    expect(screen.getByRole('heading', { name: 'Targets' })).toBeInTheDocument();
+    expect(screen.getByText(/the firm cannot go bust/)).toBeInTheDocument();
+    expect(screen.getByText('Earn the seat’s rent')).toBeInTheDocument();
+  });
+});
+
+const TARGETS_ALL = ['day-up', 'seat-rent', 'no-halt-week', 'desk-futures', 'seat-back', 'desk-fx', 'desk-metals'];

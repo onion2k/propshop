@@ -1,6 +1,6 @@
 # Playing and learning: the nine points, specified
 
-State: specified 2026-11-09 in plan mode and agreed; parts A to D built 2026-11-09, part E next. Each part is built by the `builder`
+State: specified 2026-11-09 in plan mode and agreed; parts A to E built 2026-11-09 and 10: all five are in. Each part is built by the `builder`
 agent, tests first, then checked and looked at headless, committed and pushed on its own before the next starts.
 What was seen in the look through the game, and the first ideas, are in this file's history (`2519aa1`).
 
@@ -280,3 +280,70 @@ console errors. One thing put right: at 375 the top bar changed height by 2 to 8
 note wrapped differently and a glossary term made the line taller; the line now has one height and, under 720 px, a
 row of its own, and the bar measured the same height (212 px at 375, 110 at 1280) off, in a lead, fast and at 1×.
 Not seen in a browser: a fix or an expiry watched through (the store tests hold the close and the open).
+
+## Result: part E
+
+Built 2026-11-09 by the builder. The sim, pure and page tests (`test/rent.test.ts`, `test/targets.test.ts`,
+`test/overview.test.ts`, `test/ui.test.tsx` "Part E") were written first and failed against `HEAD` (33 failing: the
+missing `rentOf`, `rentPaid`, `rent`, `TARGETS`, `progressText`, the page's lines); the ones that pass on `HEAD` too are
+the guards that the rent changes nothing (a firm that paid nothing saves as before, the stream states with the rents
+stripped, a night's Friday-afternoon result with the rents stripped, and the experiments' pinned figures).
+
+- **Sim.** `rent?` (cents a week) on `LocationSpec`, `NetworkSpec` and `ComputerSpec`; `rentOf(infra)` (`upgrades.ts`);
+  `Firm.payRent()` and `rentPaid` (saved only above nought); `Game.onClose` charges every firm, rivals too, on a Friday
+  before the day is added up, so `DayReport.rent` (cents paid) is in Friday's `pnl` and `equityAtClose`. The snapshot
+  gains `rentDue`, `rentPaid` and `todayPnl` on each competitor. A rack bought on Thursday pays the full week; what
+  counts is what is in use at the close. No stream is drawn; no save version change.
+- **Content.** Rents in `upgrades.ts` and the desks' files: city $160, fibre $100, server $100, a Harbor, Lakeside,
+  Pacific, Prairie or Eastholm rack $1,600, Harbor and Lakeside racks $3,000, all three $8,000, microwave $2,400,
+  rack $1,200, laser $5,000, FPGA $5,000, the two metals racks $50. Rivals pay by the specs they sit on (they are
+  built from the same locations, lines and computers), so no figure was added for them.
+- **Targets.** `src/content/targets.ts` (new, pure): `day-up`, `seat-rent`, `no-halt-week`, `seat-back` and a desk
+  target each for futures, currencies and metals; `standingGoal` (Harbor Quant's week against the firm's, both after
+  rent, from the days' `rivals` and the new `todayPnl`). The store keeps `propshop.targets.v1`; `Targets.tsx` lists them
+  in Position and, with their words, in the First week tab.
+- **Page.** The shop's rent line on each offer and the total due; Position's due and paid line and its targets; the
+  Days tab's rent line; `dayCause` names rent; a glossary entry `rent`, linked from each.
+
+Deviations, and why:
+
+- **"Earn back the seat"** is two targets, as the computable honest forms: `seat-rent` (stage 2: a closed week whose
+  result after the rent is not below nought, progress "earned before rent of the rent due") and `seat-back` (stage 4:
+  the days kept, sixty at most, rent included, cover the price of the setup in use). The second counts the days kept,
+  not the days since the seat was bought, which the game does not record.
+- **Stage 4's and 5's targets** are `seat-back` and the metals desk's; the futures desk's sits at 3 and the currencies
+  desk's at 4, with their desks. Drafts.
+- **The rents were not all 2%.** The harness's median seed did not cover 2% on the Harbor-and-Lakeside seat or the
+  all-three seat, so the dearest three are about 1.2% to 1.3%; the metals racks are $50 because no metals setup in
+  the harness earns more than $150 a week. Figures in `docs/measured.md`.
+- **The "target met" moment was not added.** Part C's moments are chosen from the sim's events; a target met is a
+  fact of the store, so it would need a second input to the chooser and the line; not cheap, so left.
+- **`DayReport.rent` is positive** (cents paid), as `fees` and `fines` are, unlike `rollover` and `storage`.
+- **Seven experiments, not four,** are pinned in `test/experiments.test.ts` (every run's P&L, fills and fees).
+
+Tuning, in brief (the table, figures and command are in `docs/measured.md`): before and after, the PACE rows and one
+night-harness day are identical to the dollar (the hour and the Monday hold no Friday close); each measured seat's
+median-seed week covers its rent by 1.2 to 68 times (the dearest seats the least), the metals desk's racks excepted.
+
+Not checked: the look at 375 and 1280 wide (no browser here), a week of the full game played through the page, a
+Friday close in a real run (the sim tests step to it in coarse steps), the night harness over a Friday. The rival's
+week, Harbor Quant's, is read from the day reports kept and `todayPnl`, which a rival that joins mid-week would lack.
+
+Checks (2026-11-09, Node 24): `npm run check` green, 796 tests passed and 6 skipped, the floors 85,518 ticks a second
+with no desk open (floor 75,000) and 38,977 with futures, fx and metals open (floor 35,000). The new tests cost
+`test/rent.test.ts` about 14 s alone (weeks walked a minute at a time; a 60 s timeout, since the suite runs files side
+by side), `test/targets.test.ts` under a second, and the added UI and overview tests under a second; the pinned
+experiment figures ride on the runs `test/experiments.test.ts` already made (about 63 s, as before).
+
+Reviewed after the hand-back (2026-11-10): the sim's change and the targets read through and kept as built. Two
+changes to the words: a shop offer now says only "Rent $1,600.00 a week." and the rule (a week charged in full
+whenever in it you buy, the first due this Friday) is said once, in the shop's top line; a rival's sentence that
+opens with "the crowd" opens with a capital. Looked at headless in Free play at 1280 and 375 (city office, fibre,
+server, momentum, one week through the page): the days Mon +$121, Tue +$107, Wed +$17,196, Thu +$1,788, Fri +$2,382
+with a rent of $360 in it; `rentDue` and `rentPaid` both $360; day-up, seat-back, seat-rent and no-halt-week ticked;
+the standing goal read "Behind Harbor Quant this week: you +$21,595.24, Harbor Quant +$97,372.52"; no overflow on
+the Overview, Shop, Days or First week, no console errors. That week took 3,487 s of wall time, since Free play
+opens every desk. Not checked: the look after the two changes of words (the tests hold the words, nothing looked at
+the page again); a Friday through the night harness; a target met is not told in the moments line. Found and not
+put right, and not of this part: a game saved the tick before a close and loaded does not empty the crowd's books at
+that close, against "a save from the previous tick loads to the same future".
