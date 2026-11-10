@@ -456,6 +456,9 @@ export class Firm {
   scales: ReadonlyMap<string, number> = NO_SCALES;
   /** What each margined instrument asks the firm to hold, by symbol, handed in each tick; absent, bought outright. */
   margins: ReadonlyMap<string, MarginSpec> = new Map();
+  /** The listed options, by symbol, and every fair value, handed in each tick: what a short option's margin is weighed by. */
+  options: ReadonlyMap<string, StockSpec> = new Map();
+  fairs: ReadonlyMap<string, number> = new Map();
   /** The currency pairs, by symbol, handed in each tick from the market; a pair's fills move balances. */
   fx: ReadonlyMap<string, FxPair> = new Map();
   /** Each currency's rate home, handed in each tick from the market, as the scales are. */
@@ -1112,6 +1115,8 @@ export class Firm {
     for (const [currency, amount] of this.balances) total += Math.abs(toHome(currency, amount, this.rates));
     for (const [symbol, pos] of this.positions) {
       if (this.margins.has(symbol) || this.fx.has(symbol)) continue;
+      // A short option is held on margin (`shortMargin`), not against the leverage cap; a long one is paid for in full.
+      if (pos.qty < 0 && this.options.get(symbol)?.shortMargin) continue;
       total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), pos.avgCost);
     }
     for (const o of this.orders.values()) {
@@ -1140,19 +1145,54 @@ export class Firm {
       if (!m || pos.qty === 0) continue;
       total += valueOf(this.scaleOf(symbol), Math.abs(pos.qty), marks?.get(symbol) ?? pos.avgCost) * m[kind];
     }
+    // A short option asks its premium (at cost, or at the mark for maintenance) and a share of the underlying's value.
+    for (const [symbol, pos] of this.positions) {
+      if (pos.qty >= 0 || !this.options.get(symbol)?.shortMargin) continue;
+      total += this.shortOptionMargin(symbol, -pos.qty, marks?.get(symbol) ?? pos.avgCost);
+    }
     if (kind === 'initial') {
+      // The part of a live sell order that would open or add to a short option, past what the firm holds long.
+      const long = new Map<string, number>();
       for (const o of this.orders.values()) {
+        if (o.status !== 'inflight' && o.status !== 'resting') continue;
         const m = this.margins.get(o.symbol);
-        if (!m || (o.status !== 'inflight' && o.status !== 'resting')) continue;
-        total += valueOf(this.scaleOf(o.symbol), o.size - o.filled, o.price) * m.initial;
+        if (m) {
+          total += valueOf(this.scaleOf(o.symbol), o.size - o.filled, o.price) * m.initial;
+          continue;
+        }
+        if (o.side !== 'sell' || !this.options.get(o.symbol)?.shortMargin) continue;
+        const left = long.get(o.symbol) ?? Math.max(0, this.position(o.symbol));
+        const size = o.size - o.filled;
+        long.set(o.symbol, Math.max(0, left - size));
+        if (size > left) total += this.shortOptionMargin(o.symbol, size - left, o.price);
       }
     }
     return total;
   }
 
-  /** Margined symbols the firm holds. */
+  /**
+   * What `qty` short contracts of an option ask the firm to hold, cents, at a premium of `premium` points: the premium
+   * plus a share of the underlying's value, less how far out of the money it is, never under the premium plus a
+   * smaller share. Every amount is a price and a quantity made money by `valueOf`.
+   */
+  private shortOptionMargin(symbol: string, qty: number, premium: number): number {
+    const spec = this.options.get(symbol);
+    const rule = spec?.shortMargin;
+    if (!spec || !rule) return 0;
+    const scale = this.scaleOf(symbol);
+    const spot = this.fairs.get(spec.underlying ?? '') ?? 0;
+    const strike = spec.strike ?? spot;
+    const out = spec.right === 'call' ? Math.max(0, strike - spot) : Math.max(0, spot - strike);
+    const paid = valueOf(scale, qty, premium);
+    const under = valueOf(scale, qty, spot);
+    return Math.max(paid + under * rule.share - valueOf(scale, qty, out), paid + under * rule.floor);
+  }
+
+  /** Symbols held on margin: those a margin spec covers, and short options. */
   marginedHeld(): string[] {
-    return [...this.positions].filter(([s, p]) => p.qty !== 0 && this.margins.has(s)).map(([s]) => s);
+    return [...this.positions]
+      .filter(([s, p]) => p.qty !== 0 && (this.margins.has(s) || (p.qty < 0 && this.options.get(s)?.shortMargin)))
+      .map(([s]) => s);
   }
 
   /** The night's variation: a held margined position is paid, or pays, its move since cost, and the price is its cost. */
@@ -1173,10 +1213,19 @@ export class Firm {
     symbol: string,
     price: number,
     delivery: { underlying: string; units: number; scale: number } | null,
+    option = false,
   ): Delivered | null {
     this.settle(symbol, price);
     const pos = this.positions.get(symbol);
     const qty = pos?.qty ?? 0;
+    // An option, bought or sold for its premium, pays its intrinsic value in cash at expiry (`price` is that value): the
+    // long receives it and the short pays it. The premium moved with the fills, so what it made is the difference.
+    if (option && pos && qty !== 0) {
+      const scale = this.scaleOf(symbol);
+      this.cash += valueOf(scale, qty, price);
+      const made = valueOf(scale, qty, price - pos.avgCost);
+      if (made !== 0) this.realised += made;
+    }
     this.positions.delete(symbol);
     this.heldSeen = null;
     for (const mine of this.blockPositions.values()) mine.delete(symbol);
@@ -1203,7 +1252,10 @@ export class Firm {
     const held = this.marginedHeld();
     const view = this.view(now, market, news, held);
     for (const o of view.openOrders)
-      if (o.status === 'resting' && this.margins.has(o.symbol))
+      if (
+        o.status === 'resting' &&
+        (this.margins.has(o.symbol) || (o.side === 'sell' && this.options.get(o.symbol)?.shortMargin))
+      )
         this.send({ kind: 'cancel', localId: o.localId }, 'risk', now, view, true);
     for (const symbol of held) {
       const intent = flattenTo(view, symbol, view.positions[symbol] ?? 0, 0);
@@ -1243,6 +1295,17 @@ export class Firm {
       const margin = this.margins.get(intent.symbol);
       if (margin) {
         if (!reduces && this.marginRequired('initial') + adds * margin.initial > this.equityNow) {
+          this.stats.ordersRejected++;
+          this.recordRejected(intent, block, now, REJECT_MARGIN);
+          return;
+        }
+      } else if (this.options.get(intent.symbol)?.shortMargin && intent.side === 'sell') {
+        // Selling an option past what is held long opens a short, which is held on margin.
+        const opens = intent.size - Math.max(0, this.position(intent.symbol));
+        if (
+          opens > 0 &&
+          this.marginRequired('initial') + this.shortOptionMargin(intent.symbol, opens, intent.price) > this.equityNow
+        ) {
           this.stats.ordersRejected++;
           this.recordRejected(intent, block, now, REJECT_MARGIN);
           return;

@@ -496,3 +496,35 @@ test/nightpace.test.ts` (seed 1, Monday, the starting setup), the JSON identical
 - **A load at the close.** A game saved the tick before a close and loaded does not empty the crowd's books at that
   close (so on a Monday as on a Friday: found while writing the save test, not looked into), so the save test compares
   the firms and the days, which are all the rent touches.
+
+## The options desk, closed and open (plans/desk-options.md 7b, 2026-11-10)
+
+- **The index's day,** fair values alone, seeds 1 to 4, 15 days (44 sessions, 40 close-to-close): the session's rms
+  move 82.7c, the overnight's 37.1c, close to close 91.9c (an earlier 36-day pass: 85c). Per-minute log variance
+  5.45e-7 in the stocks' hours (23% a year on a trading year of 252 sessions of 6.5 h). Variance ratio against the
+  one-minute figure: 5 min 1.12, 15 min 1.08, 30 min 0.97, 60 min 1.04, a session 1.27 (trending days drift). So the
+  stocks' wander does not revert the way the first pass thought: sampling each second is sound; the overstatement was
+  calendar time, now trading time with shut hours at 0.07 (overnight variance per hour over a session hour).
+- **The straddle against the day,** `Market` fair values only, no crowd, options and futures open, seeds 1 to 5, ten
+  weekdays each (50 days): the call and put of the listed strike nearest the index at 09:30, today's expiry, priced
+  at the open against their intrinsic at 16:00. Command: an esbuild bundle of a script stepping 2 s (not kept).
+  Before (calendar time, 1e-4 event variance, 53% start): price 89.4c, intrinsic 68.6c, price/intrinsic 1.30,
+  price/|move| 1.72; the seller won 37 of 50 (mean +20.8c a contract, sd 48.1); by regime: calm +37.7 (11/14),
+  choppy +27.7 (12/14), trending +24.4 (9/11), news -13.1 (5/11). After (trading time, diffusion share 0.75,
+  event variance 2.5e-5): price 67.7c, price/intrinsic 0.99, price/|move| 1.30, seller won 29 of 50 (mean -0.9, sd
+  50.5); calm +21.9 (10/14), choppy +6.4 (10/14), trending +3.6 (5/11), news -43.5 (4/11). By seed after, the
+  ratio ran 0.80 to 1.61. With the share set to 0.83 (the days hold 2.2 releases after 09:30 on average, 5.5e-5 of
+  a session's 2.4e-4, against the premium's 32% on variance), the final content: price 69.5c, intrinsic 68.6c,
+  price/intrinsic 1.01, price/|move| 1.34, seller won 29 of 50 (mean +0.9, sd 50.8); by seed 0.82 to 1.66; calm
+  +24.0 (10/14), choppy +8.2 (10/14), trending +5.2 (5/11), news -42.4 (4/11).
+  The seller earns on calm and choppy days, barely on trending, and loses on news days, as the plan wants; 50 days
+  is thin (the ratio's spread by seed is wider than the premium).
+- **The step rate,** `npm run floors` alone, with the options desk open: 33,014 / 33,055 / 32,930 first built (13%
+  under futures, fx and metals' 38,085); after pricing only when the index moves 0.2c or 100 ms pass, and only in
+  the stocks' hours, and two exact cuts (`settleIndexes` over the indexes alone, `venuesOf` kept until the live set
+  changes): 35,438 / 35,473 / 35,464; none open 87,521 / 87,811 / 87,680. The profile (esbuild bundle, seed 12,
+  `node --cpu-prof`, all four open): the pricing was 1.9% self (settleDerived) with `optionFair` and the normal
+  distribution under it, now nearly nothing; what remains is the twelve more books on the ordinary crowd: the sweep
+  `cancelWhere` +113 ms of a 6.9 s window, the exchange step +36, `walk`/`quote`/`aggregate` +65, the normal draws.
+  With the options venue's crowd switched off (a throwaway test) the rate was 38,000 to 38,100, so the quoter of 7c
+  can save at most about 7% (2,600 ticks a second).

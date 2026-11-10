@@ -34,6 +34,7 @@ import {
   decimalsOf,
   deskOf,
   isCarried,
+  isOption,
   listedOn,
   rolloverDays,
   storageDays,
@@ -45,13 +46,15 @@ import type { Fix } from './exchange';
 import type { Level } from './orderbook';
 import type { Indicative } from './strategy/types';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
-import { calendarOf, CALENDAR_LABEL, isMarketWide, type CalendarItem } from './calendar';
+import { calendarOf, CALENDAR_LABEL, isMarketWide, releasesBetween, type CalendarItem } from './calendar';
+import { intrinsic } from './options';
 import { DeskNews, News, type Published, type SavedDeskNews, type SavedNews } from './news';
 import { Random, deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
 import {
   BLOCKS,
   DESK_BLOCKS,
+  DESK_REQUIRES,
   SCRIPT_ID,
   blockById,
   paramsFrom,
@@ -541,6 +544,7 @@ export class Game {
       content.factors,
       content.series ?? [],
       others.some((s) => s.base !== undefined) ? currencies : [],
+      content.options,
     );
     if (this.market.fx.size > 0) this.market.rollover = content.rollover ?? null;
     this.market.refreshContracts(this.now);
@@ -550,6 +554,7 @@ export class Game {
       this.market.desks,
     );
     this.news = new News(content.news, content.stocks);
+    this.market.releases = (from, to) => releasesBetween(this.news, from, to);
     this.deskNews = (content.deskNews ?? [])
       .filter((d) => this.market.desks.includes(d.desk))
       .map((d) => new DeskNews(d));
@@ -679,10 +684,15 @@ export class Game {
         for (const f of this.firms()) f.settle(symbol, price);
       }
     }
-    if (this.now % LOSS_CHECK_EVERY === 0 && this.market.margins.size > 0) this.checkMargins();
+    if (this.now % LOSS_CHECK_EVERY === 0 && (this.market.margins.size > 0 || this.market.optionsOpen))
+      this.checkMargins();
     if (this.now >= this.market.nextExpiry) {
       for (const c of this.market.expired(this.now)) {
-        const price = this.market.settlementPrice(c.symbol);
+        // An option settles at what it is in the money by against its underlying's settlement price, paid in cash.
+        const option = isOption(c);
+        const price = option
+          ? intrinsic(c.right!, this.market.settlementPrice(c.underlying!), c.strike!)
+          : this.market.settlementPrice(c.symbol);
         // A contract delivers its units of the underlying, in the underlying's own lots.
         const lot = c.underlying !== undefined ? (this.market.stock(c.underlying).multiplier ?? 1) : 1;
         const delivery =
@@ -694,7 +704,7 @@ export class Game {
               }
             : null;
         for (const f of this.firms()) {
-          const left = f.expire(c.symbol, price, delivery);
+          const left = f.expire(c.symbol, price, delivery, option);
           // Only the player's deliveries are told; a rival's is its own business.
           if (left && f === this.firm)
             this.emit({
@@ -1023,6 +1033,8 @@ export class Game {
   /** Open another desk: its instruments and venues step from now on, and the firms and the page see them. */
   openDesk(desk: string): void {
     if (!this.market.desks.includes(desk)) throw new Error(`No desk ${desk}`);
+    // A desk opens with the desks it needs (the options desk hedges in the futures').
+    for (const needed of DESK_REQUIRES[desk] ?? []) if (this.market.desks.includes(needed)) this.openDesk(needed);
     this.market.openDesk(desk);
     // The desk's rivals join, after the others, in the content's order.
     for (const c of this.content.competitors) {
@@ -1540,7 +1552,15 @@ export class Game {
     // A save from before a venue or a desk existed has no stream for it: it is derived from the seed, as a new game's.
     for (const e of g.market.venues) g.streams.crowd[e.id] ??= Random.derive(g.seed, `crowd:${e.id}`);
     for (const d of g.market.desks) g.streams.desks[d] ??= Random.derive(g.seed, `world:${d}`);
-    for (const d of s.desks ?? []) if (g.market.desks.includes(d)) g.market.openDesk(d);
+    // The desks open at the save, and those they need: a save with the options desk and not the futures loads with both.
+    const wanted = new Set<string>();
+    const want = (d: string): void => {
+      if (wanted.has(d) || !g.market.desks.includes(d)) return;
+      for (const needed of DESK_REQUIRES[d] ?? []) want(needed);
+      wanted.add(d);
+    };
+    for (const d of s.desks ?? []) want(d);
+    for (const d of wanted) g.market.openDesk(d);
     g.market.load(s.market);
     g.news.load(s.news);
     for (const n of g.deskNews) {
@@ -1557,6 +1577,13 @@ export class Game {
       ...Firm.defaultBlocks().map((d) => savedBlocks.find((b) => b.id === d.id) ?? d),
       ...savedBlocks.filter((b) => !Firm.defaultBlocks().some((d) => d.id === b.id)),
     ];
+    // A desk opened only because another needed it was not open at the save: its blocks join, off, now.
+    const asSaved = new Set(s.desks ?? []);
+    for (const d of wanted)
+      if (!asSaved.has(d))
+        for (const id of DESK_BLOCKS[d] ?? [])
+          if (!firm.blocks.some((b) => b.id === id))
+            firm.blocks.push({ id, enabled: false, params: paramsFrom(blockById(id).spec) });
     firm.reactionMs = content.desk.reactionMs;
     Object.assign(g, { firm });
     const saved = s.competitors.map((c) => {
@@ -1568,7 +1595,7 @@ export class Game {
     });
     // A rival added since the save was made joins as it starts, with the starting cash; the saved keep theirs.
     // A desk's rival is there if its desk is open, in the order it joined: after the stocks' rivals.
-    const open = new Set(s.desks ?? []);
+    const open = new Set(wanted);
     const competitors = content.competitors
       .filter((spec) => spec.desk === undefined || open.has(spec.desk))
       .map((spec) => saved.find((f) => f.id === `bot:${spec.id}`) ?? Game.rival(content, spec));

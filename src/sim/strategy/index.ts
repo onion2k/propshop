@@ -50,6 +50,14 @@ export const DESK_BLOCKS: Readonly<Record<string, readonly string[]>> = {
   metals: ['curve', 'fixArb', 'crossPairs'],
 };
 
+/**
+ * The desks a desk needs open beside it: the options desk's blocks hedge in the futures desk's index future, so
+ * opening one opens the other, and a save with the one and not the other loads with both.
+ */
+export const DESK_REQUIRES: Readonly<Record<string, readonly string[]>> = {
+  options: ['futures'],
+};
+
 export function blockById(id: string): StrategyBlock {
   const b = BLOCKS.find((x) => x.spec.id === id);
   if (!b) throw new Error(`No strategy block ${id}`);

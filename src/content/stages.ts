@@ -83,6 +83,9 @@ const FEATURE_STAGE: Record<string, StageId> = {
   'block:curve': 5,
   'block:fixArb': 5,
   'block:crossPairs': 5,
+  // The options desk is built and closed (plans/desk-options.md 7b): its stage is one past the last, so it opens in no
+  // game, free play included, until stage 6 is written (7e) and this is set to it.
+  'desk:options': (LAST_STAGE + 1) as StageId,
 };
 
 /** An unknown block is held to the last stage rather than shown early. */

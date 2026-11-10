@@ -135,6 +135,23 @@ measure; they hold nothing.
   the lease rates that move their carry, storage, supply news on `world:metals`, the racks at Thamesford and
   Hudson. Gold reads the stocks' Mining factor (the miner `RDG`) and draws nothing for it. Its blocks are `curve`,
   `fixArb` and `crossPairs`, its rival Aldgate Metals; it opens at stage 5.
+- `src/sim/options.ts` is the options model, pure: Black-Scholes `price`, `delta`, `gamma`, `theta`, `vega` (time in
+  years, theta a year's, vega a whole unit of volatility's), `impliedFrom` (bisection, at most `IMPLIED_ITERATIONS`
+  steps), `skewed` and `intrinsic`. `src/content/options.ts` is the options desk (`plans/desk-options.md`, built to
+  part 7b, closed): the Prairie Options Exchange (`POX`, desk `options`, the stocks' hours, in the Prairie Board's
+  building, so every location's distance to it equals its distance to the Board), six daily series (`OCm`, `OC0`,
+  `OCp` calls and `OPm`, `OP0`, `OPp` puts: strikes one step below, at and above the index at listing; `live: 2`,
+  `weekdays: true`, expiring at the stocks' 16:00, cash settled, multiplier 100) and `OPTIONS` (the volatility
+  numbers; `Content.options`). An option is an `InstrumentSpec` with `right` and `strike`; `isOption` sits beside
+  `isCarried`. The strike is fixed when the contract is listed (the underlying's fair value then, to the step) and
+  saved as `SavedMarket.strikes`; the volatility state (`Market.volatility`: the realised variance, read from IDX each
+  second in the stocks' hours and weighted over a half-hour, quoted on a trading year of 252 sessions; the wander, drawn from `world:options`) is saved as `vol`,
+  only while the desk is open. An option's fair value is the model's each tick in `settleDerived`, from the realised
+  volatility, a premium, the wander (an expiry's variance counts trading time, `Market.tradingYears`), the event variance of each market-wide release before its expiry (`releasesBetween`
+  in `src/sim/calendar.ts`, the 7a calendar) and a fixed skew; it draws nothing. The desk needs the futures desk
+  (`DESK_REQUIRES`): opening one opens both, and a save with options and not futures loads with both. Tests:
+  `test/optionsmodel.test.ts`, `test/options.test.ts`. No quoter, block, rival, page or stage yet (7c to 7f); the
+  ordinary crowd quotes the books, and `'desk:options'` is placed one stage past the last, so it opens nowhere.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
@@ -192,6 +209,18 @@ For anything new, check what it does:
   firm is still charged, still trades, and the game goes on (there is no bust). The calendar has no holidays. A run
   of an experiment or a night's test measures `realised - fees + unrealised`, which a rent never touches, and its
   window is cut before the close; `test/experiments.test.ts` pins each run's figures from before the rent.
+- **options:** expire at the stocks' 16:00 close, each weekday (a Friday's next is Monday's; none on a Saturday or
+  Sunday). `Game.contracts()` settles an option at its intrinsic value against the index's settlement price (the
+  fair value to the grid) and `Firm.expire(..., option)` moves cash by `valueOf(scale, qty, intrinsic)`: the long
+  receives it, the short pays it, out of the money or exactly at the strike pays nothing, and the premium moved with
+  the fills, so `realised` takes the difference. A firm whose block is off still settles. The first listing, the
+  desk closed, fixes strikes from the index's start; a game loaded lists afresh and takes the saved strikes. A
+  release in closed hours is on the calendar and adds event variance to an expiry still to come, none to one gone.
+- **a short option:** held on margin, not against the leverage cap. It asks its premium (at cost; at the mark for
+  maintenance) plus 15% of the index's value, less how far out of the money it is, never under the premium plus 10%
+  (`InstrumentSpec.shortMargin`; `Firm.marginRequired`, the order check and `Firm.marginCall` all read it, and
+  `marginedHeld` names it). A sell order is weighed for the part past what is held long. A long option is paid in
+  full and counts at its premium toward the leverage cap. The call flattens short options with the futures.
 - **closed hours:** the books are empty, nothing fills, and a block sends nothing; skipping to the open lands
   the overnight news on the way. Hours are each venue's: one without a `session` keeps the stocks' (the clock),
   one with its own opens, quiets and closes on it, empties its books at its own close and refuses an order that
@@ -243,6 +272,12 @@ For anything new, check what it does:
 
 ## What is not held
 
+- **The options' volatility:** the premium (15%), skew, event variance (2.5e-5, the news' 50 bp), diffusion share
+  (0.83), closed weight (0.07), half-life, start and floor are drafts (`src/content/options.ts`), set from the
+  index's measured day (variance ratios near one from a minute to a session, so the second-sampled realised figure
+  is sound; quoted on a trading year and counted in trading time). Seller's split by regime and the ratios are in
+  `docs/measured.md`; tuned further in 7f, held by nothing. The options are re-priced each `OPTION_REPRICE_MS`
+  (100) or when the index has moved `OPTION_REPRICE_CENTS` (0.2), and not while the stocks are shut.
 - **The rents:** drafts (about 2% of a price a week, a point less for the dearest, the metals racks $50), measured against what each seat earns a
   week by the PACE harness and held by nothing; `docs/measured.md` has the figures. The pace harness understates
   momentum, so the starting rung's cover is read from whole days.

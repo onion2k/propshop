@@ -1,6 +1,6 @@
 # The options desk: part 7 of the trading roadmap
 
-State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a built 2026-11-10, 7b next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
+State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a and 7b built 2026-11-10, 7c next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
 and looked at headless by this session, committed and pushed on its own before the next part starts. The house rule
 is to build on `sonnet`; the metals desk was built on Opus at Chris's word, and the model menu is his.
 
@@ -392,3 +392,97 @@ Looked at headless (2026-11-10, 1280 and 375): "Releases today: 11:41, 11:44, 12
 game, the same line on the News tab in Free play, no overflow, no console errors. Watch mode from 30 s before the
 11:41 release ran fast to the lead and then at 1× through it, the bar reading "Watching: A market release". The
 gate: 812 tests, the floors 83,528 and 37,994.
+
+## Result for 7b
+
+(Built 2026-11-10, on sonnet by the `builder` agent, not committed. Tuned after the first hand-back, at Chris's word: the floor now passes and the volatility is set to the index's measured day; see "Tuning" at the end.)
+
+**Built.** `src/sim/options.ts` (model, greeks, `impliedFrom` by bisection with `IMPLIED_ITERATIONS = 60`, `skewed`,
+`intrinsic`); `InstrumentSpec.right/strike/shortMargin`, `ContractSeriesSpec.weekdays/strikeOffset`,
+`OptionsSpec` and `Content.options` (`types.ts`); `isOption` and the daily `liveContracts` (`instrument.ts`); in
+`Market`: strikes at listing (`strikeFor`, saved as `strikes`), the volatility state (`volatility`, saved as `vol` only
+while the desk is open), `atmVol`, `expiryVariance`, `optionVol`, the options' fair value in `settleDerived` (a
+`derived` list rebuilt when the live set changes), the wander's one draw per tick from `world:options`;
+`releasesBetween` (`calendar.ts`); `Game.contracts()` settles an option at intrinsic and `Firm.expire(..., option)`
+pays cash; `Firm.marginRequired`, the order check, `marginedHeld`, `marginCall` and `exposure` know a short option;
+`DESK_REQUIRES` (options needs futures: opening one opens both, a save with options alone loads with both);
+`src/content/options.ts` wired in `src/content/index.ts`; `'desk:options'` placed at `LAST_STAGE + 1` so no game opens it.
+**Quoter: none.** The books are quoted by the ordinary crowd. That needed one fix in `Exchange.crowd`: a taker's walk
+through nought on a cheap book sent an order at a price of nought or less (`Bad order`); it is now not sent (all draws
+before it are unchanged, so no other venue differs).
+
+**Figures.** Tick 2 ms. The index's close-to-close move, 36 days over four seeds: rms 64 to 100 cents, about 85 cents
+(about 1.6%), so the strike step is $1.00 (the draft $0.50 was too fine). Its fair value's per-minute log variance
+is 5.4e-7 in the stocks' hours (53% a year) and 2.4e-7 shut. At the money, a day out: about $0.34 a contract, as
+the plan expected. Fingerprints (only the closed content moved, every other figure the same): busy colocated game
+`702a3c4f` to `e127b1c6`; both desks open, metals closed, seed 1 `e2cafc0` to `3c2375bf`, seed 2 `24803de7` to
+`7bffbf2f`; metals open, seed 1 `2d38b623` to `221b0e80`, seed 2 `2b0b4a3d` to `75c1833`; the pairs game in
+`test/metalblocks.test.ts` `caf87952` to `cc78a986`. The sets without the options content hold to the bit
+(`d8661a66`, the old `EXPECTED_DESKS_OPEN`, `a45526ec`); `test/experiments.test.ts` unchanged.
+
+**Step rate (first build): under the floor,** 32,930 to 33,055; fixed in the tuning below.
+
+**What the plan got wrong / found.**
+
+- **Wrong, and corrected in the tuning:** the first build said the second-sampled realised volatility overstated the
+  index's day move (a variance ratio of 0.55 from 36 small samples). Measured over 44 sessions the ratio is about 1
+  from a minute to an hour, so the estimator was sound; the overstatement was calendar time against a quote that
+  only moves 6.5 hours a day.
+- The unplaced `'desk:options'` falls to the last stage and would open at stage 5; it is placed one past the last.
+- A fingerprint also moved in `test/metalblocks.test.ts`, which the plan did not name.
+- `StageId` has no stage 6, so the placement is a cast; 7e widens it.
+
+**Tests (written first for the model; the sim tests written before the sim code, run after).** `test/optionsmodel.test.ts`
+(10), `test/options.test.ts` (22), `test/stages.test.ts` (+1). I did not stash the source to watch the sim tests fail:
+they were first run once the code existed. `npm run check`: prettier, types, lint and 845 tests pass (5 skipped files
+are the harnesses); the floors: 85,182 for none open (passes), 32,930 for all (fails).
+
+**Not checked.** The step-rate floor (above); the look (no page); watch mode with an expiry of options; the
+options books' behaviour beyond not throwing (spreads, depth); a rival or block trading them.
+
+### Tuning (2026-11-10, after the first hand-back)
+
+**Step rate: solved, thinly.** Profile of the first build (esbuild bundle, seed 12, `node --cpu-prof`, all four desks):
+pricing was `settleDerived` 1.9% self plus `optionFair` and the normal distribution; the rest of the 13% was the twelve
+more books on the ordinary crowd (`cancelWhere` +113 ms in a 6.9 s window, the exchange step +36, `walk`/`quote`/
+`aggregate` +65, normal draws), and `settleIndexes` and `refreshRates` (+20 each, scaling with instruments and venues).
+Cuts, all inside 7b: the options are priced only in the stocks' hours, and again only when the index has moved
+`OPTION_REPRICE_CENTS` (0.2) or `OPTION_REPRICE_MS` (100) has passed (the pricing state is saved in `vol`, so a save
+loads to the same future); `settleIndexes` walks the indexes alone; `venuesOf` is kept until the live set changes.
+`npm run floors` alone, three runs: all desks open 35,438 / 35,473 / 35,464 (was 32,930 / 33,014 / 33,055; futures,
+fx and metals alone 38,085), none open 87,521 / 87,811 / 87,680 (unchanged, 85,182 to 86,294 before). The margin over
+35,000 is 1.3%. With the options venue's crowd switched off (a throwaway), 38,000 to 38,100: so the 7c quoter can save
+at most about 7%, and it is where any further room must come from.
+
+**The volatility: solved for the average, as far as 50 days say.** Variance ratios against the one-minute figure: 1.12,
+1.08, 0.97, 1.04 and 1.27 at 5, 15, 30, 60 minutes and a session; session rms 82.7c, overnight 37.1c. The estimator
+stays (each second), now quoted on a trading year (`TRADING_YEAR_MS`, 252 sessions); an expiry counts trading time
+(`Market.tradingYears`: open hours in full, shut ones at `closedWeight` 0.07), carries `diffusionShare` (0.83) of the
+at-the-money variance and adds `eventVariance` 2.5e-5 per release still to come (the news' own 50 bp: the day's
+average of 2.2 releases is 5.5e-5, a quarter of a session, which the realised figure already holds, hence the share).
+The crush is then about 3% of a day's variance a release: visible in the fair values, honest in size. New in
+`clock.ts`: `openMsBetween`, `TRADING_YEAR_MS`. Start volatility 23%, floor 10%. Straddle, 50 days (seeds 1 to 5, ten
+weekdays), the listed strike nearest the index at 09:30, price against intrinsic at 16:00, before then after:
+
+|        | price | intrinsic | price/intrinsic | price/\|move\| | seller wins | seller mean (sd) |
+| ------ | ----- | --------- | --------------- | -------------- | ----------- | ---------------- |
+| before | 89.4c | 68.6c     | 1.30            | 1.72           | 37/50       | +20.8 (48.1)     |
+| after  | 69.5c | 68.6c     | 1.01            | 1.34           | 29/50       | +0.9 (50.8)      |
+
+By regime after (seller, cents a contract, wins): calm +24.0 (10/14), choppy +8.2 (10/14), trending +5.2 (5/11), news
+-42.4 (4/11); before: +37.7, +27.7, +24.4, -13.1. Seller wins by seed 3 to 9 of 10, price/intrinsic 0.82 to 1.66. The
+seller earns on calm and choppy days, barely on trending ones and loses on news days, but the mean is a fair price, not
+a 15% premium: the days run 14% above the diffusion the estimator sees (a session's rms 82.7c against the 77c its
+per-minute figure gives, trends drifting), which eats the premium. Fifty days cannot separate a few per cent; left for
+7f's PACE. Fingerprints moved a third time (the closed options are listed with a fair value from the new numbers):
+busy `e127b1c6` to `47d876ab`; both desks open, metals closed `3c2375bf`/`7bffbf2f` to `18560670`/`de94f65c`; metals open
+`221b0e80`/`75c1833` to `993785e9`/`f4478908`; the pairs game `cc78a986` to `8494e64f`. Figures in `docs/measured.md`.
+`npm run check` green (848 tests). Not checked: the margin of 1.3% over the floor on a loaded machine; the straddle at
+other times of day; the quoter's real saving.
+
+Reviewed after the hand-back (2026-11-10): `npm run check` green here, 848 tests, the floors 88,010 with no desk open
+and 35,409 with all four desks open, 1.2% over the tripwire: it will fail under load, and 7c's quoter (at most about
+7% back, measured with the options crowd switched off) is what gives it room. The options are priced at most every
+`OPTION_REPRICE_MS` (100 ms) or on a move of `OPTION_REPRICE_CENTS` (0.2) in the index, so an option's fair value
+can trail the index by up to 100 ms; the crowd's lag is longer than that, so nothing a player sees depends on it.
+The premium over realised is not there yet in the straddle measure (a fair price on average); 7f tunes it.

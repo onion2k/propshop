@@ -707,7 +707,8 @@ export class Exchange {
         const price = side === 'buy' ? touch + reach : touch - reach;
         const lot = s.crowdLot ?? 100;
         const size = impatient ? lot * random.int(3, 10) : lot * random.int(1, 3);
-        this.submit(symbol, { owner: BACKGROUND, side, price, size, ioc: true }, now);
+        // A cheap instrument's taker can walk through nought; its order is not sent (everything above is drawn first).
+        if (price > 0) this.submit(symbol, { owner: BACKGROUND, side, price, size, ioc: true }, now);
       }
     }
     if (sweep) {

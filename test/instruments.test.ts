@@ -21,11 +21,15 @@ function busyGame(content = CONTENT): Game {
   return g;
 }
 
-/** The game's content without the metals desk (plans/desk-metals.md 6b): what the held fingerprints were taken on. */
+/**
+ * The game's content without the metals desk (plans/desk-metals.md 6b) and without the options desk (plans/desk-options.md
+ * 7b): what the held fingerprints were taken on. The options venue's distances are left on the locations; they are not
+ * part of the save.
+ */
 const NO_METALS: Content = {
   ...CONTENT,
-  exchanges: CONTENT.exchanges.filter((e) => e.desk !== 'metals'),
-  series: (CONTENT.series ?? []).filter((s) => s.contract.desk !== 'metals'),
+  exchanges: CONTENT.exchanges.filter((e) => e.desk !== 'metals' && e.desk !== 'options'),
+  series: (CONTENT.series ?? []).filter((s) => s.contract.desk !== 'metals' && s.contract.desk !== 'options'),
   instruments: (CONTENT.instruments ?? []).filter((s) => s.desk !== 'metals'),
   deskNews: [],
   locations: CONTENT.locations.filter((l) => l.desk !== 'metals'),
@@ -44,9 +48,18 @@ const EXPECTED_DESKS_OPEN: unknown[] = [
 
 // The two below moved on 2026-11-09 when Hudson stopped listing the spot (6c's amendment to 6b), every other figure the
 // same: closed 'd7fa5a46' and 'cecb8650', open 'beafb15' and '5c3e6bd3' before.
+//
+// Both the closed pair below and the open pair after it moved once more on 2026-11-10 with the options desk, there and
+// closed (plans/desk-options.md 7b): its venue's books and streams, its twelve contracts and their strikes are in the
+// save. Every other figure is the same. Closed: seed 1 was 'e2cafc0' and seed 2 '24803de7'; metals open: seed 1 was
+// '2d38b623' and seed 2 '2b0b4a3d'. The busy game's was '702a3c4f'.
+// They moved a third time the same day when the options' volatility numbers were set to the index's measured day (the closed
+// desk's options are listed with a fair value from them): busy 'e127b1c6' to '47d876ab'; closed '3c2375bf' to '18560670' and
+// '7bffbf2f' to 'de94f65c'; metals open '221b0e80' to '993785e9' and '75c1833' to 'f4478908'. The sets without the options content (NO_METALS) are
+// the old ones to the bit.
 const EXPECTED_METALS_CLOSED: unknown[] = [
-  [1, 'e2cafc0', 481, 498, [119, 0, 100, 0, 79]],
-  [2, '24803de7', 261, 314, [64, 0, 113, 0, 137]],
+  [1, '18560670', 481, 498, [119, 0, 100, 0, 79]],
+  [2, 'de94f65c', 261, 314, [64, 0, 113, 0, 137]],
 ];
 // Moved on 2026-11-09 with the desk's blocks and its rival (plans/desk-metals.md 6d): the firm is given the three blocks,
 // off, and Aldgate Metals joins as the desk opens, so the save carries both (without the rival, 'a650dd47' and
@@ -54,8 +67,8 @@ const EXPECTED_METALS_CLOSED: unknown[] = [
 // Moved again on 2026-11-09 with 6f, every other figure the same: the metals' crowd trades in lots of one (the books
 // and their logs differ), and Aldgate's fixArb asks 4 bp (its saved parameters). Before, 'b0c0774' and 'b4c4cf9f'.
 const EXPECTED_METALS_OPEN: unknown[] = [
-  [1, '2d38b623', 481, 498, [119, 0, 100, 0, 79]],
-  [2, '2b0b4a3d', 261, 314, [64, 0, 113, 0, 137]],
+  [1, '993785e9', 481, 498, [119, 0, 100, 0, 79]],
+  [2, 'f4478908', 261, 314, [64, 0, 113, 0, 137]],
 ];
 
 describe('instruments, folded in from stocks', () => {
@@ -82,7 +95,8 @@ describe('instruments, folded in from stocks', () => {
     // It moved again on 2026-11-09 for the metals desk, there and closed (its three venues' books and streams, the
     // spot metals' fair values and factor, the six contracts), every figure above the same; without that desk it is
     // 'd8661a66', the miner's, still. It was 'ab8d1400' until Hudson stopped listing the spot (6c's amendment to 6b).
-    expect(g.fingerprint()).toBe('702a3c4f');
+    // It moved again on 2026-11-10 for the options desk, there and closed (plans/desk-options.md 7b), from '702a3c4f'.
+    expect(g.fingerprint()).toBe('47d876ab');
     expect(busyGame(NO_METALS).fingerprint()).toBe('d8661a66');
     const stocksOnly = { ...CONTENT, exchanges: CONTENT.exchanges.filter((e) => e.desk === undefined), series: [] };
     expect(busyGame(stocksOnly).fingerprint()).toBe('a45526ec');

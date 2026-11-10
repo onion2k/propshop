@@ -1,6 +1,7 @@
 import {
   DESK_LESSONS,
   CONTENT,
+  LAST_STAGE,
   LESSONS,
   featureStage,
   placed,
@@ -112,10 +113,20 @@ describe('shows', () => {
     // stage that teaches pairs, which its miner-and-the-metal block builds on.
     const store = createStore(CONTENT, null, 1);
     const desks = store.game.market.desks;
-    expect(desks).toEqual(['futures', 'fx', 'metals']);
+    expect(desks).toEqual(['futures', 'fx', 'metals', 'options']);
     for (const d of desks) expect(placed(`desk:${d}`), d).toBe(true);
     expect(placed('desk:nowhere')).toBe(false);
     expect(featureStage('desk:metals')).toBe(5);
+  });
+
+  it('keeps the options desk closed in every game until its stage is written', () => {
+    // Built and closed (plans/desk-options.md 7b): placed one past the last stage, so not even Free play opens it.
+    expect(featureStage('desk:options')).toBeGreaterThan(LAST_STAGE);
+    expect(shows('desk:options', LAST_STAGE)).toBe(false);
+    const store = createStore(CONTENT, null, 1);
+    store.setReveal(true);
+    expect(store.game.market.isDeskOpen('metals')).toBe(true);
+    expect(store.game.market.isDeskOpen('options')).toBe(false);
   });
 
   it('opens the metals desk after every stocks lesson is done, and not before', () => {

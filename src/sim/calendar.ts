@@ -32,3 +32,13 @@ export function calendarOf(
   for (const h of game.news.scheduled) if (isMarketWide(h) && h.at >= from && h.at < to) times.push(h.at);
   return times.sort((a, b) => a - b).map((at) => ({ at, label: CALENDAR_LABEL }));
 }
+
+/**
+ * How many market-wide releases are still to come after `after` and no later than `upTo`: those on the schedule (a
+ * release already published is behind us). What an option's expiry adds event variance for. Reads the schedule only.
+ */
+export function releasesBetween(news: Pick<News, 'scheduled'>, after: number, upTo: number): number {
+  let n = 0;
+  for (const h of news.scheduled) if (h.at > after && h.at <= upTo && isMarketWide(h)) n++;
+  return n;
+}

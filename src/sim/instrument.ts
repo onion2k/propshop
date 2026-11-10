@@ -51,11 +51,15 @@ export function contractOf(series: ContractSeriesSpec, k: number): InstrumentSpe
   return { ...series.contract, symbol: `${series.root}${k}`, expiry: k * series.period + series.expiresAt };
 }
 
-/** The contracts of a series listed at `now`: the first not yet expired and the next ones, `live` in all. */
+/**
+ * The contracts of a series listed at `now`: the first not yet expired and the next ones, `live` in all. A daily
+ * series (`weekdays`) skips the contracts that would expire on a Saturday or Sunday (day `k` of the game, Monday day 0).
+ */
 export function liveContracts(series: ContractSeriesSpec, now: number): InstrumentSpec[] {
   const first = Math.max(0, Math.floor((now - series.expiresAt) / series.period) + 1);
   const out: InstrumentSpec[] = [];
   for (let k = first; out.length < Math.min(series.live, MAX_LIVE_PER_SERIES); k++) {
+    if (series.weekdays && k % 7 >= 5) continue;
     const c = contractOf(series, k);
     if ((c.expiry ?? Infinity) > now) out.push(c);
   }
@@ -67,14 +71,19 @@ export function isCarried(spec: InstrumentSpec): boolean {
   return spec.carry !== undefined && spec.underlying !== undefined && spec.expiry !== undefined;
 }
 
+/** Whether an instrument is an option: a call or a put on an underlying, priced by the model. */
+export function isOption(spec: InstrumentSpec): boolean {
+  return spec.kind === 'option' && spec.right !== undefined && spec.underlying !== undefined;
+}
+
 /** Whether an instrument's fair value is the product of two pairs': a cross rate. */
 export function isCross(spec: InstrumentSpec): boolean {
   return spec.cross !== undefined;
 }
 
-/** Whether an instrument's fair value is derived (carried, or a cross) rather than drawn. */
+/** Whether an instrument's fair value is derived (carried, a cross, or an option's) rather than drawn. */
 export function isDerived(spec: InstrumentSpec): boolean {
-  return isCarried(spec) || isCross(spec);
+  return isCarried(spec) || isCross(spec) || isOption(spec);
 }
 
 /** The firm's own currency: its cash is in its cents, and every other balance is counted in it. */

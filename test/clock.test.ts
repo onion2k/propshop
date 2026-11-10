@@ -10,6 +10,7 @@ import {
   isMarketOpen,
   nextClose,
   nextOpen,
+  openMsBetween,
 } from '../src/sim/clock';
 
 const monday = 0;
@@ -59,5 +60,22 @@ describe('clock', () => {
     expect(formatSpan(38_000)).toBe('38s');
     expect(formatSpan(2 * MS_PER_HOUR + 14 * 60_000)).toBe('2h 14m');
     expect(formatSpan(2 * MS_PER_DAY + 3 * MS_PER_HOUR)).toBe('2d 3h');
+  });
+});
+
+describe('open time between two moments', () => {
+  const open = MARKET_CLOSE - MARKET_OPEN;
+  it('counts only the stocks hours, on weekdays', () => {
+    expect(openMsBetween(0, MS_PER_DAY)).toBe(open);
+    expect(openMsBetween(MARKET_OPEN, MARKET_CLOSE)).toBe(open);
+    expect(openMsBetween(MARKET_OPEN + 1000, MARKET_OPEN + 3000)).toBe(2000);
+    expect(openMsBetween(MARKET_CLOSE, MS_PER_DAY + MARKET_OPEN)).toBe(0);
+    // Friday 12:00 to Monday 12:00: the rest of Friday and the morning of Monday.
+    const fri = 4 * MS_PER_DAY;
+    expect(openMsBetween(fri + 12 * MS_PER_HOUR, 7 * MS_PER_DAY + 12 * MS_PER_HOUR)).toBe(
+      MARKET_CLOSE - 12 * MS_PER_HOUR + (12 * MS_PER_HOUR - MARKET_OPEN),
+    );
+    expect(openMsBetween(5 * MS_PER_DAY, 7 * MS_PER_DAY)).toBe(0);
+    expect(openMsBetween(100, 50)).toBe(0);
   });
 });

@@ -112,6 +112,7 @@ export type {
   InstrumentKind,
   ContractSeriesSpec,
   MarginSpec,
+  OptionsSpec,
   CurrencySpec,
   RolloverSpec,
   StorageSpec,
@@ -156,6 +157,7 @@ export {
   storageDays,
   toHome,
   deskOf,
+  isOption,
   kindOf,
   listedOn,
   liveContracts,
@@ -165,3 +167,5 @@ export {
 } from './instrument';
 export type { FxPair, Rate } from './instrument';
 export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';
+export { DESK_BLOCKS, DESK_REQUIRES } from './strategy';
+export { releasesBetween } from './calendar';

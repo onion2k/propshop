@@ -590,4 +590,6 @@ describe('the pairs block, its working shared', () => {
   }, 120_000);
 });
 
-const PAIRS_BEFORE: unknown[] = ['caf87952', 55, 51];
+// The fingerprint moved on 2026-11-10 with the options desk, there and closed (plans/desk-options.md 7b), from 'caf87952';
+// the fills (55) and the pairs orders (51) are the same. Then 'cc78a986' to '8494e64f' when the options' volatility numbers were set.
+const PAIRS_BEFORE: unknown[] = ['8494e64f', 55, 51];

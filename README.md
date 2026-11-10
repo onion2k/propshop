@@ -59,6 +59,11 @@ http://localhost:5181.
   delivered, and metal costs storage every night. Twice a morning the
   London-like market runs the fix, a call auction at one price. A gold miner
   on the stocks desk moves with the metal.
+- **An options desk, being built.** Daily calls and puts on the index,
+  three strikes a side, settled in cash at each day's close, priced from the
+  index's own volatility with a premium over it, a little skew, and a rise
+  into each public release that falls away once it lands. A short option is
+  held on margin. It is in the simulator and closed: no game opens it yet.
 - **Strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day

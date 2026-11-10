@@ -62,6 +62,22 @@ export function nextClose(now: number): number {
   return nextOpen(now) - MARKET_OPEN + MARKET_CLOSE;
 }
 
+/** A trading year, ms: 252 sessions of the stocks' hours. Volatility for the options is quoted on it. */
+export const TRADING_YEAR_MS = 252 * (MARKET_CLOSE - MARKET_OPEN);
+
+/** Ms of the stocks' open hours between two moments (Monday to Friday, 09:30 to 16:00); nought if `to` is not after `from`. */
+export function openMsBetween(from: number, to: number): number {
+  if (to <= from) return 0;
+  let total = 0;
+  for (let day = Math.floor(from / MS_PER_DAY); day * MS_PER_DAY < to; day++) {
+    if (!isWeekday(day)) continue;
+    const start = Math.max(from, day * MS_PER_DAY + MARKET_OPEN);
+    const end = Math.min(to, day * MS_PER_DAY + MARKET_CLOSE);
+    if (end > start) total += end - start;
+  }
+  return total;
+}
+
 /**
  * How busy the market is at this time of day, from zero to one: trading clusters at the open and the close
  * and goes quiet over lunch. Closed hours are zero.

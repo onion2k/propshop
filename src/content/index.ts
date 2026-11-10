@@ -15,16 +15,18 @@ import {
   SUPPLY_NEWS,
 } from './metals';
 import { NEWS } from './news';
+import { OPTIONS, OPTION_SERIES, POX, withOptionsDistance } from './options';
 import { REGIMES } from './regimes';
 import { FACTORS, STOCKS } from './stocks';
 import { COMPETITORS, COMPUTERS, LOCATIONS, NETWORKS, START, STARTING_CASH } from './upgrades';
 
 export const CONTENT: Content = {
   stocks: STOCKS,
-  // The futures desk's venue and contracts, the currencies desk's venues and pairs, and the metals desk's venues,
-  // spot and futures: there, and closed, until each desk opens.
-  exchanges: [...EXCHANGES, PRAIRIE, ...FX_VENUES, ...METAL_VENUES],
-  series: [IXF, ...METAL_SERIES],
+  // The futures desk's venue and contracts, the currencies desk's venues and pairs, the metals desk's venues,
+  // spot and futures, and the options desk's venue and daily options: there, and closed, until each desk opens.
+  exchanges: [...EXCHANGES, PRAIRIE, ...FX_VENUES, ...METAL_VENUES, POX],
+  series: [IXF, ...METAL_SERIES, ...OPTION_SERIES],
+  options: OPTIONS,
   instruments: [...PAIRS, ...SPOT],
   currencies: CURRENCIES,
   rollover: ROLLOVER,
@@ -44,7 +46,9 @@ export const CONTENT: Content = {
   ]
     .map((l) => ({ ...l, distance: { ...l.distance, ...(METALS_DISTANCE[l.id] ?? {}) } }))
     // The metals' racks carry their own distance to every venue.
-    .concat([COLO_THAMESFORD, COLO_HUDSON]),
+    .concat([COLO_THAMESFORD, COLO_HUDSON])
+    // The Options Exchange is in the Prairie Board's building: every location is as far from the one as the other.
+    .map(withOptionsDistance),
   networks: NETWORKS,
   computers: COMPUTERS,
   competitors: COMPETITORS,

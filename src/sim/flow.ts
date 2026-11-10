@@ -25,6 +25,8 @@ export function tick(
     f.taxes = taxes;
     f.scales = market.scales;
     f.margins = market.margins;
+    f.options = market.optionSpecs;
+    f.fairs = market.fair;
     f.fx = market.fx;
     f.rates = market.rates;
     f.batchedAt = now;

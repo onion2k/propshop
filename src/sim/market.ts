@@ -4,7 +4,15 @@
 // the others once opened. Each desk draws its chance from its own world stream, so opening one changes nothing of
 // the stocks'.
 
-import { MS_PER_HOUR, MS_PER_SECOND, MS_PER_YEAR, activity, isMarketOpen } from './clock';
+import {
+  MS_PER_HOUR,
+  MS_PER_SECOND,
+  MS_PER_YEAR,
+  TRADING_YEAR_MS,
+  activity,
+  isMarketOpen,
+  openMsBetween,
+} from './clock';
 import { Exchange, type SavedExchange } from './exchange';
 import {
   HOME,
@@ -15,12 +23,14 @@ import {
   isCarried,
   isCross,
   isDerived,
+  isOption,
   listedOn,
   liveContracts,
   scaleOf,
   type FxPair,
   type Rate,
 } from './instrument';
+import { price as optionPrice, skewed } from './options';
 import type { Random } from './random';
 import type { ContractView, PairView, RolloverView } from './strategy';
 import type {
@@ -29,6 +39,7 @@ import type {
   ExchangeSpec,
   FactorSpec,
   MarginSpec,
+  OptionsSpec,
   RegimeSpec,
   RolloverSpec,
   StockSpec,
@@ -86,7 +97,39 @@ export interface SavedMarket {
   leases?: Record<string, number>;
   /** The stocks' factor level each reading instrument last took; absent as the leases are. */
   reads?: Record<string, number>;
+  /** Each listed option's strike, fixed when it was listed; absent where there are no options (a save from before them). */
+  strikes?: Record<string, number>;
+  /** The options desk's volatility state; absent while the desk is closed, and in every save from before it. */
+  vol?: VolState;
 }
+
+/**
+ * What the options desk reads and draws to price its options: the underlying's realised variance a second (an
+ * exponentially weighted average, read from its fair value in the stocks' hours, not drawn), the last sample
+ * it was read at, and the wander of the at-the-money volatility (drawn from the desk's stream).
+ */
+export interface VolState {
+  /** Variance of the underlying's log return a second, weighted. */
+  variance: number;
+  /** The underlying's fair value at the last sample. */
+  last: number;
+  /** When it was sampled, ms; -1 with none (the market has been shut since). */
+  lastAt: number;
+  /** Volatility points (a share) added to the at-the-money volatility. */
+  wander: number;
+  /** When the options were last priced, ms; -1 to price at the next chance (listed since, or the market was shut). */
+  pricedAt: number;
+  /** The underlying's fair value at that pricing, cents. */
+  pricedSpot: number;
+}
+
+/** The options are priced again once this long has passed, ms of simulated time, though the index has not moved. */
+export const OPTION_REPRICE_MS = 100;
+/** ... or at once when the underlying's fair value has moved this many cents (under a fifth of a tick of the book). */
+export const OPTION_REPRICE_CENTS = 0.2;
+
+/** How often, in ms, the realised variance is sampled while the stocks are open. */
+export const VOL_SAMPLE_MS = MS_PER_SECOND;
 
 /** What every firm sees alike of the live instruments (`Market.sharedParts`). */
 export interface SharedParts {
@@ -192,6 +235,25 @@ export class Market {
   private leaseStamp = 0;
   /** The stocks' factor level each reading instrument last took (`InstrumentSpec.reads`): one entry each. */
   private readonly lastRead = new Map<string, number>();
+  /** The options desk's pricing, or undefined where the content has no options. */
+  private readonly optionsSpec: OptionsSpec | undefined;
+  /** The listed options, by symbol (open desk or not): what the firms weigh a short's margin by. Bounded by the series. */
+  readonly optionSpecs = new Map<string, StockSpec>();
+  /** The options desk's volatility state: the realised variance, read, and the wander, drawn from its own stream. */
+  readonly volatility: VolState = { variance: 0, last: 0, lastAt: -1, wander: 0, pricedAt: -1, pricedSpot: 0 };
+  /**
+   * How many market-wide releases fall after `from` and by `to`: the public calendar, handed in by the game. An option's
+   * expiry carries the event variance of each. Nought where nothing is handed in.
+   */
+  releases: (from: number, to: number) => number = () => 0;
+  /** The indexes among the instruments (the stocks desk's, fixed at construction): what `settleIndexes` averages. */
+  private readonly indexSpecs: { symbol: string; constituents: string[] }[];
+  /** Where each symbol is listed among the live venues, kept while the live set is: cleared when it changes. */
+  private readonly venueCache = new Map<string, Exchange[]>();
+  /** The instruments of open desks that are derived, in the content's order: what `settleDerived` follows. */
+  private derived: StockSpec[] = [];
+  /** The expiries priced this tick, with the time left and the at-the-money volatility to it: a few, reused. */
+  private readonly expiryPrices: { expiry: number; t: number; vol: number }[] = [];
 
   constructor(
     stocks: StockSpec[],
@@ -199,8 +261,11 @@ export class Market {
     factors: FactorSpec = { marketHourlyBps: 0, sectorHourlyBps: 0, ownReversionPerHour: 0.1 },
     series: readonly ContractSeriesSpec[] = [],
     currencies: readonly CurrencySpec[] = [],
+    options?: OptionsSpec,
   ) {
     this.series = series;
+    this.optionsSpec = options;
+    if (options) this.volatility.variance = (options.startVol * options.startVol) / (TRADING_YEAR_MS / 1000);
     this.currencyPairs(stocks, currencies);
     this.instruments = [...stocks];
     for (const s of stocks) if (s.margin) this.margins.set(s.symbol, s.margin);
@@ -211,6 +276,10 @@ export class Market {
     }
     for (const s of stocks) if (s.reads) this.lastRead.set(s.symbol, 0);
     this.stockDesk = stocks.filter((s) => deskOf(s) === STOCKS_DESK);
+    this.indexSpecs = [];
+    for (const s of stocks)
+      if (s.constituents && s.constituents.length > 0)
+        this.indexSpecs.push({ symbol: s.symbol, constituents: s.constituents });
     this.scales = new Map(stocks.map((s) => [s.symbol, scaleOf(s)]));
     this.factorSpec = factors;
     this.venues = exchanges.map(
@@ -332,7 +401,14 @@ export class Market {
   private refreshLive(): void {
     this.stocks = this.instruments.filter((s) => this.openDesks.has(deskOf(s)));
     this.exchanges = this.venues.filter((e) => this.openDesks.has(e.desk));
+    this.derived = this.stocks.filter(isDerived);
+    this.venueCache.clear();
     this.liveStamp++;
+  }
+
+  /** Whether the options desk is open: the volatility moves, is drawn for and is saved. */
+  get optionsOpen(): boolean {
+    return this.optionsSpec !== undefined && this.openDesks.has(this.optionsSpec.desk);
   }
 
   /**
@@ -475,16 +551,33 @@ export class Market {
       if (!this.rootOf.has(s.symbol) || keep.has(s.symbol)) continue;
       for (const e of this.venues) gone.push(...e.delist(s.symbol));
       this.instruments.splice(this.instruments.indexOf(s), 1);
-      for (const m of [this.fair, this.anchor, this.history, this.scales, this.margins, this.drifts, this.rootOf])
+      for (const m of [
+        this.fair,
+        this.anchor,
+        this.history,
+        this.scales,
+        this.margins,
+        this.drifts,
+        this.rootOf,
+        this.optionSpecs,
+      ])
         m.delete(s.symbol);
     }
     this.series.forEach((series, i) => {
       for (const c of wanted[i] ?? []) {
         if (this.rootOf.has(c.symbol)) continue;
         const sibling = this.live(series.root)[0];
-        const fair = isCarried(c)
-          ? this.carried(c, now)
-          : ((sibling !== undefined ? this.fair.get(sibling) : undefined) ?? c.startPrice);
+        // An option's strike is fixed here, from its underlying's fair value now, and kept for its life.
+        if (isOption(c)) {
+          c.strike = this.strikeFor(series, c.underlying!);
+          this.optionSpecs.set(c.symbol, c);
+          this.volatility.pricedAt = -1;
+        }
+        const fair = isOption(c)
+          ? this.optionFair(c, now)
+          : isCarried(c)
+            ? this.carried(c, now)
+            : ((sibling !== undefined ? this.fair.get(sibling) : undefined) ?? c.startPrice);
         this.instruments.push(c);
         this.rootOf.set(c.symbol, series.root);
         this.fair.set(c.symbol, fair);
@@ -536,7 +629,12 @@ export class Market {
 
   /** The live venues that list a symbol, in the content's order. */
   venuesOf(symbol: string): Exchange[] {
-    return this.exchanges.filter((e) => e.lists(symbol));
+    let found = this.venueCache.get(symbol);
+    if (!found) {
+      found = this.exchanges.filter((e) => e.lists(symbol));
+      this.venueCache.set(symbol, found);
+    }
+    return found;
   }
 
   /** Whether a symbol can be traded now: a venue that lists it is open. A symbol nobody lists keeps the stocks' hours. */
@@ -548,8 +646,7 @@ export class Market {
 
   /** An index's fair value is the average of its constituents', and its anchor the same. */
   private settleIndexes(): void {
-    for (const s of this.instruments) {
-      if (!s.constituents || s.constituents.length === 0) continue;
+    for (const s of this.indexSpecs) {
       let fair = 0;
       let anchor = 0;
       for (const c of s.constituents) {
@@ -611,7 +708,12 @@ export class Market {
       if (!stream) throw new Error(`No world stream for the ${desk} desk`);
       this.driftDesk(desk, factors, dt, stream);
     }
-    this.settleDerived(now);
+    if (this.optionsSpec && this.optionsOpen) {
+      const stream = desks[this.optionsSpec.desk];
+      if (!stream) throw new Error(`No world stream for the ${this.optionsSpec.desk} desk`);
+      this.stepVolatility(now, dt, open, stream);
+    }
+    this.settleDerived(now, open);
     const act = activity(now);
     for (const e of this.exchanges) {
       const stream = crowd[e.id];
@@ -661,13 +763,152 @@ export class Market {
    * Every live derived instrument follows what it is derived from, each tick: a future its underlying, meeting it at
    * expiry; a cross the product of its legs.
    */
-  private settleDerived(now: number): void {
-    for (const s of this.stocks) {
-      if (!isDerived(s)) continue;
-      const fair = isCross(s) ? this.crossed(s) : this.carried(s, now);
+  private settleDerived(now: number, open: boolean): void {
+    const pricing = this.optionsDue(now, open);
+    const options = pricing ? this.optionsPriced(now) : this.expiryPrices;
+    for (const s of this.derived) {
+      if (isOption(s) && !pricing) continue;
+      const fair = isOption(s) ? this.optionFair(s, now, options) : isCross(s) ? this.crossed(s) : this.carried(s, now);
       this.fair.set(s.symbol, fair);
       this.anchor.set(s.symbol, fair);
     }
+  }
+
+  /**
+   * Whether the open options are priced this tick: in the stocks' hours (shut, the last price stands and the first tick
+   * of the session prices), once `OPTION_REPRICE_MS` has passed or the underlying has moved `OPTION_REPRICE_CENTS`
+   * since the last pricing. A contract listed since forces the next. Reads and writes the saved pricing state only.
+   */
+  private optionsDue(now: number, open: boolean): boolean {
+    const o = this.optionsSpec;
+    if (!o || !open || !this.optionsOpen) return false;
+    const v = this.volatility;
+    const spot = this.fair.get(o.underlying) ?? 0;
+    if (v.pricedAt >= 0 && now - v.pricedAt < OPTION_REPRICE_MS && Math.abs(spot - v.pricedSpot) < OPTION_REPRICE_CENTS)
+      return false;
+    v.pricedAt = now;
+    v.pricedSpot = spot;
+    return true;
+  }
+
+  /** The strike of an option listed now: the underlying's fair value to the nearest step, then `offset` steps off. */
+  private strikeFor(series: ContractSeriesSpec, underlying: string): number {
+    const step = this.optionsSpec?.strikeStep ?? 1;
+    const spot = this.fair.get(underlying) ?? 0;
+    return (Math.round(spot / step) + (series.strikeOffset ?? 0)) * step;
+  }
+
+  /** The underlying's realised volatility, annual on a trading year: the weighted variance a second, scaled to it. */
+  realisedVol(): number {
+    return Math.sqrt(Math.max(0, this.volatility.variance) * (TRADING_YEAR_MS / 1000));
+  }
+
+  /**
+   * The time between two moments in trading years, as the variance an expiry carries counts it: the stocks' open hours
+   * in full and the shut ones at `closedWeight` (the index moves little overnight), not calendar time.
+   */
+  tradingYears(from: number, to: number): number {
+    const o = this.optionsSpec;
+    if (!o || to <= from) return 0;
+    const open = openMsBetween(from, to);
+    return (open + o.closedWeight * (to - from - open)) / TRADING_YEAR_MS;
+  }
+
+  /** The at-the-money volatility now, before the releases to come: the realised, its premium and the wander, never under the floor. */
+  atmVol(): number {
+    const o = this.optionsSpec;
+    if (!o) return 0;
+    return Math.max(o.floorVol, this.realisedVol() * (1 + o.premium) + this.volatility.wander);
+  }
+
+  /**
+   * An expiry's total variance of the underlying's log return from `now` to `expiry`: the at-the-money volatility
+   * squared over the trading time left, its diffusion share, and the event variance of each market-wide release still to come before it. A
+   * release that has landed, or that falls after the expiry, adds none: the crush is the first of these going.
+   */
+  expiryVariance(expiry: number, now: number, atm: number = this.atmVol()): number {
+    const o = this.optionsSpec;
+    if (!o) return 0;
+    return (
+      atm * atm * this.tradingYears(now, expiry) * o.diffusionShare +
+      (expiry > now ? this.releases(now, expiry) : 0) * o.eventVariance
+    );
+  }
+
+  /** An option's volatility for the model: its expiry's at-the-money, from the variance, then the strike's skew. */
+  optionVol(s: StockSpec, now: number): number {
+    const o = this.optionsSpec;
+    if (!o) return 0;
+    const t = Math.max(0, (s.expiry ?? now) - now) / MS_PER_YEAR;
+    const atm = t > 0 ? Math.sqrt(this.expiryVariance(s.expiry!, now) / t) : this.atmVol();
+    return this.skewedVol(s, atm, t);
+  }
+
+  private skewedVol(s: StockSpec, atm: number, t: number): number {
+    const o = this.optionsSpec!;
+    const spot = this.fair.get(s.underlying ?? '') ?? 0;
+    return skewed(atm, s.strike ?? spot, spot * Math.exp(o.rate * t), o.skew);
+  }
+
+  /** The expiries of the open options, each with its time left and the volatility to it, worked out once a tick. */
+  private optionsPriced(now: number): { expiry: number; t: number; vol: number }[] {
+    const out = this.expiryPrices;
+    out.length = 0;
+    if (!this.optionsSpec || !this.optionsOpen) return out;
+    const atm = this.atmVol();
+    for (const s of this.derived) {
+      if (!isOption(s) || out.some((e) => e.expiry === s.expiry)) continue;
+      const t = Math.max(0, s.expiry! - now) / MS_PER_YEAR;
+      out.push({ expiry: s.expiry!, t, vol: t > 0 ? Math.sqrt(this.expiryVariance(s.expiry!, now, atm) / t) : atm });
+    }
+    return out;
+  }
+
+  /**
+   * An option's fair value, cents: the model on its underlying's fair value, the time left and the strike's
+   * volatility. Draws nothing. `priced` is this tick's expiries where they have been worked out.
+   */
+  private optionFair(
+    s: StockSpec,
+    now: number,
+    priced?: readonly { expiry: number; t: number; vol: number }[],
+  ): number {
+    const o = this.optionsSpec;
+    if (!o) return s.startPrice;
+    const found = priced?.find((e) => e.expiry === s.expiry);
+    const t = found?.t ?? Math.max(0, (s.expiry ?? now) - now) / MS_PER_YEAR;
+    const atm = found?.vol ?? (t > 0 ? Math.sqrt(this.expiryVariance(s.expiry!, now) / t) : this.atmVol());
+    const spot = this.fair.get(s.underlying ?? '') ?? 0;
+    return optionPrice(s.right!, spot, s.strike!, t, this.skewedVol(s, atm, t), o.rate);
+  }
+
+  /**
+   * The options desk's volatility, once a tick while it is open: the wander steps (one draw from the desk's stream),
+   * and in the stocks' hours the underlying's return since the last sample, once a `VOL_SAMPLE_MS`, joins the realised
+   * variance. Shut, the sample is dropped so the overnight gap is never read as a return.
+   */
+  private stepVolatility(now: number, dt: number, open: boolean, random: Random): void {
+    const o = this.optionsSpec!;
+    const v = this.volatility;
+    const hours = dt / MS_PER_HOUR;
+    v.wander += o.wander.hourlyVol * Math.sqrt(hours) * random.normal() - v.wander * o.wander.reversionPerHour * hours;
+    if (!open) {
+      v.lastAt = -1;
+      return;
+    }
+    const spot = this.fair.get(o.underlying) ?? 0;
+    if (v.lastAt < 0) {
+      v.last = spot;
+      v.lastAt = now;
+      return;
+    }
+    const gap = now - v.lastAt;
+    if (gap < VOL_SAMPLE_MS) return;
+    const r = Math.log(spot / v.last);
+    const weight = 1 - Math.exp((-Math.LN2 * gap) / o.halfLifeMs);
+    v.variance += weight * ((r * r) / (gap / 1000) - v.variance);
+    v.last = spot;
+    v.lastAt = now;
   }
 
   /**
@@ -785,6 +1026,12 @@ export class Market {
       ...(this.leasesLive()
         ? { leases: Object.fromEntries(this.leases), reads: Object.fromEntries(this.lastRead) }
         : {}),
+      // Each option's strike, fixed at listing (the index then is not known when a save is loaded), while any is listed.
+      ...(this.optionSpecs.size > 0
+        ? { strikes: Object.fromEntries([...this.optionSpecs].map(([symbol, c]) => [symbol, c.strike!])) }
+        : {}),
+      // The volatility moves only while the desk is open, and only then is saved.
+      ...(this.optionsOpen ? { vol: { ...this.volatility } } : {}),
     };
   }
 
@@ -819,6 +1066,7 @@ export class Market {
         v.map((p) => ({ ...p })),
       );
     this.lastSample = saved.lastSample;
+    this.venueCache.clear();
     this.liveStamp++;
     for (const [c, mid] of Object.entries(saved.rates ?? {})) {
       const rate = this.rates.get(c);
@@ -827,5 +1075,10 @@ export class Market {
     for (const [m, l] of Object.entries(saved.leases ?? {})) if (this.leases.has(m)) this.leases.set(m, l);
     for (const [m, r] of Object.entries(saved.reads ?? {})) if (this.lastRead.has(m)) this.lastRead.set(m, r);
     this.leaseStamp++;
+    for (const [m, k] of Object.entries(saved.strikes ?? {})) {
+      const c = this.optionSpecs.get(m);
+      if (c) c.strike = k;
+    }
+    if (saved.vol) Object.assign(this.volatility, saved.vol);
   }
 }

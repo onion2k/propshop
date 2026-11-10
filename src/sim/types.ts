@@ -78,6 +78,53 @@ export interface InstrumentSpec {
   lease?: { rate: number; hourlyVol: number; reversionPerHour: number };
   /** A contract whose carry is its fixed `carry` less this metal's lease rate now: a carry that moves. */
   leaseOf?: string;
+  /**
+   * An option (`kind: 'option'`) is a call or a put on its `underlying`, worth the model's price and settled in cash
+   * at its `expiry` against the underlying's settlement price: it pays what it is in the money by (`right`, `strike`).
+   * The strike is fixed when the contract is listed (from the underlying's fair value then), price points.
+   */
+  right?: 'call' | 'put';
+  strike?: number;
+  /**
+   * What a short position asks the firm to hold (an option is paid for in full when bought, so only a short has a
+   * margin): its premium plus `share` of the underlying's value less the amount it is out of the money, never under
+   * its premium plus `floor` of the underlying's value.
+   */
+  shortMargin?: { share: number; floor: number };
+}
+
+/** The options desk's volatility: how an option's fair value is priced from the underlying (see `src/sim/options.ts`). */
+export interface OptionsSpec {
+  /** The desk whose options these are. */
+  desk: string;
+  /** What they are on: its fair value is the spot of the model, and its realised volatility is read from it. */
+  underlying: string;
+  /** Price points between strikes, about one day's move of the underlying. */
+  strikeStep: number;
+  /** Interest a year, a share, for the model. */
+  rate: number;
+  /** The implied volatility's premium over the realised, a share of it. */
+  premium: number;
+  /** A strike's volatility rises this share of the at-the-money volatility for each 1% it lies below the forward. */
+  skew: number;
+  /** Variance of the underlying's log return that one market-wide release adds to an expiry before it. */
+  eventVariance: number;
+  /**
+   * The share of the realised variance that is diffusion rather than the releases it already holds (the realised
+   * volatility is read from a day's returns, and the day's releases are in them): what the at-the-money volatility
+   * applies to, the releases to come being added back one by one.
+   */
+  diffusionShare: number;
+  /** How much of an open hour's variance an hour of the stocks being shut carries (overnight and weekend moves). */
+  closedWeight: number;
+  /** The realised volatility is an exponentially weighted average with this half-life, ms. */
+  halfLifeMs: number;
+  /** The realised volatility the average starts from, annual on a trading year (`TRADING_YEAR_MS`). */
+  startVol: number;
+  /** The least at-the-money volatility, annual on a trading year. */
+  floorVol: number;
+  /** The wander added to the at-the-money volatility, drawn from the desk's stream: volatility points (a share). */
+  wander: { hourlyVol: number; reversionPerHour: number };
 }
 
 /** What holding a metal costs overnight: storage on a long, the lease on a short. */
@@ -156,6 +203,10 @@ export interface ContractSeriesSpec {
   expiresAt: number;
   /** How many are listed at once; at most `MAX_LIVE_PER_SERIES`. */
   live: number;
+  /** A daily series: no Saturday or Sunday is listed, the Friday's next being Monday's. */
+  weekdays?: true;
+  /** An option series: strikes this many steps (`OptionsSpec.strikeStep`) from the underlying's fair value at listing. */
+  strikeOffset?: number;
 }
 
 /** A stock is an instrument; the name stays for the content's list of stocks until venues arrive. */
@@ -354,6 +405,8 @@ export interface Content {
   deskNews?: DeskNewsSpec[];
   /** Contract series, listed as time passes; absent, none. */
   series?: ContractSeriesSpec[];
+  /** How the options desk prices its options; absent, the content has no options. */
+  options?: OptionsSpec;
   exchanges: ExchangeSpec[];
   news: NewsTemplate[];
   locations: LocationSpec[];
