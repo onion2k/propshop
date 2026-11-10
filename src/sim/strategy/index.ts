@@ -11,6 +11,9 @@ import { leadLag } from './leadLag';
 import { marketMaker } from './marketMaker';
 import { meanReversion } from './meanReversion';
 import { momentum } from './momentum';
+import { optionMaker } from './optionMaker';
+import { parity } from './parity';
+import { eventVol } from './eventVol';
 import { newsReaction } from './newsReaction';
 import { pairs } from './pairs';
 import { roll } from './roll';
@@ -41,6 +44,10 @@ export const BLOCKS: readonly StrategyBlock[] = [
   curve,
   fixArb,
   crossPairs,
+  // The options desk's, the same way.
+  optionMaker,
+  parity,
+  eventVol,
 ];
 
 /** The blocks of each desk but the stocks, which a firm is given, off, when the desk opens. */
@@ -48,6 +55,15 @@ export const DESK_BLOCKS: Readonly<Record<string, readonly string[]>> = {
   futures: ['basisArb', 'leadLag', 'roll'],
   fx: ['triangle', 'carry'],
   metals: ['curve', 'fixArb', 'crossPairs'],
+  options: ['optionMaker', 'parity', 'eventVol'],
+};
+
+/**
+ * The desks whose symbols a desk's blocks may trade besides the stocks' and its own: the options desk's blocks hedge in
+ * the futures desk's index future and price an option from it. No other desk sees another's.
+ */
+export const DESK_SEES: Readonly<Record<string, readonly string[]>> = {
+  options: ['futures'],
 };
 
 /**
@@ -71,5 +87,6 @@ export function blockFor(setting: { id: string; source?: string }): StrategyBloc
 }
 
 export * from './types';
+export { ImpliedCache, LazyOptions, buildOptions } from './optionsView';
 export { EXAMPLE_SOURCE, SCRIPT_ID, STEP_BUDGET, instrument, scriptBlock, scriptState } from './script';
 export type { ScriptState } from './script';

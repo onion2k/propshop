@@ -432,6 +432,46 @@ export class OrderBook {
     return null;
   }
 
+  /**
+   * What an owner has resting on a side, with the price `at` set apart: how much remains in its orders at that price, how
+   * many orders that is, and how many it has at any other. Written into one object that the next call overwrites, so a
+   * quoter that asks every turn allocates nothing.
+   */
+  tally(owner: string, side: Side, at: number): { remaining: number; orders: number; elsewhere: number } {
+    const t = this.tallied;
+    t.remaining = 0;
+    t.orders = 0;
+    t.elsewhere = 0;
+    for (const o of side === 'buy' ? this.bids : this.asks) {
+      if (o.owner !== owner) continue;
+      if (o.price === at) {
+        t.remaining += o.remaining;
+        t.orders++;
+      } else t.elsewhere++;
+    }
+    return t;
+  }
+
+  private readonly tallied = { remaining: 0, orders: 0, elsewhere: 0 };
+
+  /** Cancel the owner's resting orders on a side, those at price `except` apart (all of them where `except` is null). */
+  cancelOwned(owner: string, side: Side, except: number | null): void {
+    const book = side === 'buy' ? this.bids : this.asks;
+    for (let i = book.length - 1; i >= 0; i--) {
+      const o = book[i]!;
+      if (o.owner === owner && (except === null || o.price !== except)) {
+        book.splice(i, 1);
+        this.changed = true;
+      }
+    }
+  }
+
+  /** The best price on a side among the orders of anyone but `owner`, or null: where the book is without that owner. */
+  bestOutside(owner: string, side: Side): number | null {
+    for (const o of side === 'buy' ? this.bids : this.asks) if (o.owner !== owner) return o.price;
+    return null;
+  }
+
   resting(owner?: string): Order[] {
     const all = [...this.bids, ...this.asks];
     return owner === undefined ? all : all.filter((o) => o.owner === owner);

@@ -19,7 +19,17 @@ import {
 } from './instrument';
 import type { Market } from './market';
 import type { Quote, Side, Trade } from './orderbook';
-import { DESK_BLOCKS, EXAMPLE_SOURCE, SCRIPT_ID, blockById, blockFor, paramsFrom } from './strategy';
+import {
+  DESK_BLOCKS,
+  DESK_SEES,
+  EXAMPLE_SOURCE,
+  ImpliedCache,
+  LazyOptions,
+  SCRIPT_ID,
+  blockById,
+  blockFor,
+  paramsFrom,
+} from './strategy';
 import {
   flattenTo,
   type BeatenBy,
@@ -515,11 +525,11 @@ export class Firm {
 
   private mark(market: Market, symbol: string, now: number): number | null {
     let best: number | null = null;
-    for (const e of market.exchanges) {
+    for (const e of market.venuesOf(symbol)) {
       const q = e.quoteAsOf(symbol, now - this.dataLatency(e.id));
       if (!q || q.bid === null || q.ask === null) continue;
-      const mid = (q.bid + q.ask) / 2;
-      if (best === null) best = mid;
+      best = (q.bid + q.ask) / 2;
+      break;
     }
     return best;
   }
@@ -552,9 +562,9 @@ export class Firm {
     if (this.halt && now < this.halt.until) return;
     this.halt = null;
     if (now - this.lastDecision >= this.infra.computer.decisionEveryMs) {
-      this.equityNow = this.equity(market, now);
+      const before = this.lastDecision;
       this.lastDecision = now;
-      this.decide(now, market, news);
+      this.decide(now, before, market, news);
     }
   }
 
@@ -803,6 +813,11 @@ export class Firm {
   /** Set by the game from the market's exchanges, so the firm does not reach into them to find out. */
   feeTable: Record<string, number> = {};
 
+  /** The implied volatilities the options blocks have read, kept while their inputs stand. Derived, never saved. */
+  readonly impliedCache = new ImpliedCache();
+  /** The options of the view being made, aimed at each view in turn (see `LazyOptions.aim`). Derived, never saved. */
+  private lazyOptions: LazyOptions | undefined;
+
   /** Finished orders are kept for the log, but only so many. */
   private trimOrders(): void {
     if (this.orders.size <= ORDER_LOG * 2) return;
@@ -1046,6 +1061,7 @@ export class Firm {
       get depth() {
         return (depth ??= buildDepth());
       },
+      options: undefined,
       fees: this.feeTable,
       latency: table.latency,
       mids: this.midsSeen.record,
@@ -1057,16 +1073,39 @@ export class Firm {
       recentFills: this.fills,
       news,
     };
+    // The options are worked out when a block first reads them (and an option's volatility when it reads that): a
+    // firm with no options block on pays nothing for them.
+    if (common.options) {
+      this.lazyOptions ??= new LazyOptions(common.options, market, view, this.impliedCache);
+      view.options = this.lazyOptions.aim(common.options, view);
+    }
     return { view, plan };
   }
 
-  private decide(now: number, market: Market, news: readonly Headline[]): void {
-    const { view, plan } = this.build(now, market, news);
-    // A block sees the stocks and its own desk: the stocks' blocks (and the script) the stocks alone, a desk's
-    // blocks that desk and the stocks. With only the stocks in view every block sees the one view.
-    const byDesk = new Map<string, MarketView>();
-    for (const setting of this.enabledBlocks()) {
+  /**
+   * `before` is the time of the decision before this one: a paced block runs at the first of each of its intervals, and
+   * where every block the firm has on is paced out of this decision it is not made at all (no view, no equity).
+   */
+  private decide(now: number, before: number, market: Market, news: readonly Headline[]): void {
+    const settings = this.enabledBlocks();
+    // The equity and the view are made at the first block that is due (at once where the firm has no block on), and
+    // only then: a decision at which every block is paced out costs nothing.
+    let view: MarketView | null = null;
+    let plan: ViewPlan | null = null;
+    let byDesk: Map<string, MarketView> | null = null;
+    for (const setting of settings) {
       const block = blockFor(setting);
+      const gap = block.pace?.(setting.params) ?? 0;
+      if (gap > 0 && Math.floor(now / gap) === Math.floor(before / gap)) continue;
+      if (view === null || plan === null || byDesk === null) {
+        this.equityNow = this.equity(market, now);
+        const built = this.build(now, market, news);
+        view = built.view;
+        plan = built.plan;
+        byDesk = new Map();
+      }
+      // A block sees the stocks and its own desk: the stocks' blocks (and the script) the stocks alone, a desk's
+      // blocks that desk and the stocks. With only the stocks in view every block sees the one view.
       let seen = view;
       if (plan.others) {
         const desk = BLOCK_DESK.get(setting.id) ?? STOCKS_DESK;
@@ -1075,15 +1114,20 @@ export class Firm {
       }
       for (const intent of block.decide(seen, setting.params)) this.send(intent, setting.id, now, seen);
     }
+    if (settings.length === 0) {
+      this.equityNow = this.equity(market, now);
+      this.build(now, market, news);
+    }
   }
 
-  /** The watched symbols a desk's blocks may trade: the stocks' and the desk's own. */
+  /** The watched symbols a desk's blocks may trade: the stocks', the desk's own and those of the desks it is named to see. */
   private symbolsFor(plan: ViewPlan, desk: string): readonly string[] {
     let list = plan.forDesk.get(desk);
     if (!list) {
+      const also = DESK_SEES[desk] ?? [];
       list = plan.symbols.filter((s) => {
         const d = plan.deskOfSymbol.get(s) ?? STOCKS_DESK;
-        return d === STOCKS_DESK || d === desk;
+        return d === STOCKS_DESK || d === desk || also.includes(d);
       });
       plan.forDesk.set(desk, list);
     }

@@ -90,7 +90,9 @@ measure; they hold nothing.
   ahead (`LOOKAHEAD`), so the day is whole from the first minute of a game. The snapshot's `releases` is today's (not
   `calendar`, which is the clock). The page's line "Releases today: 10:42, 14:05" (`Releases.tsx`, `releaseTimes` in
   `overview.ts`, `CALENDAR_WORDS`, glossary `economic-calendar`) is in Today and on the News tab, in fixed room.
-  Nothing the firm or a block does reads it; it draws nothing.
+  Nothing the firm or a block does reads it, bar one: the options desk's view carries today's release times
+  (`OptionsView.releases`, from `Market.todaysReleases`, handed in as `Market.releaseTimes` by the game), for `eventVol`,
+  times only, never the text, direction or size. It draws nothing.
 - **Rivals as characters:** `Fill.against` is the other side's owner (from `Trade.buyer`/`seller`, through
   `Firm.onTrade`), and `Fill.resting` marks a fill of a resting order that the other side crossed to take (never at a
   fix). In `Game.step`, a resting fill against a named rival (the crowd, `bg`, and the firm's own `firm` are not) is
@@ -158,8 +160,41 @@ measure; they hold nothing.
   nought is not posted; no depth, no sweep. The half-spread in price points is worked out with the option's price in
   `Market.optionFair` (`quoterVolPoints` × a hundredth of `vega`), kept in `quoteHalf` (a book a listed option) and
   saved as `half` beside `vol`. Takers come at `takeRate` a second at full activity, each up to `size` at the touch,
-  drawn from `crowd:POX` only (none drawn at rate 0). Tests: `test/quoter.test.ts`. No block, rival, page or stage
-  yet (7d to 7f); `'desk:options'` is placed one stage past the last, so it opens nowhere.
+  drawn from `crowd:POX` only (none drawn at rate 0). Tests: `test/quoter.test.ts`. A side is held at the price it
+  would be posted at once tucked inside the best order of anyone else on the far side (`OrderBook.bestOutside`), so a
+  firm's order across the belief no longer makes the quoter re-post every turn; a side worn under half its size is
+  topped up behind what is left (the front of the queue is kept), at most `MAX_QUOTER_ORDERS` (4) orders a side at
+  one price. **The blocks (7d):** `DESK_BLOCKS.options` is `optionMaker`, `parity` and `eventVol` (`src/sim/strategy/`),
+  which join a firm, off, when the desk opens (and on loading a save of the desk from before them). `DESK_SEES.options`
+  is `['futures']`: `Firm.symbolsFor` lets an options block trade the stocks', the options' and the index future's
+  symbols and no other desk's; no other desk sees past its own. The view's `options` (`OptionsView` in
+  `strategy/types.ts`, built in `strategy/optionsView.ts`) is a `LazyOptions`, a plain object carried by every view
+  (not a getter on the view, which cost 3% of the step rate to build) and worked out when a block first reads it: each
+  live option's `right`, `strike`, `expiry`, `underlying`, `multiplier`, the `spot` the firm sees (the index book's
+  mid, else the nearest future's mid less its carry) and an `iv`, a getter too, inverted by `impliedFrom` from the
+  mid of the option's own book as the firm sees it, never the crowd's belief or the market's volatility; `impliedAt`
+  does the same for a mid a block asks about (its own quotes taken out). `Firm.impliedCache` keeps an inversion while
+  the mid, the spot and the time (counted in steps of a fiftieth of the time left, 0.1 to 10 s) are as they were: a
+  pure memo, so a reloaded game gets the same numbers; a firm with no options block on does none (`computed` counts
+  them). A block may be **paced** (`StrategyBlock.pace(params)`, ms): `Firm.decide` runs it at the first decision of
+  each interval of the clock (`floor(now / pace)` against the previous decision's), not at every one, and a decision at
+  which every block the firm has on is paced out is not made at all (no view, no equity); `optionMaker`'s `every`
+  (50 ms; Bluestem 500) is its pace, and what keeps the rival cheap enough for the step rate. `optionMaker` rests a post-only bid and ask a size either side of the book's implied volatility ± `edge`
+  (rounded outward, always inside the touch it sees without its own orders), keeps the net delta of its options
+  inside `hedgeBand` contracts of the index future when `hedge` is on, and flattens an option from `flattenBefore`
+  minutes (15:55) before its expiry; `parity` trades a call, a put and the future (a conversion or a reversal) at the
+  touch when the gap clears `threshold` after fees, holds to expiry, and puts back whatever the other legs did not
+  match (the future it is left with after the options settle too); `eventVol` buys the strike nearest the index's
+  straddle `buyBefore` minutes ahead of the day's first release inside the session and sells it `sellBefore` seconds
+  before it, or `sellAfter` seconds after it with `through`. The rival is Bluestem Volatility (`bluestem`, desk
+  `options`, `optionMaker` hedged with an edge of one volatility point (the quoter's own half-spread, so it queues at the
+  touch and is not inside the spread) and a pace of 500 ms, on the Prairie rack, watching the futures and the options
+  and not the stocks, so it prices the index from the future). A quicker or tighter Bluestem took the every-desk-open
+  step rate under its floor; the player's `optionMaker` at its defaults (edge 0.5, inside the quoter's spread, 50 ms)
+  makes far more, see `docs/measured.md`. Tests: `test/optionblocks.test.ts` (each block by hand on `optionWorld` in
+  `test/fixtures.ts`), `test/optionrival.test.ts` (the view, the rival, replay, saves, margin, the books);
+  `test/optionpace.test.ts` measures a day (skipped unless `OPTION_PACE` is set). No page or stage yet (7e, 7f);
+  `'desk:options'` is placed one stage past the last, so it opens nowhere.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
@@ -228,7 +263,17 @@ For anything new, check what it does:
   maintenance) plus 15% of the index's value, less how far out of the money it is, never under the premium plus 10%
   (`InstrumentSpec.shortMargin`; `Firm.marginRequired`, the order check and `Firm.marginCall` all read it, and
   `marginedHeld` names it). A sell order is weighed for the part past what is held long. A long option is paid in
-  full and counts at its premium toward the leverage cap. The call flattens short options with the futures.
+  full and counts at its premium toward the leverage cap. The call flattens short options with the futures, and a rival's
+  too (Bluestem is margined like any firm: `marginedHeld` names its short options and its future together).
+- **an options block:** `optionMaker` quotes only an option whose book is two-sided without its own orders and whose
+  volatility can be implied (at nought days a deep one in the money cannot: its mid is under its intrinsic value), so
+  at the open only the options near the money are quoted; it does nothing in closed hours (the books are empty) and
+  carries tomorrow's options overnight, unhedged by the options' own expiry but hedged in the future, which trades.
+  `parity` opens one set only with the three books two-sided and an expiry more than five minutes off, and only the
+  direction it already holds (live, the books are one model's and it finds nothing but the first moments of the
+  session, when the three books settle at different ticks: it trades a few sets there and scratches the legs that
+  miss, for about nothing); `eventVol` buys and sells at the touch, one release a day (the first inside the
+  session), and holds nothing overnight unless its sell fails.
 - **closed hours:** the books are empty, nothing fills, and a block sends nothing; skipping to the open lands
   the overnight news on the way. Hours are each venue's: one without a `session` keeps the stocks' (the clock),
   one with its own opens, quiets and closes on it, empties its books at its own close and refuses an order that
@@ -287,8 +332,11 @@ For anything new, check what it does:
   `docs/measured.md`; tuned further in 7f, held by nothing. The options are re-priced each `OPTION_REPRICE_MS`
   (100) or when the index has moved `OPTION_REPRICE_CENTS` (0.2), and not while the stocks are shut. The quoter's
   numbers (half-spread one volatility point, size 1,000, one taker a second a book) are drafts, as is the tick: the
-  options trade on a one-cent grid, so a far option's spread is the tick whatever the half-spread, and a quote tucked
-  inside a firm's across the belief is re-posted every turn until the belief catches up.
+  options trade on a one-cent grid, so a far option's spread is the tick whatever the half-spread.
+- **The options blocks' parameters:** `optionMaker`'s edge (0.5 volatility points), size (5), position limit (20),
+  hedge band (2 contracts) and flatten time (5 min), `parity`'s threshold (1 cent an index unit) and `eventVol`'s
+  windows (10 min, 20 s, 60 s) are drafts, tuned in 7f; Bluestem's size is the maker's default, its edge and pace
+  were set by the step rate and not by what a rival would earn. What each makes in a day is in `docs/measured.md`, held by nothing.
 - **The rents:** drafts (about 2% of a price a week, a point less for the dearest, the metals racks $50), measured against what each seat earns a
   week by the PACE harness and held by nothing; `docs/measured.md` has the figures. The pace harness understates
   momentum, so the starting rung's cover is read from whole days.

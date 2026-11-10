@@ -12,7 +12,7 @@ import {
   type InstrumentSpec,
   type SavedGame,
 } from '../src/sim';
-import { BACKGROUND, Exchange } from '../src/sim/exchange';
+import { BACKGROUND, Exchange, MAX_QUOTER_ORDERS } from '../src/sim/exchange';
 import { isOption } from '../src/sim/instrument';
 import { Random } from '../src/sim/random';
 
@@ -146,15 +146,48 @@ describe('the quoter on a venue', () => {
     expect(q.ask! - q.bid!).toBeGreaterThanOrEqual(1);
   });
 
-  it('refills an order a taker has worn down, at the same price', () => {
+  it('refills a side a taker has worn down, at the same price, with at most a few orders on it', () => {
     const t = bare({ takeRate: 20 });
     t.run(20_000);
     const trades = t.ex.stocks.get('X')!.tape.length;
     expect(trades).toBeGreaterThan(5);
-    // Still quoting two sides, each with at least half its size, after all that.
-    const orders = t.book().resting(BACKGROUND);
-    expect(orders).toHaveLength(2);
-    for (const o of orders) expect(o.remaining * 2).toBeGreaterThanOrEqual(1000);
+    // Still quoting two prices, each with at least half its size in all, in a few orders, after all that.
+    for (const side of ['buy', 'sell'] as const) {
+      const orders = t
+        .book()
+        .resting(BACKGROUND)
+        .filter((o) => o.side === side);
+      expect(orders.length).toBeGreaterThanOrEqual(1);
+      expect(orders.length).toBeLessThanOrEqual(MAX_QUOTER_ORDERS);
+      expect(new Set(orders.map((o) => o.price)).size).toBe(1);
+      expect(orders.reduce((n, o) => n + o.remaining, 0) * 2).toBeGreaterThanOrEqual(1000);
+    }
+  });
+
+  it('tops a worn side up behind what is left of its order, so it keeps its place in the queue', () => {
+    const t = bare();
+    t.run(200);
+    const first = t.book().firstOf(BACKGROUND, 'sell')!;
+    expect(first.price).toBe(1003);
+    // A firm joins the queue at the ask, behind the quoter's order.
+    const joined = t.ex.submit('X', { owner: 'firm', side: 'sell', price: 1003, size: 100 }, t.now());
+    expect(joined?.order.remaining).toBe(100);
+    // A customer takes 600 of the quoter's 1000: 400 is left, under half.
+    t.ex.submit('X', { owner: 'cust', side: 'buy', price: 1003, size: 600, ioc: true }, t.now());
+    t.run(20);
+    const mine = t
+      .book()
+      .resting(BACKGROUND)
+      .filter((o) => o.side === 'sell');
+    // The same order is still there, still first, and the side is back to its size with an order behind the firm's.
+    expect(mine[0]!.id).toBe(first.id);
+    expect(mine[0]!.remaining).toBe(400);
+    expect(mine.reduce((n, o) => n + o.remaining, 0)).toBe(1000);
+    const next = t.ex.submit('X', { owner: 'cust', side: 'buy', price: 1003, size: 450, ioc: true }, t.now());
+    expect(next?.trades.map((x) => [x.seller, x.size])).toEqual([
+      [BACKGROUND, 400],
+      ['firm', 50],
+    ]);
   });
 
   it("draws only the belief's normal a turn when no taker can come, and nothing for a re-post", () => {
@@ -164,6 +197,83 @@ describe('the quoter on a venue', () => {
     t.run(1000);
     for (let i = 0; i < 1000 / (DT * 5); i++) probe.normal();
     expect(t.random.save()).toBe(probe.save());
+  });
+});
+
+describe('the quoter beside a firm', () => {
+  const ids = (t: ReturnType<typeof bare>, side: 'buy' | 'sell') =>
+    t
+      .book()
+      .resting(BACKGROUND)
+      .filter((o) => o.side === side)
+      .map((o) => o.id)
+      .join();
+
+  it('does not re-post a side every turn because a firm\u2019s order sits across the price it would give', () => {
+    const t = bare();
+    t.run(200);
+    // A firm bids inside the spread at 1001; the belief then falls so that the ask would belong at 999, across it.
+    t.ex.submit('X', { owner: 'firm', side: 'buy', price: 1001, size: 100 }, t.now());
+    t.fair.set('X', 996);
+    t.run(1500);
+    const q = t.book().quote();
+    expect(q.bid).toBe(1001);
+    // The ask is tucked just over the firm's bid, and stays there: no cancel and post at every turn.
+    expect(q.ask).toBe(1002);
+    const before = ids(t, 'sell');
+    let changes = 0;
+    let last = before;
+    t.run(2000, () => {
+      const now = ids(t, 'sell');
+      if (now !== last) changes++;
+      last = now;
+    });
+    expect(changes).toBe(0);
+    expect(t.book().quote().ask).toBe(1002);
+    // When the firm's order goes, the ask goes to where the belief puts it.
+    t.book().cancel(t.book().resting('firm')[0]!.id);
+    t.run(40);
+    expect(t.book().quote().ask).toBe(999);
+  });
+
+  it('keeps a two-sided, uncrossed book when a firm quotes inside its spread on a one-cent tick', () => {
+    const t = bare({ takeRate: 8 });
+    t.run(200);
+    let firm = { bid: 0, ask: 0 };
+    const requote = () => {
+      for (const o of t.book().resting('firm')) t.book().cancel(o.id);
+      const q = t.book().quote();
+      // One cent inside each of the quoter's prices, post-only, never across the book.
+      const bid = q.bid! + 1;
+      const ask = q.ask! - 1;
+      if (bid < ask) {
+        t.ex.submit('X', { owner: 'firm', side: 'buy', price: bid, size: 50, postOnly: true }, t.now());
+        t.ex.submit('X', { owner: 'firm', side: 'sell', price: ask, size: 50, postOnly: true }, t.now());
+      }
+      firm = { bid, ask };
+    };
+    let samples = 0;
+    let twoSided = 0;
+    let crossed = 0;
+    let firmTrades = 0;
+    for (let i = 0; i < 60; i++) {
+      t.fair.set('X', 1000 + 6 * Math.sin(i / 4));
+      requote();
+      t.run(250, () => {
+        const q = t.book().quote();
+        samples++;
+        if (q.bid !== null && q.ask !== null) {
+          twoSided++;
+          if (q.bid >= q.ask) crossed++;
+        }
+      });
+    }
+    firmTrades = t.ex.stocks.get('X')!.tape.filter((x) => x.buyer === 'firm' || x.seller === 'firm').length;
+    expect(firm.ask).toBeGreaterThan(0);
+    expect(crossed).toBe(0);
+    expect(twoSided / samples).toBeGreaterThan(0.99);
+    // The inside quotes are the touch, so the customers meet them.
+    expect(firmTrades).toBeGreaterThan(0);
   });
 });
 
@@ -201,7 +311,7 @@ describe('the options desk, quoted', () => {
     for (const e of CONTENT.exchanges) if (e.id !== POX.id) expect(e.quoter).toBeUndefined();
   });
 
-  it('shows every option a two-sided market of one order a side, and the spread widens with vega', () => {
+  it('shows every option a two-sided market of one price a side, and the spread widens with vega', () => {
     const g = optGame(1, content(null));
     run(g, g.now + 5 * MIN);
     const venue = g.market.venue(POX.id);
@@ -210,7 +320,10 @@ describe('the options desk, quoted', () => {
     for (const o of options(g)) {
       const book = venue.stocks.get(o.symbol)!.book;
       const bg = book.resting(BACKGROUND);
-      expect(bg.length).toBeLessThanOrEqual(2);
+      // One price a side; a taker's wear is topped up behind what is left, a few orders at most.
+      expect(bg.length).toBeLessThanOrEqual(2 * MAX_QUOTER_ORDERS);
+      for (const side of ['buy', 'sell'] as const)
+        expect(new Set(bg.filter((x) => x.side === side).map((x) => x.price)).size).toBeLessThanOrEqual(1);
       const q = book.quote();
       expect(q.ask).not.toBeNull();
       if (q.bid !== null) {

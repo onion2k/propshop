@@ -548,3 +548,53 @@ test/nightpace.test.ts` (seed 1, Monday, the starting setup), the JSON identical
   The option's fair values are unchanged to the bit.
 - **Command** for the books: an esbuild bundle of a short script stepping a `Game` to 10:30 and printing each option
   book's quote and depth (not kept).
+
+## The options blocks, the rival and the step rate (plans/desk-options.md 7d, 2026-11-10)
+
+- **The step rate,** `npm run floors` alone, all four desks open (none open in brackets), interleaved on an otherwise
+  idle machine, the tree at HEAD (7c) then this one, three times each: HEAD 36,007 / 36,199 / 36,172 (87,437 / 87,793 /
+  87,353); this tree 35,162 / 35,464 / 35,140 (87,535 / 87,892 / 87,156). So 2.4% under HEAD with Bluestem in (about
+  1% of it the other changes, 1.5% the rival), and 0.4% to 1.3% over the 35,000 tripwire on this hour, which read HEAD 3%
+  over it (the same HEAD read 36,500 to 37,900 on other hours of the day). The tripwire stays at 35,000. The
+  every-desk-open floor includes Bluestem Volatility, so the rival and the view's implied volatilities are inside it. The
+  floor is a vitest run, which pays more for a call across modules than an esbuild bundle does (the same trees read
+  about a point nearer in a bundle), so the cuts below were read both ways.
+- **How it got there** (an esbuild bundle of a script stepping seed 12 with every desk open, 10 s then 2 minutes,
+  ticks a second; `node --cpu-prof` for the profile; the scripts are not kept). The tree at HEAD, 40,000 to 40,800.
+  First build, Bluestem thinking at every decision (10 ms): 28,800, a quarter under. The profile showed 79,719
+  inversions in 130 s, six a decision: the spot read from the future was divided by a carry counted to the
+  millisecond, so it was a new input to every volatility at every decision; counted to the second it was 4,764
+  (32,300). Then one pass over the block's own orders in place of a filter an option, `futuresOn` kept (one array
+  while the contracts and symbols stand), the options built only when read (34,000). Then the pace: a block paced to
+  `every` ms runs at the first decision of each interval and a decision at which every block is paced out is not
+  made at all (no view, no equity), at 50 ms 37,700; and `Firm.mark` over the venues that list the symbol and not
+  all ten (equity marks every position every decision: 64 ms of a 4-minute profile). A getter for `options` written
+  into the view's literal cost 3% of the vitest rate whether or not anyone read it (36,400 against HEAD's 37,800 with
+  the rival taken out) and was replaced by a plain `LazyOptions` object, one a firm, aimed at each view. In the
+  bundle, Bluestem at 100 / 250 / 500 / 1,000 ms against none read 38,500 / 38,800 / 39,300 / 39,300 against 40,000;
+  the 1.5% that no pace removes is its orders and fills, and an edge of one point (queueing at the quoter's price, not
+  inside it) cut its orders from 1,223 to 886 in four minutes. In vitest, every 250 / 500 / 1,000 ms read 35,400 to
+  35,800 / 35,500 to 35,700 / 35,700 to 36,000 against HEAD's 36,500 to 36,900: Bluestem is set at 500 ms and an edge
+  of one point, the quicker settings being under the margin that hour allowed. The quoter's tally of its own orders
+  (`OrderBook.tally`, no array a turn) and `decide` making its view at the first block that is due are cuts of
+  allocations, not of a frame I could measure.
+- **A day,** `test/optionpace.test.ts` (`OPTION_PACE=1 OPTION_SEED=1 OPTION_DAYS=1 OPTION_BLOCK=optionMaker npx vitest run
+test/optionpace.test.ts`, the block being `parity`, `eventVol` or `none` as well; about five minutes), seed 1, the
+  first Monday, 09:30 to 16:00, the player on the Prairie rack (microwave) following the index, its future and the
+  options, defaults, Bluestem in; dollars. Bluestem alone (no player block) +128,988 (58,844 fills: 196,393 option
+  contracts and 89,077 index-future contracts; the largest net delta 41.0 contracts of the future, taken as the market's
+  own model delta with the market's volatility every five seconds, against a hedge band of 2, a look every 500 ms and
+  a jump between; the largest position in one option 24; not margin-called). The player's `optionMaker` at its defaults
+  +116,048 (83,266 fills: 242,848 option and 137,803 future contracts), Bluestem beside it +90,440; `parity` +125 (35
+  contracts: 20 option, 15 future, all in the first seconds of the session); `eventVol` -21 (four fills, 20 contracts;
+  the day's first release in the session was at 13:43). A first harness day with the rack's own twenty-symbol watch list
+  saw four calls only and `parity` and `eventVol` did nothing; with Bluestem at an edge of half a point and a look every
+  250 ms it made +136,150 (76,896 fills). Over two hours of one-second looks at the live books the best parity set after
+  fees was more than a cent short of nought (thresholds of -3 / -2 / -1.5 fired 6,901 / 2,201 / 1,042 times in 7,200
+  looks, and -1 and up never): the books are one model's. The spread is the money: nobody takes the quotes in the
+  informed way, which 7f has to add.
+- **The books with Bluestem in** (the same day, sampled every five seconds): no book crossed in 4,692 looks; the options
+  within a strike step of the index had a bid and an ask 91% of the looks (the far side of a step has no bid under a
+  cent); in the first thirty minutes, the test's window, over 95%. The model quoter and a maker one cent inside it
+  (`test/quoter.test.ts`, a firm requoting one cent inside both sides every 250 ms for 15 s of a book with customers
+  taking): two-sided in over 99% of the ticks, never crossed.

@@ -1,6 +1,6 @@
 # The options desk: part 7 of the trading roadmap
 
-State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7c built 2026-11-10, 7d next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
+State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7d built 2026-11-10, 7e next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
 and looked at headless by this session, committed and pushed on its own before the next part starts. The house rule
 is to build on `sonnet`; the metals desk was built on Opus at Chris's word, and the model menu is his.
 
@@ -554,3 +554,121 @@ edge (7d, 7f); the margin of 5.2% on a loaded machine (it was 1.2% at 7b and dri
 a firm's order across the belief makes the quoter re-post that side every turn until the belief catches up (cheap, and
 it ends with the lag, but not measured); partial fills are topped up by re-posting at the same price, losing the queue
 place, which no block yet sees.
+
+## Result for 7d
+
+(Built 2026-11-10, on sonnet by the `builder` agent, not committed.)
+
+**Built.** `DESK_SEES.options = ['futures']` (`strategy/index.ts`), read by `Firm.symbolsFor`; no other desk sees past
+its own. The view's `options` (`OptionsView`/`OptionView`/`OptionStatic` in `strategy/types.ts`; `strategy/optionsView.ts`):
+a `LazyOptions` object every view carries, built when a block first reads it, with each live option's `right`, `strike`,
+`expiry`, `underlying`, `multiplier`, the `spot` the firm sees (the index book's mid, else the nearest future's mid less
+its carry counted to the second) and an `iv` inverted from the mid of the option's own book by `impliedFrom` (a getter,
+worked out when read), `impliedAt(symbol, price)` for a mid a block asks about, `rate`, and `releases`, today's
+market-wide release times from the public calendar (`Market.todaysReleases`, handed `calendarOf` by the game), times
+only. `Firm.impliedCache` keeps an inversion while its mid, spot and time (in steps of a fiftieth of the time left) stand:
+a pure memo, so a reloaded game works out the same numbers; a firm with no options block on does none. Three blocks,
+`optionMaker`, `parity`, `eventVol` (`strategy/`), in `DESK_BLOCKS.options` and `BLOCKS`, joining a firm off when the
+desk opens (and, on a load, a save of the desk from before them). The rival, Bluestem Volatility (`bluestem`, in
+`COMPETITORS`): the Prairie rack, microwave, `desk: 'options'`, `watches: ['futures', 'options']` (not the stocks: it
+prices the index from the future, and a rack follows twenty symbols against twenty-eight), `optionMaker` with `hedge: 1`,
+`edge: 1` (the quoter's own half-spread: it queues at the touch rather than standing inside it) and `every: 500`. A new optional `StrategyBlock.pace(params)`: `Firm.decide` runs a paced block at the first decision of
+each interval and makes no decision at all (no view, no equity) where every block the firm has on is paced out.
+
+**Parameters and defaults.**
+
+| block         | parameter                       | default                      |
+| ------------- | ------------------------------- | ---------------------------- |
+| `optionMaker` | `every` (think every)           | 50 ms (Bluestem 500)         |
+|               | `edge`                          | 0.5 vol. points (Bluestem 1) |
+|               | `size`                          | 5 contracts                  |
+|               | `maxPosition`                   | 20 contracts an option       |
+|               | `requote` (requote when off by) | 1 cent                       |
+|               | `hedge`                         | on                           |
+|               | `hedgeBand`                     | 2 contracts of the future    |
+|               | `flattenBefore`                 | 5 minutes (15:55)            |
+| `parity`      | `threshold`                     | 1 cent an index unit         |
+|               | `contracts`                     | 1                            |
+|               | `maxContracts`                  | 5 sets                       |
+| `eventVol`    | `buyBefore`                     | 10 minutes                   |
+|               | `sellBefore`                    | 20 seconds                   |
+|               | `through`                       | off (sell before)            |
+|               | `sellAfter` (when held through) | 60 seconds                   |
+|               | `contracts`                     | 5                            |
+
+**A day, seed 1, the first Monday, from the Prairie rack with defaults, Bluestem in** (`test/optionpace.test.ts`; dollars;
+the player follows the index, its future and the options). Bluestem Volatility alone (no player block): P&L +128,988, 58,844
+fills, 196,393 option contracts and 89,077 index-future contracts traded, the largest net delta 41.0 contracts of the
+future (the market's own model delta with the market's volatility, sampled every five seconds, against a hedge band of 2:
+the hedge looks twice a second and a jump moves the delta between), the largest position in any one option 24 (limit 20
+and a quote of 5), never margin-called, no book crossed in 4,692 looks. The three blocks, one at a time, with Bluestem
+beside them: `optionMaker` +116,048 (83,266 fills; 242,848 option and 137,803 future contracts; Bluestem +90,440 beside
+it, the two sharing the customers); `parity` +125 (35 contracts, all in the first seconds of the session, where the
+three books settle at different ticks: it trades a set, a leg misses and it scratches the rest; over two hours of
+one-second looks at the live books it found no gap after fees); `eventVol` -21 (the day's first release in the session
+was at 13:43; it bought and sold a straddle of 5 and 5, four fills, and the rise into the release did not cover the
+spread and the fees). The maker's money is the spread it earns from customers who take at the touch at random: nobody
+takes it in the informed way (7f).
+
+**What 7c left, and what was done.** (1) A firm's order across the quoter's price: the quoter now tucks the price a side
+is to be posted at inside the best order of anyone else on the far side (`OrderBook.bestOutside`) before it compares it
+with what rests, so a side held off the belief by a firm's order is left alone (the old code cancelled and posted it
+every turn, 200 times in two seconds in the test; now none). (2) A partly filled order: a side worn under half its size is
+topped up behind what is left (`OrderBook.tally`, `cancelOwned`), so the front of the queue is kept, up to
+`MAX_QUOTER_ORDERS` (4) orders a side at one price, past which it is posted afresh; two 7c tests that said "one order a
+side" now say "one price a side". (3) A maker inside the quoter's spread on a one-cent tick: the player's `optionMaker`
+at its defaults (edge 0.5) and a test firm one cent inside both sides: the book stayed two-sided and uncrossed, and the
+customers met the inside quotes. Bluestem, as set for the step rate, quotes at an edge of one point and so queues behind
+the quoter; the inside case is the player's and the tests'.
+
+**Step rate.** `npm run floors` alone, the tree at HEAD then this one, three times each, interleaved on an idle machine: every desk
+open HEAD 36,007 / 36,199 / 36,172, this tree 35,162 / 35,464 / 35,140 (the floor, with Bluestem in, passes all three by
+0.4% to 1.3%; HEAD was 3% over it on this hour and 4 to 8% over on others); none open 87,437 / 87,793 / 87,353 against
+87,535 / 87,892 / 87,156. The first build with Bluestem thinking every 10 ms read 28,800 in a bundle against 40,000
+(a quarter under); inversions repeated because the spot moved with the clock, a filter an option, the view's `options` as
+a getter in the view literal (3%), equity marking over every venue and a decision made when every block was paced out
+were found by `node --cpu-prof` and cut; what is left is the rival's orders and fills (about 1.5%). **It is thin**: a
+quicker Bluestem (50 or 100 ms, or an edge inside the spread) read 34,700 to 35,900 against the same HEAD, and the next
+desk or block will not fit. The tripwire stays at 35,000.
+
+**Tests.** `test/optionblocks.test.ts` (39: each block by hand on `optionWorld`, `test/fixtures.ts`), `test/optionrival.test.ts`
+(18: `DESK_SEES`, the view, the rival, replay, saves, margin, the books, the pace), `test/quoter.test.ts` (+3, two edited),
+`test/optionpace.test.ts` (the day, skipped unless `OPTION_PACE`). Seen failing before the code: the block, view, rival,
+`DESK_SEES`, save and margin tests all failed (`No strategy block optionMaker`, then the missing view); of the quoter's
+three, the queue place and the every-turn re-post failed and the two-sided-book test passed (it guards the case). Written
+after the code and not seen to fail: the pace test, the flatten-keeps-the-hedge test (the hedge-guard test was seen to
+fail by setting the guard to nought). Held to the bit: every fingerprint in `test/instruments.test.ts` and
+`test/metalblocks.test.ts` and `test/experiments.test.ts` (the options desk is closed in all).
+
+**Found and decided.**
+
+- **A rack follows twenty symbols; the chain is twelve, the index's future two and the stocks fourteen.** A player on a
+  rack who leaves the watch list alone sees the stocks, the future and four calls, so `eventVol` and `parity` did nothing in
+  the first harness day. The harness sets the list; 7e needs the page to (a Watch-the-options shortcut, or the options
+  desk's blocks to ask for their symbols).
+- **The step rate is the constraint on the rival.** See above: Bluestem is an edge of one point and a look every 500 ms
+  because a quicker or tighter one fell under the floor. It still makes $129,000 a day and the player's maker at its
+  defaults $116,000: the spread from customers who take at random, with no adverse selection (and a player's maker
+  inside the spread takes customers from it, $90,000). 7f must put adverse selection in or the desk is a money machine
+  and a rival that earns more than ten times Harbor Quant.
+- **Parity is nearly dormant.** Over two hours of one-second looks at the real books the best conversion or reversal after
+  fees was about a cent short (the books are one model's); it trades only in the first moments of the session. 7f's "Find
+  parity" lesson needs a source of mispricing (a rival's stale quote, a jump the call and the put book see at different
+  times).
+- **`eventVol` buys the strike nearest the index, not the centre of the chain** (the index had fallen 76 cents since the
+  listing at 06:00): the straddle's legs then have unequal books, and a leg with none is skipped, the other bought alone.
+  It lost $21 on the one release, as when the rise into a release is under the spread.
+
+**Not checked.** The look (no page); a day on more than one seed or a trending day (one Monday, one seed: the figures above
+are an anecdote, not a pace); the maker on a Friday (the future it hedges in expires at the options' own 16:00, so the
+hedge moves to the next contract from ten minutes out, tested by hand and not played); the step rate on a loaded machine
+or another hour (0.4% to 1.3% over); a `parity` that finds a real gap (the live books held none but the first seconds' jitter, so the tests are by hand); `eventVol` held through a
+release in a live game (tested by hand); a rack follows twenty symbols so a player's options blocks see nothing until the
+watch list names the options (7e); the margin call of a rival played from a real drawdown (tested with a book set by
+hand); `Game.load` of a 7b or 7c save with the desk open (it gives the player's firm the three new blocks, off, and the
+desk's rival, by the same code that gives a desk opened by another its blocks; no test loads such a save).
+
+**What I noticed and left alone.** The cap of 20 symbols on a rack against 28 listed once the options desk is open; the
+view's `options` is reached through `symbols`, so a player who watches too few options sees fewer (7e). `OrderBook.firstOf`
+is now used only by a test. The generic `Firm.mark` change (venues that list the symbol) and the paced `decide` apply to
+every desk and every firm; they change no pinned figure. `README.md`'s blocks line lists the stocks' blocks only.

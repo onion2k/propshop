@@ -189,6 +189,56 @@ export interface MarketView {
   pairs?: Readonly<Record<string, PairView>>;
   /** What a currency position earns or pays each night, from the content's rates; absent with no pair live. */
   rollover?: RolloverView;
+  /**
+   * The live options, as the options desk's blocks read them: absent while the desk is closed. Worked out when first
+   * read (a firm with no options block on pays nothing for it), so a getter, not a field.
+   */
+  options?: OptionsView;
+}
+
+/** An option as the market lists it: what stays while it is live. */
+export interface OptionStatic {
+  right: 'call' | 'put';
+  /** Price points, fixed when the option was listed. */
+  strike: number;
+  /** Simulated ms. */
+  expiry: number;
+  underlying: string;
+  /** Units of the underlying in one contract. */
+  multiplier: number;
+}
+
+/** A live option as a block sees it. */
+export interface OptionView extends OptionStatic {
+  /**
+   * The underlying's price as the firm sees it (its book's mid, else the nearest future's less its carry), or null
+   * where it sees none.
+   */
+  spot: number | null;
+  /**
+   * The volatility (an annual share, on calendar time) that makes the model's price the mid of the option's book as
+   * the firm sees it, by `impliedFrom`: never the crowd's belief or the market's own volatility. Null where the book
+   * is not two-sided, or no volatility makes the price.
+   */
+  iv: number | null;
+}
+
+/** The options desk as a block sees it. */
+export interface OptionsView {
+  /** The model's interest rate a year. */
+  rate: number;
+  /**
+   * The times of today's market-wide releases (the public calendar): times only, never what a release says or which
+   * way it moves the market.
+   */
+  releases: readonly number[];
+  /** Each live option by symbol. */
+  chain: Readonly<Record<string, OptionView>>;
+  /**
+   * The implied volatility of an option at a given price (its book's mid with a block's own orders taken out, say),
+   * worked out as `iv` is and kept while the price, the spot and the time stay.
+   */
+  impliedAt(symbol: string, price: number): number | null;
 }
 
 /** A currency pair as a block sees it. */
@@ -299,6 +349,11 @@ export const BEST = 'best';
 export interface StrategyBlock {
   spec: BlockSpec;
   decide(view: MarketView, params: Params): Intent[];
+  /**
+   * The least time, ms, between two of its decisions, from its parameters: the firm runs it at the first decision of
+   * each such interval (of the clock's multiples of it), not at every one. Absent or nought, at every decision.
+   */
+  pace?(params: Params): number;
 }
 
 /** The best bid and ask across exchanges, with where each is; exchanges further than maxLatency are left out. */

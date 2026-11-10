@@ -167,5 +167,5 @@ export {
 } from './instrument';
 export type { FxPair, Rate } from './instrument';
 export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';
-export { DESK_BLOCKS, DESK_REQUIRES } from './strategy';
+export { DESK_BLOCKS, DESK_REQUIRES, DESK_SEES } from './strategy';
 export { releasesBetween } from './calendar';

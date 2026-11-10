@@ -24,6 +24,9 @@ import { DEFAULT_RULES, type ExchangeRules, type ExchangeSpec, type FixFlow } fr
 
 /** The owner tag for the background crowd, who are nobody in particular. */
 export const BACKGROUND = 'bg';
+
+/** The most orders a model quoter keeps on one side at one price: a taker's wear is topped up behind, up to this. */
+export const MAX_QUOTER_ORDERS = 4;
 /** Why a venue with hours of its own refused an order: it arrived while the venue was closed. */
 export const REFUSED_CLOSED = 'market closed';
 /** Why a venue refused an order or a cancel: it does not list the symbol, or no longer (an expired contract). */
@@ -677,11 +680,15 @@ export class Exchange {
   }
 
   /**
-   * A model quoter's turn for one book, in place of the crowd's: the order it rests on each side is found in the book
-   * (so nothing is kept to save), kept while it is at the price the belief gives and still holds half its size, and
-   * otherwise cancelled and posted again. The bid is the belief less the half-spread and the ask the belief plus it,
-   * each rounded away from the belief to the grid, the ask at least a tick over the bid; no bid is posted at or under
-   * nought. A post is tucked inside a firm's quote as the crowd's is, never across it. Then, with chance `takeRate` a
+   * A model quoter's turn for one book, in place of the crowd's: the orders it rests on each side are found in the book
+   * (so nothing is kept to save). The bid is the belief less the half-spread and the ask the belief plus it, each
+   * rounded away from the belief to the grid, the ask at least a tick over the bid; no bid is posted at or under nought.
+   * Each is tucked inside the best order of anyone else on the other side (a firm's, say), never across it, and it is
+   * that price the side is kept at: a side whose price is held off the belief's by a firm's order is left alone, not
+   * cancelled and posted again every turn. An order at any other price is cancelled. A side at its price keeps what
+   * rests there while the total is at least half the quoter's size; a taker having worn it below that, the rest is
+   * posted behind what is left (so the front of the queue is kept, and a fill is not lost to a re-post), never more
+   * than `MAX_QUOTER_ORDERS` orders a side, past which the side is posted afresh. Then, with chance `takeRate` a
    * second (at full activity), a customer takes up to the quoter's size at the touch on a side, whoever rests there.
    * Draws one chance a turn, and a side and a size when a customer comes; nothing for a re-post. A book the market
    * has priced no half-spread for keeps what rests and is only taken from.
@@ -698,17 +705,15 @@ export class Exchange {
     const quoter = this.spec.quoter!;
     const tick = tickOf(s, this.rules.tickSize);
     if (half !== undefined) {
-      const bidP = Math.floor((s.belief - half) / tick) * tick;
-      const askP = Math.max(Math.ceil((s.belief + half) / tick) * tick, bidP + tick);
-      const b = s.book.firstOf(BACKGROUND, 'buy');
-      const a = s.book.firstOf(BACKGROUND, 'sell');
-      const fresh = (o: typeof b, p: number) => o !== null && o.price === p && o.remaining * 2 >= quoter.size;
-      const keepB = bidP <= 0 ? b === null : fresh(b, bidP);
-      const keepA = fresh(a, askP);
-      if (!keepB && b) s.book.cancel(b.id);
-      if (!keepA && a) s.book.cancel(a.id);
-      if (!keepB && bidP > 0) this.quoteAt(symbol, s, 'buy', bidP, tick, now, quoter.size);
-      if (!keepA) this.quoteAt(symbol, s, 'sell', askP, tick, now, quoter.size);
+      let bidP = Math.floor((s.belief - half) / tick) * tick;
+      let askP = Math.max(Math.ceil((s.belief + half) / tick) * tick, bidP + tick);
+      // Tucked inside the best order of anyone else on the far side: the price a side would be posted at.
+      const otherAsk = s.book.bestOutside(BACKGROUND, 'sell');
+      const otherBid = s.book.bestOutside(BACKGROUND, 'buy');
+      if (otherAsk !== null) bidP = Math.min(bidP, otherAsk - tick);
+      if (otherBid !== null) askP = Math.max(askP, otherBid + tick);
+      this.quoterSide(symbol, s, 'buy', bidP, tick, now, quoter.size);
+      this.quoterSide(symbol, s, 'sell', askP, tick, now, quoter.size);
     }
     if (quoter.takeRate > 0 && random.chance((quoter.takeRate * activity * dt) / 1000)) {
       const side = random.chance(0.5) ? 'buy' : 'sell';
@@ -717,6 +722,31 @@ export class Exchange {
       const size = random.int(1, quoter.size);
       if (touch !== null) this.submit(symbol, { owner: BACKGROUND, side, price: touch, size, ioc: true }, now);
     }
+  }
+
+  /** One side of the quoter's book, kept at `price` (none at or under nought): see `quoterTurn`. */
+  private quoterSide(
+    symbol: string,
+    s: StockState,
+    side: Side,
+    price: number,
+    tick: number,
+    now: number,
+    size: number,
+  ) {
+    const have = s.book.tally(BACKGROUND, side, price > 0 ? price : -1);
+    if (have.orders === 0 && have.elsewhere === 0 && price <= 0) return;
+    // An order at any other price is cancelled, and every one where there is no price to post at.
+    if (have.elsewhere > 0 || price <= 0) s.book.cancelOwned(BACKGROUND, side, price > 0 ? price : null);
+    if (price <= 0) return;
+    let total = have.remaining;
+    if (have.orders >= MAX_QUOTER_ORDERS) {
+      // Too many small orders: start the side again.
+      s.book.cancelOwned(BACKGROUND, side, null);
+      total = 0;
+    }
+    if (total * 2 >= size) return;
+    this.quoteAt(symbol, s, side, price, tick, now, size - total);
   }
 
   /** One quoter order, tucked inside the other side's touch (a firm's order, say) rather than across it. */

@@ -63,7 +63,11 @@ http://localhost:5181.
   three strikes a side, settled in cash at each day's close, priced from the
   index's own volatility with a premium over it, a little skew, and a rise
   into each public release that falls away once it lands. A short option is
-  held on margin. It is in the simulator and closed: no game opens it yet.
+  held on margin. It has three blocks (an option maker that quotes from the
+  book's own volatility and hedges its delta in the index future, put-call
+  parity, and a straddle bought into a release) and a rival, Bluestem
+  Volatility, on the Prairie rack. It is in the simulator and closed: no game
+  opens it yet.
 - **Strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day

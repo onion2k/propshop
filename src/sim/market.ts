@@ -5,6 +5,7 @@
 // the stocks'.
 
 import {
+  MS_PER_DAY,
   MS_PER_HOUR,
   MS_PER_SECOND,
   MS_PER_YEAR,
@@ -32,7 +33,7 @@ import {
 } from './instrument';
 import { price as optionPrice, skewed, vega as optionVega } from './options';
 import type { Random } from './random';
-import type { ContractView, PairView, RolloverView } from './strategy';
+import type { ContractView, OptionStatic, PairView, RolloverView } from './strategy';
 import type {
   ContractSeriesSpec,
   CurrencySpec,
@@ -142,6 +143,8 @@ export interface SharedParts {
   exchangeIds: readonly string[];
   /** Each live instrument's value of a price point of one unit (`scaleOf`). */
   scales: Readonly<Record<string, number>>;
+  /** The live options and the model's rate, once the options desk is open; absent while it is closed. */
+  options?: { rate: number; chain: Readonly<Record<string, OptionStatic>> };
 }
 
 /** A pair's parts that stay while the live instruments do. */
@@ -248,6 +251,8 @@ export class Market {
    * expiry carries the event variance of each. Nought where nothing is handed in.
    */
   releases: (from: number, to: number) => number = () => 0;
+  /** The times of a day's market-wide releases (days since the epoch), handed in by the game from the public calendar. */
+  releaseTimes: (day: number) => readonly number[] = () => [];
   /** The indexes among the instruments (the stocks desk's, fixed at construction): what `settleIndexes` averages. */
   private readonly indexSpecs: { symbol: string; constituents: string[] }[];
   /** Where each symbol is listed among the live venues, kept while the live set is: cleared when it changes. */
@@ -455,9 +460,43 @@ export class Market {
       contracts: this.contractViews(),
       exchangeIds: this.exchanges.map((e) => e.id),
       scales,
+      ...this.optionParts(),
     };
     return this.shared;
   }
+
+  /** The live options as a block sees them, with the rate; none while the desk is closed. */
+  private optionParts(): { options?: { rate: number; chain: Record<string, OptionStatic> } } {
+    const o = this.optionsSpec;
+    if (!o || !this.optionsOpen) return {};
+    const chain: Record<string, OptionStatic> = {};
+    for (const s of this.stocks)
+      if (isOption(s))
+        chain[s.symbol] = {
+          right: s.right!,
+          strike: s.strike!,
+          expiry: s.expiry!,
+          underlying: s.underlying!,
+          multiplier: s.multiplier ?? 1,
+        };
+    return { options: { rate: o.rate, chain } };
+  }
+
+  /**
+   * The times of today's market-wide releases, the public calendar's (times only), handed in by the game: kept for the
+   * day, since the schedule is a day ahead and the whole day is known from its first minute.
+   */
+  todaysReleases(now: number): readonly number[] {
+    const day = Math.floor(now / MS_PER_DAY);
+    if (day !== this.releaseDay) {
+      this.releaseList = this.releaseTimes(day);
+      this.releaseDay = day;
+    }
+    return this.releaseList;
+  }
+
+  private releaseDay = -1;
+  private releaseList: readonly number[] = [];
 
   /** The lease stamp the shared parts' contracts were built at. */
   private sharedLeases = -1;

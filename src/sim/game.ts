@@ -555,6 +555,7 @@ export class Game {
     );
     this.news = new News(content.news, content.stocks);
     this.market.releases = (from, to) => releasesBetween(this.news, from, to);
+    this.market.releaseTimes = (day) => calendarOf(this, day).map((r) => r.at);
     this.deskNews = (content.deskNews ?? [])
       .filter((d) => this.market.desks.includes(d.desk))
       .map((d) => new DeskNews(d));
@@ -1577,13 +1578,12 @@ export class Game {
       ...Firm.defaultBlocks().map((d) => savedBlocks.find((b) => b.id === d.id) ?? d),
       ...savedBlocks.filter((b) => !Firm.defaultBlocks().some((d) => d.id === b.id)),
     ];
-    // A desk opened only because another needed it was not open at the save: its blocks join, off, now.
-    const asSaved = new Set(s.desks ?? []);
+    // A desk open at the save (or opened only because another needed it) whose blocks the save lacks, because they were
+    // not yet written or the desk was not open: they join, off, now.
     for (const d of wanted)
-      if (!asSaved.has(d))
-        for (const id of DESK_BLOCKS[d] ?? [])
-          if (!firm.blocks.some((b) => b.id === id))
-            firm.blocks.push({ id, enabled: false, params: paramsFrom(blockById(id).spec) });
+      for (const id of DESK_BLOCKS[d] ?? [])
+        if (!firm.blocks.some((b) => b.id === id))
+          firm.blocks.push({ id, enabled: false, params: paramsFrom(blockById(id).spec) });
     firm.reactionMs = content.desk.reactionMs;
     Object.assign(g, { firm });
     const saved = s.competitors.map((c) => {
