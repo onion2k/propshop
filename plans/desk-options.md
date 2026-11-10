@@ -1,6 +1,6 @@
 # The options desk: part 7 of the trading roadmap
 
-State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7d built 2026-11-10, 7e next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
+State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7d built 2026-11-10, 7e built 2026-11-10 (not committed, not yet looked at headless), 7f next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
 and looked at headless by this session, committed and pushed on its own before the next part starts. The house rule
 is to build on `sonnet`; the metals desk was built on Opus at Chris's word, and the model menu is his.
 
@@ -672,3 +672,110 @@ desk's rival, by the same code that gives a desk opened by another its blocks; n
 view's `options` is reached through `symbols`, so a player who watches too few options sees fewer (7e). `OrderBook.firstOf`
 is now used only by a test. The generic `Firm.mark` change (venues that list the symbol) and the paced `decide` apply to
 every desk and every firm; they change no pinned figure. `README.md`'s blocks line lists the stocks' blocks only.
+
+## Result for 7e
+
+(Built 2026-11-10, on sonnet by the `builder` agent, not committed.)
+
+**Built.**
+
+- The chain, `src/ui/OptionsDesk.tsx`, with its working in `src/ui/options.ts` (`chainOf`, `straddleOf`, `timeToGo`,
+  `chainWatched`, `watchChain`), on the Market page between the watchlist and the selected symbol's detail. A table an
+  expiry, a row a strike, a call and a put each with bid, ask, implied volatility (inverted from the middle of the book
+  by `impliedFrom`) and delta (the model's at it), a watch box on each outer edge, the expiry's time to go, the line
+  "The market expects a move of ±$X by the close" (the call and put at the strike nearest the index) and the at-the-money
+  implied volatility against the realised. The options leave the watchlist (the chain is where they are watched and
+  picked); a click on a cell picks the option and the detail below shows its books and its terms.
+- Position: the desk's greeks (`OptionsPosition.tsx`) from `Snapshot.options`, worked out by `Game.optionsNow()` in
+  `snapshot()` only (`totalGreeks`, `src/sim/options.ts`): delta in index units, the futures to hedge, gamma, theta a day
+  and vega a point. `scenario(positions, indexMove, volMove, ctx)` in `src/ui/overview.ts` and its two sliders (±2%,
+  ±5 points). The `stocks` entries of options carry `option` (right, strike, expiry, underlying, multiplier).
+- The day's report: `DayReport.expired` (what each option held to the close settled at, paid and made), added to the
+  Options row of By desk and the option's By stock row with no fill; a list under the By desk grid; `dayCause`'s
+  "expiry"; an `expiry` event and moment (between a delivery and a round).
+- Stage 6, "Volatility" (`LAST_STAGE` 6): `'desk:options': 6` with its three blocks, `StageId` widened, the sixth intro
+  card, `Stage.needs` so that stage 5 asks for the futures desk's three lessons before stage 6, which stay the futures
+  desk's (shown at stage 3). `DESK_NAMES.options`, so the cover's group heading is ready for 7f's experiments.
+- 22 glossary entries, each linked where the page uses it (a test collects the links from the chain, the greeks, the
+  what-if and the report and finds all 22); the words in `OPTIONS_WORDS` and `MOMENT_WORDS.expiry`, `DAY_CAUSE_WORDS.expiry`.
+- `Game.setWatchList` and `store.setWatchList`, for the shortcut.
+- Layout: a fixed table layout with set column widths, one-line cells of one height, a dash for a missing quote, the
+  straddle, volatility, watch and legend lines each with a fixed height, and the table scrolling inside its own box
+  at 375 wide. Written from the CSS alone: not looked at (below).
+
+**What a player on the Prairie rack sees by default when the desk opens.** The rack follows twenty symbols and, with
+the list never set, the first twenty listed. With every desk open (39 listed: 13 stocks, the index, `EURUSD`,
+`USDJPY`, `EURJPY`, `XAU`, `XAG`, `IXF0`, `IXF1`, the metals' six, the options' twelve) that is the thirteen stocks, the
+index, the three pairs, the two metals and `IXF0`: **no option and not the second future**, so the player's options
+blocks (and `eventVol` and `parity` especially) see nothing until the list names the options. With the futures and
+options alone open (28 listed) it is the stocks, `IXF0`, `IXF1` and four calls. The chain says "Your blocks see 0 of 12
+options (watching 20 of 20)" and offers "Watch the chain", which puts the index, both futures and the twelve options in
+first and refills from what was watched in listing order (five places on a rack), saying what it let go (thirteen
+symbols on the default rack: GRD to RDG, the pairs and the metals). A single option is watched by its box, which is
+disabled while the computer is full.
+
+**Speed.** Nothing runs per tick: the page's work is in the snapshot and the components, the expiry once a day at 16:00.
+`npm run floors` alone, HEAD (`a6ca0ab`, a worktree) then this tree, three times each, interleaved: every desk open
+HEAD 36,527 / 36,542 / 36,177, this tree 36,265 / 36,321 / 36,330; none open HEAD 90,671 / 90,717 / 90,263, this tree
+90,360 / 89,743 / 90,373. Both floors pass in all runs (35,000 is 3.5% to 4.1% under). Details in `docs/measured.md`.
+
+**The money.** The options maker earns about $116,000 a day (Bluestem about $129,000), because the quoter's customers
+are uninformed. **This is 7f's to tune and 7e does not touch it; but the desk is now reachable with it:** at stage 6 and
+in free play a player who watches the chain and turns `optionMaker` on collects it. Do not ship stage 6 as it is.
+
+**Tests (written first; the first run failed for the missing code, as listed).** `test/chain.test.ts` (new, 13),
+`test/optionsreport.test.ts` (new, 17), `test/overview.test.ts` (+ scenario, greeks, expiry), `test/moments.test.ts`
+(+ the expiry moment), `test/stages.test.ts` (the sixth stage and `needs`), `test/ui.test.tsx` "Options" (16): the chain,
+watching an option, the shortcut, the greeks, the what-if at ±2% and ±5 points, the expiry in the report, the 22 terms.
+Updated by the stage: `test/ui.test.tsx` (21 blocks listed with everything shown, six stage headings), `test/stages.test.ts`
+(the stage table to 6, the desk test), `test/targets.test.ts` (stage 6 has no target yet), `test/moments.test.ts` (the rank).
+Held to the bit: every fingerprint in `test/instruments.test.ts` and `test/metalblocks.test.ts` and `test/experiments.test.ts`
+(the options desk is closed in them all, and the snapshot gains nothing while it is).
+
+**Found and fixed on the way.** `Exchange.takersSince` threw `POX does not list OC00` for an order that was in the wire
+when its option was delisted at the close (the rent test, which plays a Friday in free play, found it now that free play
+opens the desk). `submit` and `cancel` already refused an unlisted symbol; `takersSince` now returns nothing for one. A hand
+order's `exchange.quote` in the same case is the same hazard and is left (below).
+
+**Not checked.**
+
+- The look: no dev server was started, as asked. The chain at 1280 and 375 wide, its fixed room, the scrolling box, the
+  sliders and the report are untested by eye; jsdom has no layout, so the tests hold the structure and the figures, not the
+  widths. The chain's 540px minimum and the greeks block's grid at 375 are the first things to look at.
+- The stage harness with the sixth stage, and a staged game played to stage 6 by the lessons through the page (the store test
+  does it with stored progress).
+- The scenario against the sim: it is the model's repricing at once, not a replay; gamma and vega as the sim's own books move are not compared.
+- The chain's reading in the late afternoon or after the close (the straddle moves to tomorrow's by a test); a day with the index gapped
+  through the chain's strikes.
+- The hand order's `exchange.quote` for an unlisted symbol, and the moment's wording on screen.
+
+**What I noticed and left alone.**
+
+- Stage 6 has no target (`test/targets.test.ts` now says so); 7f's `deskTarget('options')` needs the Prairie rack's rent, which
+  the options desk has no rack of its own to read, so the helper needs a rack lookup.
+- `Stage.needs` means a player who skips the futures lessons is held at stage 5 and the options desk stays closed; a game with the futures desk
+  open from a save, or in free play, is not held.
+- With the desk open in an existing staged game and the watch list unset, the player's list is the first twenty, which
+  now leaves out the second future as well as the options.
+- `eventVol` and `parity` are dormant on the default list for the same reason; 7f's lessons ("Hedge the delta", "Find parity") should
+  start from the shortcut.
+- `README.md`'s blocks line lists the stocks' blocks only.
+
+**Fixed after review (2026-11-10): the implied volatility on the trading clock.** The chain inverted the mid on calendar
+time and showed that beside the realised figure, which is quoted on a trading year: at 10:30 with 5.5 h left it read
+69% against 23%, a premium of 46 points. `tradingVol(iv, from, to, closedWeight)` (`src/sim/options.ts`, exported through
+`src/sim`) now converts, `iv * sqrt(calendar years / trading years)` with `Market.tradingYears`' own count, and the chain's
+cells, the at-the-money line and its premium use it (`Snapshot.options.closedWeight` carries the weight). The delta
+is still the model's, at the calendar-time volatility it was inverted at. The glossary entry and the line say it is on
+the trading clock. Fresh free-play game, seed 1, `skipToOpen` then one hour (10:30, day 0): at the money implied 21.4%
+against realised 16.3% (the market's at-the-money 20.3%), a premium of 5.1 points. Today (strikes 5200 / 5300 / 5400)
+calls 24.1 / 21.5 / none, puts 25.1 / 21.4 / 19.8; tomorrow calls 24.0 / 19.8 / none, puts 23.6 / 19.5 / 16.1 (no bid on
+the far call). The straddle: ±$0.59. The tomorrow header no longer says 16:00 twice. Tests: `test/chain.test.ts` (the
+conversion, and every cell within 0.02 + 10% of the market's own skewed figure; both failed before), `test/ui.test.tsx`
+(one 16:00 in a heading).
+
+**The 7d blocks are untouched, and their round trip is self-consistent** (invert on calendar time, price at the
+inverted volatility plus or minus the edge on the same time). But **`optionMaker`'s `edge` (and Bluestem's 1 point) is
+therefore in calendar-volatility points**: a point is about 2.3 times smaller in trading terms at 10:30 today (the
+ratio is the displayed figure over the calendar one), and the ratio grows towards the close. The parameter's wording
+("volatility points") and 7f's tuning should know it.

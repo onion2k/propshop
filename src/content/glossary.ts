@@ -843,6 +843,244 @@ export const GLOSSARY: GlossaryEntry[] = [
       'It never slows before an unannounced headline: a company’s or a sector’s news is not something the market ' +
       'tells you ahead of time, so watch cannot either. The line beside the speeds says what is next, and what is being watched while it is slow.',
   },
+  {
+    id: 'option',
+    term: 'Option',
+    short: 'The right, not the duty, to buy or sell the index at a set price by a set time.',
+    long:
+      'An option is a contract you pay for. A call gives the right to buy the index at the strike; a put the right ' +
+      'to sell it there. You pay the premium at once and, if the index ends where the right is worth using, you are ' +
+      'paid the difference at the expiry; if it does not, the premium is gone and that is all you can lose. The ' +
+      'seller has it the other way: keeps the premium, and owes whatever the buyer is owed. Here an option is on the ' +
+      'index, a hundred times its price, and expires the same day or the next at the stocks’ 16:00 close. It is ' +
+      'insurance when you hold it against something else, and a bet on a move when you do not.',
+  },
+  {
+    id: 'call',
+    term: 'Call',
+    short: 'An option to buy the index at the strike. It gains as the index rises.',
+    long:
+      'A call is worth something at the expiry if the index is above its strike: the difference, times a hundred. ' +
+      'Below the strike it is worth nothing. Before then its price is that, if there were no time left, plus what ' +
+      'the time still might add. Its delta is between nought and one: it rises with the index, a fraction of the ' +
+      'way. A call at the money is as likely to end worth something as not.',
+  },
+  {
+    id: 'put',
+    term: 'Put',
+    short: 'An option to sell the index at the strike. It gains as the index falls.',
+    long:
+      'A put is worth something at the expiry if the index is below its strike: the difference, times a hundred. ' +
+      'Above the strike it is worth nothing. It is the insurance: hold the index and a put under it, and a fall in ' +
+      'the index is paid for by the put, at the cost of the premium. Its delta is between minus one and nought: it ' +
+      'rises as the index falls. Puts usually cost more volatility than calls (the skew), because people pay for ' +
+      'protection.',
+  },
+  {
+    id: 'strike',
+    term: 'Strike',
+    short: 'The price an option lets you buy or sell the index at.',
+    long:
+      'Each option has one strike, fixed when it is listed and kept for its life. The chain lists three on each ' +
+      'expiry, a dollar apart: one at the index when the expiry was listed, one a dollar below and one a dollar ' +
+      'above. If the index moves a long way in the day the chain does not follow it, so the middle strike may end ' +
+      'up well off the money and the far ones very far. The strike sets whether an option is in or out of the money.',
+  },
+  {
+    id: 'premium',
+    term: 'Premium',
+    short: 'The price of an option: what the buyer pays and the seller keeps.',
+    long:
+      'The premium is paid when the option is bought, in full, and kept by the seller whatever happens after. It is ' +
+      'quoted in the index’s points for one unit, and a contract is a hundred of them: a premium of 0.34 is $34 a ' +
+      'contract. It is made of the intrinsic value plus the time value. A straddle’s premium (a call and a put at the ' +
+      'same strike) is, to a rough measure, the move the market expects, because the buyer is paid back only if the ' +
+      'index moves at least that far.',
+  },
+  {
+    id: 'in-the-money',
+    term: 'In the money',
+    short: 'An option that would pay something if it expired now.',
+    long:
+      'A call is in the money when the index is above its strike, a put when the index is below it. At the expiry an ' +
+      'option in the money is settled in cash for how far in it is; the long receives it and the short pays it. ' +
+      'Before then an option in the money is worth at least that, plus time value. It has a large delta, near one ' +
+      'for a call deep in the money, so it moves almost one for one with the index.',
+  },
+  {
+    id: 'out-of-the-money',
+    term: 'Out of the money',
+    short: 'An option that would pay nothing if it expired now.',
+    long:
+      'A call is out of the money when the index is below its strike, a put when it is above. At the expiry it ' +
+      'expires worthless: nothing is paid, and the buyer has lost the whole premium. Before then it is worth only ' +
+      'its time value, the chance that the index gets there. The further out it is, the cheaper, the smaller its ' +
+      'delta, and the more it depends on the volatility being what the market says. An option at the strike is ' +
+      'at the money, and also pays nothing if it ends exactly there.',
+  },
+  {
+    id: 'intrinsic-value',
+    term: 'Intrinsic value',
+    short: 'What an option would pay if it expired now: how far in the money, or nothing.',
+    long:
+      'For a call it is the index less the strike, for a put the strike less the index, and never below nought. It ' +
+      'is the floor under the premium: nobody sells an option for less than it would pay at once. At the expiry ' +
+      'the premium is the intrinsic value and nothing else, and that is the amount settled in cash. An option out ' +
+      'of the money has none; the premium it still has is all time value.',
+  },
+  {
+    id: 'time-value',
+    term: 'Time value',
+    short: 'What an option is worth over its intrinsic value: the chance of more before it expires.',
+    long:
+      'While an option has time to go the index might yet move in its favour, and that chance has a price. It is ' +
+      'largest at the money and with the most time and the most volatility, and it all wastes away by the expiry: ' +
+      'that wasting is theta. A buyer pays for it and watches it leak a little every minute; a seller collects it ' +
+      'and is paid for taking the risk that the index moves enough to cost more than it brought in.',
+  },
+  {
+    id: 'implied-volatility',
+    term: 'Implied volatility',
+    short: 'The volatility that makes the model give the option’s price: how much move the price expects.',
+    long:
+      'A model prices an option from the index, the strike, the time left and a volatility. Turn it around: take the ' +
+      'price on the book and find the volatility that gives it. That is the implied volatility, an annual figure in ' +
+      'per cent, and it is what the market expects the index to move, whatever it later does. The chain shows it ' +
+      'for each option, worked out here by bisection from the middle of the bid and the ask, and quoted on trading ' +
+      'time (the session’s hours, as the realised figure is), so the two can be set side by side. Options with the same ' +
+      'expiry but different strikes differ in it: that is the skew.',
+  },
+  {
+    id: 'realised-volatility',
+    term: 'Realised volatility',
+    short: 'How much the index has actually been moving, as an annual figure.',
+    long:
+      'Implied volatility is a forecast; realised volatility is what has happened. The game reads it from the ' +
+      'index’s moves each second in the stocks’ hours, weights the recent half-hour most, and quotes it on a ' +
+      'trading year so that it can be set beside the implied figure. A quiet morning has a low one and a day of ' +
+      'news a high one. The option market prices the future from it, plus a premium, and then the day proves it ' +
+      'right or wrong.',
+  },
+  {
+    id: 'volatility-premium',
+    term: 'Volatility premium',
+    short: 'How far the implied volatility sits above the realised: what sellers of options are paid for.',
+    long:
+      'Options are usually priced for a little more movement than there then is, because the seller is taking a ' +
+      'risk that the buyer is paying to avoid. Here the at-the-money volatility is set about fifteen per cent over ' +
+      'the realised figure, plus what the releases still to come add. A market maker who sells options earns that ' +
+      'on a quiet day and gives it back, and more, on a trending or news day, when the index moves further than ' +
+      'the price said. Whether it pays is the question the hedged maker answers.',
+  },
+  {
+    id: 'skew',
+    term: 'Skew',
+    short: 'Options at different strikes have different implied volatilities: puts cost more than calls.',
+    long:
+      'If every strike had one volatility the chain would be smooth. It is not: here the volatility rises by a tenth ' +
+      'of itself for each one per cent a strike is below the index, so a put below the money costs a higher ' +
+      'volatility than a call above it. In the real market the same tilt comes from the demand for protection ' +
+      'against a fall. Read across a row of the chain: the implied volatility at the low strike is above the one at ' +
+      'the high strike. It is fixed here, not fitted to the crowd.',
+  },
+  {
+    id: 'delta',
+    term: 'Delta',
+    short: 'How much an option’s price moves for a move of one in the index.',
+    long:
+      'A call’s delta is between nought and one, a put’s between minus one and nought. A delta of 0.5 means the ' +
+      'option gains about half a cent for every cent the index gains. A contract is a hundred units, so ten calls at ' +
+      '0.5 act like 500 units of the index, which is five contracts of its future. Delta changes as the index moves ' +
+      '(that is gamma) and as time passes. The desk’s delta in Position is the sum over everything held, and is ' +
+      'what a hedge in the future cancels.',
+  },
+  {
+    id: 'gamma',
+    term: 'Gamma',
+    short: 'How fast delta changes as the index moves. A seller pays for it on a trending day.',
+    long:
+      'Gamma is the change in delta for a move in the index, and it is largest at the money close to the expiry. ' +
+      'A buyer is long gamma: as the index rises the delta rises, as it falls the delta falls, so the position gains ' +
+      'either way, more than the delta alone says. A seller is short gamma and the reverse: chasing the index, ' +
+      'buying what has risen and selling what has fallen. That is why a trending day hurts the maker, and why the ' +
+      'what-if under the greeks shows a loss for a short straddle whichever way the index goes.',
+  },
+  {
+    id: 'theta',
+    term: 'Theta',
+    short: 'How much an option’s price falls with a day passing. The buyer pays it, the seller earns it.',
+    long:
+      'Time value wastes away, and theta is how fast: the cents an option loses to a calendar day passing, the other ' +
+      'things the same. It is largest at the money and on the last day, when a whole day is most of what is left. ' +
+      'The desk’s figure in Position is a day’s worth, negative for a buyer and positive for a seller. It is the ' +
+      'trade the other greeks pay for: a seller earns theta every day and pays it back in gamma on a day the index ' +
+      'moves.',
+  },
+  {
+    id: 'vega',
+    term: 'Vega',
+    short: 'How much an option’s price moves for a point of volatility.',
+    long:
+      'A buyer is long vega: if the implied volatility rises by a point the option is worth more, and by the ' +
+      'same amount less if it falls. Vega is largest at the money and with more time to go. The desk’s figure in ' +
+      'Position is what a point of volatility is worth in cents; the what-if moves it by five. A release ahead ' +
+      'holds the implied volatility up and, when it lands, takes it away: the crush.',
+  },
+  {
+    id: 'delta-hedge',
+    term: 'Delta hedge',
+    short: 'Trading the index’s future to cancel the delta of the options held.',
+    long:
+      'A maker who sells options is left with a bet on the index. The delta says how big: if the desk is long 500 ' +
+      'units, sell five contracts of the future (a hundred units each) and the sum is nought. The bet on direction ' +
+      'is gone; what is left is gamma, theta and vega, the bets on how much the index moves and how fast. The ' +
+      'hedge has to be done again as the delta changes, and each trade pays a fee. Position says how many futures ' +
+      'would flatten the desk; the option maker block does it for you.',
+  },
+  {
+    id: 'put-call-parity',
+    term: 'Put-call parity',
+    short: 'A call less a put at one strike equals the future less the strike: if not, there is a free trade.',
+    long:
+      'Buy a call and sell a put at the same strike and expiry and you hold what a future bought at the strike would ' +
+      'give: the same payoff whatever the index does. So call less put must equal the future’s price less the ' +
+      'strike, discounted for the time. When the books are a little out of line, the three can be traded against ' +
+      'each other for the gap, less the fees on every leg. The books here are one model’s, so the gap is rarely ' +
+      'wide enough to pay; the parity block waits for the one that is.',
+  },
+  {
+    id: 'conversion',
+    term: 'Conversion',
+    short: 'Buy the future, buy a put and sell a call at one strike: the parity trade when the future is cheap.',
+    long:
+      'A conversion turns a call into a future and a put: sell the call, buy the put, buy the future. At expiry ' +
+      'the three net to the strike whatever the index did, so if they cost less than that, the difference is ' +
+      'locked in. The reverse, selling the future and the put and buying the call, is a reversal, for when the ' +
+      'future is dear. Both depend on all three legs filling: a missed leg leaves a position, which the block ' +
+      'scratches by closing the rest.',
+  },
+  {
+    id: 'the-crush',
+    term: 'The crush',
+    short: 'Implied volatility falls away once a known release has landed.',
+    long:
+      'Before a scheduled release the market cannot know which way the index will jump, only that it may, so the ' +
+      'implied volatility of every option that expires after it carries the release’s share. When the headline ' +
+      'lands that uncertainty is gone and the share goes with it, at once: the implied volatility drops, and with ' +
+      'it the option’s price, whether the index moves or not. A buyer of a straddle into a release needs the ' +
+      'move to be bigger than the crush. The economic calendar says when; it never says which way.',
+  },
+  {
+    id: 'cash-settlement',
+    term: 'Cash settlement',
+    short: 'At expiry the option pays its intrinsic value in cash, and nothing is delivered.',
+    long:
+      'Nobody takes or gives the index. At the 16:00 close an option in the money is settled for its intrinsic ' +
+      'value, how far in the money it is, times a hundred: the long receives it and the short pays it, and out of the money, or exactly ' +
+      'at the strike, nothing is paid. The premium was paid when the option was traded, so what the option made ' +
+      'is the settlement less what it cost. An option held through the close by a firm whose block is off still ' +
+      'settles. The day’s report lists each one.',
+  },
 ];
 
 export function glossary(id: string): GlossaryEntry | undefined {

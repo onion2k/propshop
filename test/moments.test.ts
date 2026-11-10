@@ -22,6 +22,14 @@ const delivery = (at: number, units = 2): GameEvent => ({
   units,
   value: 41_200_000,
 });
+const expiry = (at: number, made = 1250): GameEvent => ({
+  kind: 'expiry',
+  at,
+  symbol: 'OC00',
+  qty: 10,
+  cash: 40_000,
+  made,
+});
 const round = (at: number, net = 1234): GameEvent => ({ kind: 'round', at, block: 'triangle', net });
 const unlock = (at: number): GameEvent => ({ kind: 'unlock', at, what: 'darkweb' });
 
@@ -79,7 +87,7 @@ describe('choosing a moment', () => {
       log = log.filter((e) => e.kind !== r.current!.moment.kind);
     }
     expect(order).toEqual(['margin', 'fine', 'halt', 'delivery', 'round', 'unlock']);
-    expect(MOMENT_RANK).toEqual(['margin', 'fine', 'halt', 'delivery', 'round', 'race', 'unlock']);
+    expect(MOMENT_RANK).toEqual(['margin', 'fine', 'halt', 'delivery', 'expiry', 'round', 'race', 'unlock']);
     expect(kindOf(chooseMoment(input([unlock(T0 + 1)], { racesWon: 1 })))).toBe('race');
   });
 
@@ -187,6 +195,23 @@ describe('choosing a moment', () => {
     const log = [margin(T0 - 5), fine(T0), round(T0 - 1000)];
     expect(kindOf(chooseMoment(input(log)))).toBeNull();
     expect(kindOf(chooseMoment(input([...log, halt(T0 + 1)])))).toBe('halt');
+  });
+
+  it('marks an option’s expiry at the options desk’s stage, between a delivery and a round', () => {
+    // At stage 6, where the desk is open.
+    const m = chooseMoment(input([expiry(T0 + 1)], { stage: 6 })).current!.moment;
+    expect(m.kind).toBe('expiry');
+    expect(m.text).toContain('OC00');
+    expect(m.text).toContain('$12.50');
+    expect(m.term).toBe('cash-settlement');
+    expect(m.place.page).toBe('market');
+    const lost = chooseMoment(input([expiry(T0 + 1, -400)], { stage: 6 })).current!.moment;
+    expect(lost.text).toContain('$4.00');
+    // Hidden before it, and spent.
+    expect(kindOf(chooseMoment(input([expiry(T0 + 1)], { stage: 5 })))).toBeNull();
+    // Over a round, under a delivery.
+    expect(kindOf(chooseMoment(input([round(T0 + 1), expiry(T0 + 2)], { stage: 6 })))).toBe('expiry');
+    expect(kindOf(chooseMoment(input([expiry(T0 + 1), delivery(T0 + 2)], { stage: 6 })))).toBe('delivery');
   });
 
   it('has words for every kind', () => {

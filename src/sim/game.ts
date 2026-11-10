@@ -47,7 +47,7 @@ import type { Level } from './orderbook';
 import type { Indicative } from './strategy/types';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
 import { calendarOf, CALENDAR_LABEL, isMarketWide, releasesBetween, type CalendarItem } from './calendar';
-import { intrinsic } from './options';
+import { intrinsic, totalGreeks, type Greeks, type HeldOption, type Right } from './options';
 import { DeskNews, News, type Published, type SavedDeskNews, type SavedNews } from './news';
 import { Random, deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
@@ -109,6 +109,11 @@ export type GameEvent =
    * (negative where the firm was short), `value` the cents it was worth at the final price.
    */
   | { kind: 'delivery'; at: number; symbol: string; units: number; value: number }
+  /**
+   * An option the firm held to the close was settled in cash at its expiry: the contracts (negative where short), the
+   * cents it paid (the long receives it, the short pays it) and what it made against its cost, cents.
+   */
+  | { kind: 'expiry'; at: number; symbol: string; qty: number; cash: number; made: number }
   /** An arbitrage block's round closed (the triangle's three legs filled): what it netted at home, cents, fees out. */
   | { kind: 'round'; at: number; block: string; net: number };
 
@@ -146,6 +151,24 @@ export interface Tally {
   fills: number;
   realised: number;
   fees: number;
+}
+
+/** The most options a day's expiry lists: the chain has twelve and only one expiry's six series fall on a day. */
+export const MAX_EXPIRED = 12;
+
+/** An option the firm held to its expiry, settled in cash: what it was, what it settled at and what that was worth, cents. */
+export interface Expired {
+  symbol: string;
+  right: Right;
+  strike: number;
+  /** Contracts held, negative where short. */
+  qty: number;
+  /** What it settled at, the underlying's points in the money (nought out of it). */
+  settled: number;
+  /** Cents moved: received by the long, paid by the short (negative). */
+  cash: number;
+  /** Cents it made against its cost: the day's result from holding it, which the fills did not tell. */
+  made: number;
 }
 
 /** What a day was, written at its close. Money in cents. */
@@ -196,6 +219,8 @@ export interface DayReport {
    * and `equityAtClose`. Present on a Friday where the setup in use had a rent; absent otherwise and before rent.
    */
   rent?: number;
+  /** The options held to the close and settled in cash, where there were any; counted in `pnl` and in By desk. */
+  expired?: Expired[];
 }
 
 /** The older shape of a day, kept so a save from before the report still loads. */
@@ -262,6 +287,8 @@ interface Today {
   markouts?: Markout[];
   /** Fills of desks other than the stocks, by desk; absent until one trades. */
   byDesk?: Record<string, Tally>;
+  /** The firm's options settled at today's close, `MAX_EXPIRED` at most; absent until one is. */
+  expired?: Expired[];
 }
 
 function median(xs: readonly number[]): number {
@@ -409,6 +436,8 @@ export interface Snapshot {
       depth: { bids: Level[]; asks: Level[] };
     }[];
     history: HistoryPoint[];
+    /** An option: its terms. Its price is the stock's own bid and ask, and its fair value the model's. */
+    option?: { right: Right; strike: number; expiry: number; underlying: string; multiplier: number };
     /** A contract priced from its underlying: what it is on, when it expires, its basis and what it asks. */
     contract?: {
       underlying: string;
@@ -425,6 +454,22 @@ export interface Snapshot {
   }[];
   /** The margin the firm's margined positions ask, cents, at their marks; absent while it holds none. */
   margin?: { initial: number; maintenance: number };
+  /**
+   * The options desk, while it is open: the underlying's fair value now, the rate, the volatility realised and the
+   * at-the-money one the market prices, the options the firm holds at the model's volatility, and their greeks totalled.
+   * Worked out here, in the snapshot, and never in a tick.
+   */
+  options?: {
+    underlying: string;
+    spot: number;
+    rate: number;
+    realised: number;
+    atm: number;
+    /** The weight of shut hours in the trading clock the volatilities are quoted on. */
+    closedWeight: number;
+    held: HeldOption[];
+    greeks: Greeks;
+  };
   /**
    * The venues, each with its fee; `dealer` where it takes a last look at an order before it fills it. A venue with
    * fixes has `fixes`: the times of day they are at, the moment the fix whose call is running uncrosses (`call`, null
@@ -705,6 +750,7 @@ export class Game {
               }
             : null;
         for (const f of this.firms()) {
+          if (option && f === this.firm) this.noteExpiry(c, price);
           const left = f.expire(c.symbol, price, delivery, option);
           // Only the player's deliveries are told; a rival's is its own business.
           if (left && f === this.firm)
@@ -720,6 +766,28 @@ export class Game {
       const gone = this.market.refreshContracts(this.now);
       for (const f of this.firms()) f.onClose(gone);
     }
+  }
+
+  /**
+   * The player's option about to be settled in cash: what it settled at, what that paid and what it made against its
+   * cost go into the day's report (and its By desk and By stock rows, with no fill), and the player is told. The firm's
+   * own `expire` then moves the cash; this reads the position first and moves nothing.
+   */
+  private noteExpiry(c: InstrumentSpec, settled: number): void {
+    const pos = this.firm.positions.get(c.symbol);
+    if (!pos || pos.qty === 0) return;
+    const scale = this.market.scales.get(c.symbol) ?? 1;
+    const cash = Math.round(valueOf(scale, pos.qty, settled));
+    const made = Math.round(valueOf(scale, pos.qty, settled - pos.avgCost));
+    const list = (this.today.expired ??= []);
+    if (list.length < MAX_EXPIRED)
+      list.push({ symbol: c.symbol, right: c.right!, strike: c.strike!, qty: pos.qty, settled, cash, made });
+    const desk = deskOf(c);
+    const row = ((this.today.byDesk ??= {})[desk] ??= { fills: 0, realised: 0, fees: 0 });
+    row.realised += made;
+    const sym = (this.today.bySymbol[c.symbol] ??= { fills: 0, realised: 0, fees: 0 });
+    sym.realised += made;
+    this.emit({ kind: 'expiry', at: this.now, symbol: c.symbol, qty: pos.qty, cash, made });
   }
 
   /** The currencies' rollover, for every firm: what each pair's two rates and the venue's spread pay, on its days. */
@@ -997,6 +1065,7 @@ export class Game {
       dropped: this.firm.stats.ordersDropped - this.today.statsAtOpen.ordersDropped,
       ...(this.today.byDesk ? { byDesk: this.byDesk() } : {}),
       ...(rent > 0 ? { rent } : {}),
+      ...(this.today.expired ? { expired: this.today.expired.map((x) => ({ ...x })) } : {}),
     });
     if (this.days.length > DAYS_KEPT) this.days.splice(0, this.days.length - DAYS_KEPT);
     this.emit({ kind: 'close', at: this.now, dayPnl: pnl });
@@ -1138,6 +1207,16 @@ export class Game {
     const current = this.firm.watching(this.market.stocks.map((s) => s.symbol));
     const next = on ? [...current, symbol] : current.filter((w) => w !== symbol);
     this.firm.setWatch(next);
+    this.version++;
+  }
+
+  /**
+   * Watch exactly these symbols (those that exist, the computer's limit applied when the blocks look): the options
+   * chain's shortcut, which makes room for the whole chain at once.
+   */
+  setWatchList(symbols: readonly string[]): void {
+    const known = new Set(this.market.stocks.map((s) => s.symbol));
+    this.firm.setWatch(symbols.filter((w) => known.has(w)));
     this.version++;
   }
 
@@ -1296,8 +1375,20 @@ export class Game {
         })),
         history: this.market.history.get(s.symbol) ?? [],
         ...(isCarried(s) ? { contract: this.contractOf(s) } : {}),
+        ...(isOption(s)
+          ? {
+              option: {
+                right: s.right!,
+                strike: s.strike!,
+                expiry: s.expiry!,
+                underlying: s.underlying!,
+                multiplier: s.multiplier ?? 1,
+              },
+            }
+          : {}),
       })),
       ...this.marginNow(),
+      ...this.optionsNow(),
       exchanges: this.market.exchanges.map((e) => ({
         id: e.id,
         name: e.spec.name,
@@ -1363,6 +1454,44 @@ export class Game {
       ),
       days: this.days,
       log: this.log,
+    };
+  }
+
+  /**
+   * The options desk for the snapshot, while it is open: the options the firm holds, valued at the model's volatility
+   * for each at the underlying's fair value now, and their greeks totalled. Asked for by `snapshot` and by nothing that
+   * runs a tick.
+   */
+  private optionsNow(): Pick<Snapshot, 'options'> {
+    const spec = this.content.options;
+    if (!spec || !this.market.optionsOpen) return {};
+    const spot = this.market.fair.get(spec.underlying) ?? 0;
+    const held: HeldOption[] = [];
+    for (const o of this.market.stocks) {
+      if (!isOption(o)) continue;
+      const qty = this.firm.positions.get(o.symbol)?.qty ?? 0;
+      if (qty === 0) continue;
+      held.push({
+        symbol: o.symbol,
+        right: o.right!,
+        strike: o.strike!,
+        expiry: o.expiry!,
+        qty,
+        multiplier: o.multiplier ?? 1,
+        vol: this.market.optionVol(o, this.now),
+      });
+    }
+    return {
+      options: {
+        underlying: spec.underlying,
+        spot,
+        rate: spec.rate,
+        realised: this.market.realisedVol(),
+        atm: this.market.atmVol(),
+        closedWeight: spec.closedWeight,
+        held,
+        greeks: totalGreeks(held, spot, spec.rate, this.now),
+      },
     };
   }
 

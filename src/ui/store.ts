@@ -134,6 +134,8 @@ export interface Store {
   buyTip: Game['buyTip'];
   setRisk: Game['setRisk'];
   setWatch: Game['setWatch'];
+  /** Watch exactly these symbols: the options chain's shortcut. */
+  setWatchList: Game['setWatchList'];
   setRules: Game['setRules'];
   /** A click at the desk: the order leaves after the reaction time. */
   hand: Game['hand'];
@@ -787,6 +789,7 @@ export function createStore(
     buyTip: act((id) => game.buyTip(id)),
     setRisk: act((change) => game.setRisk(change)),
     setWatch: act((symbol, on) => game.setWatch(symbol, on)),
+    setWatchList: act((symbols) => game.setWatchList(symbols)),
     setRules: act((exchange, change) => game.setRules(exchange, change)),
     hand: act((intent) => game.hand(intent)),
     stepTicks: act((n) => void runTicks(n)),

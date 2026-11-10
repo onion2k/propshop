@@ -1,7 +1,7 @@
 // The strategy: the blocks, each with a switch and sliders and a paragraph on what it is for, and a meter
 // showing how much of the computer is in use.
 
-import { shows, type StageId } from '../content';
+import { LAST_STAGE, shows, type StageId } from '../content';
 import { BLOCKS, SCRIPT_ID, type Snapshot } from '../sim';
 import { Term } from './Glossary';
 import { blockRecord, blockVerdict } from './overview';
@@ -26,10 +26,13 @@ const TERM_FOR: Record<string, string> = {
   curve: 'futures-curve',
   fixArb: 'fix',
   crossPairs: 'miner',
+  optionMaker: 'delta-hedge',
+  parity: 'put-call-parity',
+  eventVol: 'the-crush',
 };
 
 /** `stage` is the stage in force; a block that is on is shown whatever the stage, so nothing running is hidden. */
-export function StrategyPanel({ s, store, stage = 5 }: { s: Snapshot; store: Store; stage?: StageId }) {
+export function StrategyPanel({ s, store, stage = LAST_STAGE }: { s: Snapshot; store: Store; stage?: StageId }) {
   const cap = s.capacity;
   const full = cap.blocksUsed >= cap.maxBlocks;
   return (

@@ -1,11 +1,11 @@
 // The days: each close's report, newest first and the latest open. The chart of daily P&L is on the Overview.
 // The report says what the day was in numbers the top bar cannot: by block, by stock, by race.
 
-import { DESK_NAMES, REGIMES } from '../content';
+import { DESK_NAMES, OPTIONS_WORDS, REGIMES } from '../content';
 import type { DayReport, Snapshot, Tally } from '../sim';
 import { money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
-import { blockName, dayCause, dayVerdict, rivalLines } from './overview';
+import { blockName, dayCause, dayVerdict, expiryLines, rivalLines } from './overview';
 
 function net(t: Tally): number {
   return t.realised - t.fees;
@@ -99,6 +99,32 @@ function Report({ d }: { d: DayReport }) {
             next open
           </span>
         </p>
+      )}
+      {(d.expired?.length ?? 0) > 0 && (
+        <>
+          <h3>
+            {OPTIONS_WORDS.expiryHeading}{' '}
+            <span className="muted">
+              · <Term id="cash-settlement">cash settlement</Term>
+            </span>
+          </h3>
+          <ul className="small expiry-lines">
+            {expiryLines(d).map((l) => (
+              <li key={l.symbol}>
+                {l.text}{' '}
+                <span className="muted">
+                  (
+                  {l.inTheMoney ? (
+                    <Term id="in-the-money">in the money</Term>
+                  ) : (
+                    <Term id="out-of-the-money">out of the money</Term>
+                  )}
+                  , <Term id="cash-settlement">cash settlement</Term>)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       <h3>
         Races{' '}

@@ -2,13 +2,19 @@
 // which lessons are done (and the show-everything switch, which the store folds in). Nothing here touches the
 // sim: a locked feature is hidden by the UI and the sim keeps every block.
 
-export type StageId = 1 | 2 | 3 | 4 | 5;
+export type StageId = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface Stage {
   id: StageId;
   name: string;
   /** The lessons that belong to this stage, in order. */
   lessons: string[];
+  /**
+   * Lessons that belong to a desk (`DESK_LESSONS`) and must be done before the next stage opens, though they open
+   * with the desk and are listed there: stage 6 asks for the futures desk's three, which teach the expiry and margin
+   * the options lean on.
+   */
+  needs?: string[];
   /** Ids of the intro cards shown when it opens (see `introSteps` in tutorial.ts). Stage 1 has the tutorial. */
   intro: string[];
 }
@@ -28,10 +34,17 @@ export const STAGES: readonly Stage[] = [
     intro: ['stage3-character'],
   },
   { id: 4, name: 'By hand', lessons: ['hand', 'used', 'week'], intro: ['stage4-desk'] },
-  { id: 5, name: 'The whole firm', lessons: [], intro: ['stage5-whole'] },
+  {
+    id: 5,
+    name: 'The whole firm',
+    lessons: [],
+    needs: ['basis', 'overnight', 'lead'],
+    intro: ['stage5-whole'],
+  },
+  { id: 6, name: 'Volatility', lessons: [], intro: ['stage6-vol'] },
 ];
 
-export const LAST_STAGE: StageId = 5;
+export const LAST_STAGE: StageId = 6;
 
 /** Something the UI can hide. Blocks are `block:<id>`. */
 export type Feature =
@@ -83,9 +96,13 @@ const FEATURE_STAGE: Record<string, StageId> = {
   'block:curve': 5,
   'block:fixArb': 5,
   'block:crossPairs': 5,
-  // The options desk is built and closed (plans/desk-options.md 7b): its stage is one past the last, so it opens in no
-  // game, free play included, until stage 6 is written (7e) and this is set to it.
-  'desk:options': (LAST_STAGE + 1) as StageId,
+  // The options desk opens with "Volatility", the last stage, which is reached when the futures desk's three lessons
+  // are done: its expiry, margin and hedge are the futures desk's, and the options desk needs that desk open. Its
+  // blocks with it (plans/desk-options.md 7e).
+  'desk:options': 6,
+  'block:optionMaker': 6,
+  'block:parity': 6,
+  'block:eventVol': 6,
 };
 
 /** An unknown block is held to the last stage rather than shown early. */
@@ -102,12 +119,16 @@ export function shows(feature: Feature, stage: StageId): boolean {
   return stage >= featureStage(feature);
 }
 
-/** The stage the lessons done so far have reached: stage n opens when n-1 is open and all its lessons are done. */
+/**
+ * The stage the lessons done so far have reached: stage n opens when n-1 is open and all its lessons (and the desk
+ * lessons it needs) are done.
+ */
 export function stageOf(progress: Readonly<Record<string, number>>): StageId {
   let stage: StageId = 1;
   for (const st of STAGES) {
     if (st.id !== stage) break;
-    if (!st.lessons.every((id) => progress[id] !== undefined) || st.id === LAST_STAGE) break;
+    const needed = [...st.lessons, ...(st.needs ?? [])];
+    if (!needed.every((id) => progress[id] !== undefined) || st.id === LAST_STAGE) break;
     stage = (st.id + 1) as StageId;
   }
   return stage;
@@ -121,6 +142,7 @@ export const DESK_LESSONS: Readonly<Record<string, readonly string[]>> = {
   futures: ['basis', 'overnight', 'lead'],
   fx: ['pips', 'triangle', 'refused', 'rollover'],
   metals: ['curve', 'flip', 'delivery', 'fix', 'miner'],
+  // The options desk's lessons come in 7f.
 };
 
 /** What the page calls each desk, in the day's report. */
@@ -129,6 +151,7 @@ export const DESK_NAMES: Readonly<Record<string, string>> = {
   futures: 'Futures',
   fx: 'Currencies',
   metals: 'Metals',
+  options: 'Options',
 };
 
 /** The desk a lesson belongs to, if it is a desk's. */

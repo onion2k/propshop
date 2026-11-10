@@ -22,6 +22,7 @@ export const GO_TARGETS = [
   'overview',
   'risk',
   'strategy',
+  'options',
 ] as const;
 
 /** Where a lesson's "Take me there" goes: a page, a tab of Reports, and the element to outline. */

@@ -6,6 +6,7 @@ import {
   DESK_LESSONS,
   DESK_NAMES,
   LESSONS,
+  LAST_STAGE,
   STAGES,
   lessonDesk,
   lessonStage,
@@ -21,14 +22,14 @@ import { Targets } from './Targets';
 import type { Progress, Store } from './store';
 
 /** Lessons not yet done, in the stages that are open (all of them by default). */
-export function lessonsLeft(progress: Progress, stage: StageId = 5): number {
+export function lessonsLeft(progress: Progress, stage: StageId = LAST_STAGE): number {
   return LESSONS.filter((l) => progress[l.id] === undefined && (lessonStage(l.id) ?? 1) <= stage).length;
 }
 
 export function FirstWeekPanel({
   progress,
   store,
-  stage = 5,
+  stage = LAST_STAGE,
   reveal = false,
 }: {
   progress: Progress;
@@ -60,7 +61,7 @@ export function FirstWeekPanel({
         </span>
       </p>
       <p className="muted">
-        {left === 0 && stage === 5
+        {left === 0 && stage === LAST_STAGE
           ? `All ${LESSONS.length} done. The rest of the game is yours; the Learn tab has the ideas in full.`
           : `${LESSONS.filter((l) => lessonDesk(l.id) === undefined).length} things to see in your first week, a stage at a time. The game ticks each off when it has happened, and says what it meant.`}
       </p>

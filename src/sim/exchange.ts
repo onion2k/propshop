@@ -394,7 +394,10 @@ export class Exchange {
    */
   takersSince(symbol: string, since: number, side: 'buy' | 'sell', price: number, except: string) {
     const out: { owner: string; at: number; price: number; size: number }[] = [];
-    for (const t of this.stock(symbol).tape) {
+    // An order still in the wire when its contract was delisted (an option at the close) finds no tape: nobody beat it.
+    const listed = this.stocks.get(symbol);
+    if (!listed) return out;
+    for (const t of listed.tape) {
       // A fix is no race: nobody took the liquidity first.
       if (t.at < since || t.aggressor !== side || t.fix) continue;
       const better = side === 'buy' ? t.price <= price : t.price >= price;

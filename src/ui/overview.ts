@@ -6,6 +6,8 @@ import {
   CALENDAR_WORDS,
   DAY_CAUSE_TERM,
   DAY_CAUSE_WORDS,
+  EXPIRY_CAUSE_TERM,
+  OPTIONS_WORDS,
   OVERVIEW_COMING_WORDS,
   RIVAL_DAY_WORDS,
   RIVAL_TERM,
@@ -16,15 +18,18 @@ import {
 import { answerOf, type Answer } from '../content/experiments';
 import {
   BLOCKS,
+  MS_PER_YEAR,
   STOCKS_DESK,
   formatTime,
+  optionPrice,
   paramChangeLabel,
   type DayReport,
+  type HeldOption,
   type Measures,
   type Snapshot,
   type UpgradeOffer,
 } from '../sim';
-import { money, ms } from './format';
+import { dollarPrice, money, ms } from './format';
 import type { Change, Night, StoredMeasures } from './nights';
 
 /** The length of a full session in minutes: a payback scales the tested minutes up to it. */
@@ -454,7 +459,7 @@ export function blockVerdict(r: BlockRecord): { kind: BlockVerdictKind; text: st
 }
 
 export interface DayCause {
-  kind: 'fees' | 'fines' | 'rent' | 'rollover' | 'storage' | 'block' | 'symbol' | 'rival' | 'quiet';
+  kind: 'fees' | 'fines' | 'rent' | 'rollover' | 'storage' | 'expiry' | 'block' | 'symbol' | 'rival' | 'quiet';
   /** Cents, signed: what it did to the day. */
   amount: number;
   text: string;
@@ -476,6 +481,9 @@ export function dayCause(d: DayReport): DayCause {
   add('rent', -(d.rent ?? 0), DAY_CAUSE_WORDS.rent);
   if (d.rollover !== undefined) add('rollover', d.rollover, (a) => DAY_CAUSE_WORDS.rollover(a, gain));
   if (d.storage !== undefined) add('storage', d.storage, (a) => DAY_CAUSE_WORDS.storage(a, gain));
+  // What the options held to the close settled for, against their cost: not in any fill, so named on its own.
+  const expiry = sum((d.expired ?? []).map((x) => x.made));
+  if (d.expired) add('expiry', expiry, (a) => DAY_CAUSE_WORDS.expiry(a, gain));
   const pick = (tallies: Record<string, { realised: number; fees: number }>) => {
     const rows = Object.entries(tallies).map(([id, t]) => [id, net(t)] as const);
     if (rows.length === 0) return null;
@@ -492,7 +500,94 @@ export function dayCause(d: DayReport): DayCause {
   let best: (typeof candidates)[number] | undefined;
   for (const c of candidates) if (!best || Math.abs(c.amount) > Math.abs(best.amount)) best = c;
   if (!best) return { kind: 'quiet', amount: 0, text: DAY_CAUSE_WORDS.quiet, term: null };
-  return { kind: best.kind, amount: best.amount, text: best.text(money(Math.abs(best.amount))), term: DAY_CAUSE_TERM };
+  return {
+    kind: best.kind,
+    amount: best.amount,
+    text: best.text(money(Math.abs(best.amount))),
+    term: best.kind === 'expiry' ? EXPIRY_CAUSE_TERM : DAY_CAUSE_TERM,
+  };
+}
+
+/** One line of the day's expiry: an option held to the close, what it settled at and what that was worth. */
+export interface ExpiryLine {
+  symbol: string;
+  text: string;
+  /** In the money at the close: it paid something. */
+  inTheMoney: boolean;
+}
+
+/** The options the firm held to the close, a line each, in the order they were settled. */
+export function expiryLines(d: Pick<DayReport, 'expired'>): ExpiryLine[] {
+  return (d.expired ?? []).map((x) => {
+    const held = OPTIONS_WORDS.expiryLine(x.qty, x.right, x.symbol, dollarPrice(x.strike));
+    const settle =
+      x.settled > 0
+        ? OPTIONS_WORDS.settledIn(dollarPrice(x.settled), money(Math.abs(x.cash)), x.cash >= 0)
+        : OPTIONS_WORDS.settledOut;
+    return {
+      symbol: x.symbol,
+      inTheMoney: x.settled > 0,
+      text: `${held}: ${settle}, ${OPTIONS_WORDS.againstCost(money(x.made, true))}`,
+    };
+  });
+}
+
+/** The smallest volatility the what-if leaves an option: a move down never takes it to nought. */
+export const SCENARIO_MIN_VOL = 0.01;
+
+/**
+ * The options desk revalued in a what-if, in cents: the model's price of each option held with the index moved by
+ * `indexMove` (a share, 0.02 is up 2%) and its volatility by `volMove` (points, 5 is five up), less its price now, over
+ * the contracts and their multipliers. At once, with the time left as it is. Pure: it touches no game.
+ */
+export function scenario(
+  positions: readonly HeldOption[],
+  indexMove: number,
+  volMove: number,
+  ctx: { spot: number; rate: number; now: number },
+): number {
+  let total = 0;
+  for (const o of positions) {
+    const t = Math.max(0, o.expiry - ctx.now) / MS_PER_YEAR;
+    const vol = Math.max(SCENARIO_MIN_VOL, o.vol + volMove / 100);
+    const before = optionPrice(o.right, ctx.spot, o.strike, t, o.vol, ctx.rate);
+    const after = optionPrice(o.right, ctx.spot * (1 + indexMove), o.strike, t, vol, ctx.rate);
+    total += o.qty * o.multiplier * (after - before);
+  }
+  return total === 0 ? 0 : total;
+}
+
+/** The desk's greeks as Position says them: delta in index units, the futures that would hedge it, and the rest. */
+export interface DeskGreeks {
+  /** The options held, and the contracts net of long and short. */
+  held: number;
+  contracts: number;
+  delta: number;
+  /** Futures to trade to cancel the delta: positive is buy, negative sell. */
+  hedge: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+}
+
+/** The index future's multiplier where the snapshot lists none of its futures: a hundred, as the chain's contracts are. */
+const FUTURE_MULTIPLIER = 100;
+
+/** The options desk's totals from the snapshot, or null while the desk is closed. */
+export function deskGreeks(s: Pick<Snapshot, 'options' | 'stocks'>): DeskGreeks | null {
+  const o = s.options;
+  if (!o) return null;
+  const future = s.stocks.find((x) => x.contract?.underlying === o.underlying);
+  const lot = future?.contract?.multiplier ?? FUTURE_MULTIPLIER;
+  return {
+    held: o.held.length,
+    contracts: sum(o.held.map((h) => h.qty)),
+    delta: o.greeks.delta,
+    hedge: -o.greeks.delta / lot,
+    gamma: o.greeks.gamma,
+    theta: o.greeks.theta,
+    vega: o.greeks.vega,
+  };
 }
 
 /** The orders sent since midnight of the game's day: the snapshot keeps the last few, of this day and the last. */

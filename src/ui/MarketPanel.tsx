@@ -6,10 +6,11 @@ import { useState } from 'react';
 import { DESK_NAMES } from '../content';
 import { TICK_MS, type Level, type Snapshot } from '../sim';
 import { Chart, exchangeColour } from './Chart';
-import { expiryLabel, money, moneyShort, pointsInCents, price, priceDelta, shares } from './format';
+import { dollarPrice, expiryLabel, money, moneyShort, pointsInCents, price, priceDelta, shares } from './format';
 import { GapLine, GapList } from './Gaps';
 import { Term } from './Glossary';
 import { CurveView, FixLine } from './MetalsDesk';
+import { OptionsDesk } from './OptionsDesk';
 import { goldSilverRatio } from './metals';
 import type { Store } from './store';
 
@@ -35,7 +36,9 @@ export function MarketPanel({
   const topAsk = seenAsks.length ? Math.min(...seenAsks) : null;
   const full = s.watching.count >= s.watching.max;
   // With more than one desk open the watchlist is one block a desk, under a heading; with one, as it always was.
-  const present = new Set(s.stocks.map((st) => st.desk));
+  // The options are not in the list: the chain below it is where they are watched and picked.
+  const listed = s.stocks.filter((st) => !st.option);
+  const present = new Set(listed.map((st) => st.desk));
   const desks = [
     ...Object.keys(DESK_NAMES).filter((d) => present.has(d)),
     ...[...present].filter((d) => !(d in DESK_NAMES)),
@@ -80,7 +83,7 @@ export function MarketPanel({
                 </th>
               </tr>
             )}
-            {s.stocks
+            {listed
               .filter((st) => st.desk === desk)
               .map((st) => (
                 <tr
@@ -121,13 +124,20 @@ export function MarketPanel({
           </tbody>
         ))}
       </table>
+      <OptionsDesk s={s} store={store} picked={selected?.symbol ?? null} onPick={onPick} />
       {selected && (
         <div className="stock" data-symbol={selected.symbol}>
           <div className="stock-head">
             <strong>{selected.symbol}</strong>{' '}
             <span className="muted">
               {selected.name} ·{' '}
-              {selected.contract ? (
+              {selected.option ? (
+                <>
+                  <Term id="option">option</Term>: a <Term id={selected.option.right}>{selected.option.right}</Term> on{' '}
+                  {selected.option.underlying}, <Term id="strike">strike</Term> {dollarPrice(selected.option.strike)},{' '}
+                  <Term id="cash-settlement">settles in cash</Term> {expiryLabel(selected.option.expiry)}
+                </>
+              ) : selected.contract ? (
                 <>
                   <Term id="future">future</Term> on {selected.contract.underlying}, {selected.contract.multiplier} to a
                   contract, <Term id="expiry">expires</Term> {expiryLabel(selected.contract.expiry)}

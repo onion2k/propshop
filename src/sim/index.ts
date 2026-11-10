@@ -12,6 +12,7 @@ export {
   MAX_INTRADAY,
   MARKOUT_MS,
   MAX_MARKOUTS,
+  MAX_EXPIRED,
 } from './game';
 export type {
   GameEvent,
@@ -25,6 +26,7 @@ export type {
   Tally,
   IntradayPoint,
   OrderStory,
+  Expired,
 } from './game';
 export {
   MAX_BEATEN_LISTED,
@@ -169,3 +171,15 @@ export type { FxPair, Rate } from './instrument';
 export { STOCK_SESSION, activityIn, daily, isOpenIn, nextCloseIn, nextOpenIn, span, type SessionSpec } from './session';
 export { DESK_BLOCKS, DESK_REQUIRES, DESK_SEES } from './strategy';
 export { releasesBetween } from './calendar';
+// The options model, for the page's chain and what-if: pure working, no state.
+export {
+  delta as optionDelta,
+  gamma as optionGamma,
+  impliedFrom,
+  price as optionPrice,
+  theta as optionTheta,
+  totalGreeks,
+  tradingVol,
+  vega as optionVega,
+} from './options';
+export type { Greeks, HeldOption, Right } from './options';

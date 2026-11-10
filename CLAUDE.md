@@ -193,11 +193,45 @@ measure; they hold nothing.
   step rate under its floor; the player's `optionMaker` at its defaults (edge 0.5, inside the quoter's spread, 50 ms)
   makes far more, see `docs/measured.md`. Tests: `test/optionblocks.test.ts` (each block by hand on `optionWorld` in
   `test/fixtures.ts`), `test/optionrival.test.ts` (the view, the rival, replay, saves, margin, the books);
-  `test/optionpace.test.ts` measures a day (skipped unless `OPTION_PACE` is set). No page or stage yet (7e, 7f);
-  `'desk:options'` is placed one stage past the last, so it opens nowhere.
+  `test/optionpace.test.ts` measures a day (skipped unless `OPTION_PACE` is set).
+  **The page (7e).** The chain is `src/ui/OptionsDesk.tsx` on the Market page, a section (`data-tut="options"`, named
+  "Index options") between the watchlist and the selected symbol's detail, while the desk is open. `src/ui/options.ts`
+  is its pure working over the snapshot (`chainOf`, `straddleOf`, `timeToGo`, `chainWatched`, `watchChain`): a table an
+  expiry, a row a strike, a call and a put each with bid, ask, implied volatility (inverted from the middle of the
+  book by `impliedFrom` on calendar time, then put on the trading clock by `tradingVol` so it sits beside the realised
+  figure; `optionMaker`'s edge is still in calendar-volatility points, about 2.3 times smaller in trading terms at
+  10:30) and delta (the model's at it), a watch box on each outer edge, and above them the straddle's
+  "expects a move of ±$X by the close" (the call and put at the strike nearest the index, middles or fair values) and
+  the at-the-money implied volatility against the realised. The options are not in the watchlist (the chain is where
+  they are watched and picked; a click on a cell picks the option, and the detail below shows its books). Its room is
+  fixed: `table-layout: fixed` with set column widths, one-line cells of one height, a dash for a missing quote, and
+  the lines above and below kept their height; at a phone's width the table scrolls in its own `.chain-scroll`, never
+  the page. **The watch list:** a rack follows twenty symbols and, with the list never set, takes the first twenty
+  listed, so with every desk open it follows thirteen stocks, the index, the three currency pairs, gold, silver and
+  `IXF0` and no option and not `IXF1` (39 listed); an options block sees only what is watched. The chain shows "Your
+  blocks see n of 12 options" and a "Watch the chain" button: `watchChain` puts the index, its futures and the twelve
+  options first (soonest expiry, nearest the index) and refills from what was watched, in listing order, up to the
+  computer's limit; `Game.setWatchList` / `store.setWatchList` write it, and the page says what it let go.
+  **Position** has the desk's block (`OptionsPosition.tsx`, below the targets, while the desk is open): the greeks
+  from `Snapshot.options` (`HeldOption[]` at the model's volatility for each, `totalGreeks` in `src/sim/options.ts`,
+  worked out by `Game.optionsNow()` in `snapshot()` only, never in a tick; `test/optionsreport.test.ts` spies it): delta
+  in index units, the futures to hedge (`deskGreeks` in `overview.ts`, by the future's multiplier), gamma in units of
+  delta a dollar, theta a calendar day and vega a point in cents; and the what-if, `scenario(positions, indexMove,
+volMove, ctx)` (`overview.ts`, pure, a full revaluation by the model, volatility floored at 1%), two sliders (±2% on
+  the index, ±5 points) that touch nothing in the game. **The day's report:** `Game.noteExpiry` reads the player's
+  option about to be settled (before `Firm.expire`) into `DayReport.expired` (`Expired`: symbol, right, strike,
+  contracts, what it settled at, cash, what it made; `MAX_EXPIRED`), adds what it made to the Options row of `byDesk`
+  and the option's `bySymbol` row with no fill, and emits an `expiry` event (a moment: `momentChoice.ts`, between a
+  delivery and a round, feature `desk:options`, glossary `cash-settlement`). The Days tab lists the lines (`expiryLines`)
+  and `dayCause` has `expiry`. The words are `OPTIONS_WORDS` and `MOMENT_WORDS.expiry` in `signals.ts`; the
+  glossary has the desk's 22 terms, each linked where the page uses it. Tests: `test/chain.test.ts`,
+  `test/optionsreport.test.ts`, `test/overview.test.ts`, `test/ui.test.tsx` "Options", `test/stages.test.ts`.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
-  `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
-  the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
+  `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. There are six stages; the
+  sixth, "Volatility" (`LAST_STAGE`), opens the options desk and its three blocks (`'desk:options': 6`), and is reached
+  when stage 5 has the futures desk's three lessons (`basis`, `overnight`, `lead`) as well as its own (none): a stage's
+  `needs` are desk lessons that stay the desk's, listed there and shown at its stage, and are asked for before the next
+  stage opens. Stages hide things in the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
   `propshop.stages.v1` (the last stage whose intro was seen; a save without it is from before the stages and
   opens every stage) and `propshop.reveal.v1` (show everything; it survives Start again, and Free play sets
   it). `experiments.ts` is the four experiments: seed, desks open, window, setup, changes, the moments worth replaying,
@@ -259,6 +293,12 @@ For anything new, check what it does:
   the fills, so `realised` takes the difference. A firm whose block is off still settles. The first listing, the
   desk closed, fixes strikes from the index's start; a game loaded lists afresh and takes the saved strikes. A
   release in closed hours is on the calendar and adds event variance to an expiry still to come, none to one gone.
+- **the expiry in the report:** only the player's options held through the 16:00 close make lines in `DayReport.expired`
+  (a rival's are its own business); an option held with a position set by hand and never paid for shows the whole
+  settlement in `cash` and the difference in `made`. What it made is in the day's `pnl` already (through `realised`);
+  it is added to `byDesk.options` and `bySymbol` with no fill, so a day with only an expiry still has an Options row.
+  A day with no option held to the close has no `expired` and no row. An order still in the wire when its option is
+  delisted at the close is refused by the venue (`REFUSED_UNLISTED`); `takersSince` finds no tape for it and does not throw.
 - **a short option:** held on margin, not against the leverage cap. It asks its premium (at cost; at the mark for
   maintenance) plus 15% of the index's value, less how far out of the money it is, never under the premium plus 10%
   (`InstrumentSpec.shortMargin`; `Firm.marginRequired`, the order check and `Firm.marginCall` all read it, and
@@ -337,6 +377,14 @@ For anything new, check what it does:
   hedge band (2 contracts) and flatten time (5 min), `parity`'s threshold (1 cent an index unit) and `eventVol`'s
   windows (10 min, 20 s, 60 s) are drafts, tuned in 7f; Bluestem's size is the maker's default, its edge and pace
   were set by the step rate and not by what a rival would earn. What each makes in a day is in `docs/measured.md`, held by nothing.
+- **The money in the options:** the player's `optionMaker` at its defaults makes about $116,000 a day, Bluestem about
+  $129,000, because the quoter's customers are uninformed and nobody takes the quotes in the informed way
+  (`docs/measured.md`). With the desk open at stage 6 and in free play that is reachable: it is 7f's to tune, held by
+  nothing, and 7e leaves it.
+- **The chain and the what-if:** the chain's three strikes a side, the straddle's nearest-strike reading, the ±2% and
+  ±5 points of the sliders, the volatility floor of the what-if (1%) and the watch shortcut's priority (index, its
+  futures, the options soonest and nearest first) are drafts, looked at by hand and held by nothing. The layout is held
+  by hand: a fixed table, a dash for a missing quote, scrolling inside its own box at 375 wide; not gated.
 - **The rents:** drafts (about 2% of a price a week, a point less for the dearest, the metals racks $50), measured against what each seat earns a
   week by the PACE harness and held by nothing; `docs/measured.md` has the figures. The pace harness understates
   momentum, so the starting rung's cover is read from whole days.
@@ -345,12 +393,13 @@ The figures behind each line are in `docs/measured.md`, with their dates.
 
 - **The economy's pacing:** measured by the PACE and night harnesses, tuned by hand, held by nothing. The PACE
   harness scales an hour to a day, which understates momentum, so momentum's pace is read from whole days.
-- **When the stages open:** measured by the stage harness, held by nothing.
+- **When the stages open:** measured by the stage harness, held by nothing; the stage harness has not been run with the sixth stage, and the options desk's lessons and target are 7f's (stage 6 has no target yet).
 - **Frames, the frame budget and the stalls** (a pin, the close, a save): measured headless with Playwright,
   borrowed from `~/projects/artshape-game-template` (there is none here), held by nothing. A worker would lift
   the sim's ceiling; the sim's one surface is the seam for it. Phone speed is CPU throttling, and a worker
   cannot be throttled, so the night's length on a phone is a guess. Every desk open steps about 38,800 to 39,000 ticks a
-  second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 35,000.
+  second (2026-11-09, with metals), a game day at top speed about 580 s against 285 with none; the gate is a tripwire at 35,000
+  (36,200 to 36,500 with the options desk and Bluestem in, 2026-11-10: see `docs/measured.md`).
 - **Watch mode's lead and tail:** `WATCH_LEAD` 5 s and `WATCH_TAIL` 10 s are drafts. A headline of a desk (`deskNews`,
   not a `news` event) does not slow it; a reload forgets a tail that was running (only the log's last open or close
   is known).

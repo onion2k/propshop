@@ -598,3 +598,27 @@ test/optionpace.test.ts`, the block being `parity`, `eventVol` or `none` as well
   cent); in the first thirty minutes, the test's window, over 95%. The model quoter and a maker one cent inside it
   (`test/quoter.test.ts`, a firm requoting one cent inside both sides every 250 ms for 15 s of a book with customers
   taking): two-sided in over 99% of the ticks, never crossed.
+
+## The step rate with the options page (7e, 2026-11-10)
+
+The page adds nothing to a tick: the greeks are worked out in `Game.snapshot()` (`optionsNow`, asked for by the page's
+frame and by nothing the sim runs, and nothing at all while the desk is closed), the chain's volatilities and deltas in
+the components, and the day's expiry once a day at 16:00 (`noteExpiry`, for the player's firm only). The one change on
+the sim's path is that `Exchange.takersSince` returns early for an unlisted symbol. Opening the desk at stage 6 and in
+free play brings Bluestem into real games; the floor test already had it in (all four desks open).
+
+`npm run floors` alone (`FLOORS=1 vitest run test/speed.test.ts`), the tree at HEAD (`a6ca0ab`, in a worktree) then this
+tree, taken in turn three times on an idle machine, Node 24, ticks a second:
+
+|                       | run 1  | run 2  | run 3  |
+| --------------------- | ------ | ------ | ------ |
+| every desk open, HEAD | 36,527 | 36,542 | 36,177 |
+| every desk open, 7e   | 36,265 | 36,321 | 36,330 |
+| no desk open, HEAD    | 90,671 | 90,717 | 90,263 |
+| no desk open, 7e      | 90,360 | 89,743 | 90,373 |
+
+Both floors pass in all six runs: 35,000 is 3.5% to 4.1% under the four-desk figure, so the margin is a little wider
+than at 7d (0.4% to 1.3% on that hour, 3% on this one for the same tree: the machine moves a few per cent with the
+hour). The floors run at the end of `npm run check`, straight after the 130 s suite, read 35,523 (88,590 none open): the machine is warm then and the margin is 1.5%. The tripwire stays at 35,000. Not measured: a browser frame with the chain, the greeks and the what-if on the
+page (the look is by hand, headless); the snapshot's cost with twelve options held (a sum of twelve model calls, once a
+frame).

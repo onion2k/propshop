@@ -380,8 +380,15 @@ export const DAY_CAUSE_WORDS = {
     gain ? `${symbol} earned ${amount}, the most of any stock.` : `${symbol} lost ${amount}, the worst of any stock.`,
   rival: (name: string, amount: string) =>
     `${name} took quotes off you worth ${amount}: the price ran against them a second after.`,
+  expiry: (amount: string, gain: boolean) =>
+    gain
+      ? `The expiry earned ${amount}: the options held to 16:00 were settled in cash for more than they cost.`
+      : `The expiry cost ${amount}: the options held to 16:00 were settled in cash for less than they cost.`,
   quiet: 'Nothing traded and nothing was charged: a quiet day.',
 } as const;
+
+/** What the day report's cause for the expiry links to. */
+export const EXPIRY_CAUSE_TERM = 'cash-settlement';
 
 /** The day report's sentence about one rival: what it took off the firm's resting quotes and the races it won. */
 export const RIVAL_DAY_WORDS = {
@@ -423,6 +430,12 @@ export const MOMENT_WORDS = {
     long
       ? `Delivered: ${units} ${units === 1 ? 'lot' : 'lots'} of ${symbol}, ${value}, now held as spot and paying storage.`
       : `Delivered against you: short ${units} ${units === 1 ? 'lot' : 'lots'} of ${symbol}, ${value}, now a short in spot and paying the lease.`,
+  /** An option the firm held to the close, settled in cash: what was paid, and how it stood against its cost. */
+  expiry: (symbol: string, qty: number, long: boolean, cash: string, made: string, gain: boolean) =>
+    (long
+      ? `${symbol} expired with you long ${qty}: paid ${cash} in cash`
+      : `${symbol} expired with you short ${qty}: you paid ${cash} in cash`) +
+    (gain ? `, ${made} ahead of what it cost.` : `, ${made} behind what it cost.`),
   round: (net: string, gain: boolean) =>
     `Triangle closed: three legs filled, ${net} ${gain ? 'ahead' : 'behind'} after fees.`,
   race: 'First race won today: your order arrived first and filled.',
@@ -487,4 +500,63 @@ export const TARGET_WORDS = {
   standing: (rival: string, you: string, them: string, winning: boolean) =>
     `${winning ? 'Ahead of' : 'Behind'} ${rival} this week: you ${you}, ${rival} ${them}. Both are after the rent.`,
   standingHeading: 'Beat the best rival’s week',
+} as const;
+
+/**
+ * The options desk on the page: the chain on the Market page, the greeks and the what-if in Position, and the expiry
+ * in the day's report. Drafts, for the author to edit; the glossary has each concept the words link to.
+ */
+export const OPTIONS_WORDS = {
+  /** The chain's heading and its section's name. */
+  heading: 'Index options',
+  note: (spot: string) =>
+    `on the index, now ${spot} · a contract is a hundred times its price, settled in cash at 16:00`,
+  /** The straddle's line: the premium of a call and a put at one strike is the move the market expects. */
+  straddleMove: (move: string, when: string) => `The market expects a move of ±${move} by ${when}: the `,
+  straddleRest: (strike: string) => ` of the ${strike} straddle, a call and a put together.`,
+  closeToday: 'the close',
+  closeTomorrow: 'the next close',
+  vol: (implied: string, realised: string, points: string) =>
+    `At the money, implied volatility ${implied} against realised ${realised}: a premium of ${points} points.`,
+  volNone: 'No implied volatility at the money yet: the books are empty.',
+  expiryToday: 'Expires today',
+  expiryNext: (label: string) => `Expires ${label}`,
+  toGo: (left: string) => `${left} to go`,
+  /** The watch line: how many of the chain the blocks see, the shortcut and what it let go. */
+  seen: (n: number, of: number, count: number, max: number) =>
+    `Your blocks see ${n} of ${of} options (watching ${count} of ${max}).`,
+  watchChain: 'Watch the chain',
+  watchChainTitle:
+    'Watch the index, its futures and every option, and let go of the symbols watched least to make room.',
+  watched: (dropped: string[]) =>
+    dropped.length === 0
+      ? 'Watching the chain: nothing had to be let go.'
+      : `Watching the chain. Let go to make room: ${dropped.join(', ')}.`,
+  /** The Position block. */
+  greeksHeading: 'Options desk',
+  none: 'No options held.',
+  held: (options: number, contracts: number) =>
+    `${options} ${options === 1 ? 'option' : 'options'} held, ${contracts} ${contracts === 1 ? 'contract' : 'contracts'} net`,
+  flat: 'flat',
+  hedge: (futures: number) =>
+    `${futures > 0 ? 'buy' : 'sell'} ${Math.abs(futures).toFixed(1)} ${Math.abs(futures).toFixed(1) === '1.0' ? 'future' : 'futures'}`,
+  units: (n: string) => `${n} units`,
+  perDollar: (n: string) => `${n} units a dollar`,
+  perDay: (money: string) => `${money} a day`,
+  perPoint: (money: string) => `${money} a point`,
+  /** The what-if under the greeks. */
+  whatIf: 'What if',
+  whatIfNote: 'The desk revalued by the model, at once: nothing is traded and the game is not touched.',
+  indexMove: 'Index move',
+  volMove: 'Volatility move',
+  indexAt: (pct: string) => `${pct}%`,
+  volAt: (points: string) => `${points} points`,
+  /** The day report's expiry section. */
+  expiryHeading: 'Expiry at 16:00',
+  expiryLine: (qty: number, right: string, symbol: string, strike: string) =>
+    `${qty > 0 ? 'long' : 'short'} ${Math.abs(qty)} ${right}${Math.abs(qty) === 1 ? '' : 's'} (${symbol}, strike ${strike})`,
+  settledIn: (worth: string, cash: string, received: boolean) =>
+    `settled at ${worth}, ${received ? 'received' : 'paid'} ${cash}`,
+  settledOut: 'settled worthless, nothing paid',
+  againstCost: (made: string) => `${made} against what it cost`,
 } as const;

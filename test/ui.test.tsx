@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { CONTENT, DESK_NAMES, LESSONS, glossary, type Lesson } from '../src/content';
+import { infrastructureFrom } from '../src/sim/upgrades';
+import { scenario } from '../src/ui/overview';
 import { TICK_MS, formatTime, type DayReport, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
@@ -1247,9 +1249,9 @@ describe('stages', () => {
     expect(screen.getAllByRole('tab')).toHaveLength(7);
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    // The ten stock blocks and, everything shown, the futures desk's three, the currencies desk's two and the metals
-    // desk's three.
-    expect(listedBlocks()).toHaveLength(18);
+    // The ten stock blocks and, everything shown, the futures desk's three, the currencies desk's two, the metals
+    // desk's three and the options desk's three.
+    expect(listedBlocks()).toHaveLength(21);
     // A reload.
     cleanup();
     const again = createStore(CONTENT, storage, 36);
@@ -1276,7 +1278,7 @@ describe('stages', () => {
     expect(screen.getByRole('button', { name: /^Desk/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
     goTo('Strategy');
-    expect(listedBlocks()).toHaveLength(18);
+    expect(listedBlocks()).toHaveLength(21);
   });
 
   it('criterion 8: the first week lists lessons by stage, and names the stages not open yet', () => {
@@ -1286,7 +1288,7 @@ describe('stages', () => {
     goTo('Reports');
     const headings = [...document.querySelectorAll('.first-week h3')].map((h) => h.textContent);
     expect(headings[0]).toMatch(/^Stage 1: Spare room/);
-    expect(headings).toHaveLength(5);
+    expect(headings).toHaveLength(6);
     expect(headings[1]).toMatch(/Stage 2: A better seat · opens as you go/);
     const titles = [...document.querySelectorAll('.lesson-head strong')].map((e) => e.textContent);
     expect(titles).toEqual(['Find what earns from home', 'Buy a better seat']);
@@ -2666,5 +2668,445 @@ describe('Part 7a: the economic calendar, on the page', () => {
     const e = glossary('economic-calendar');
     expect(e?.term).toBe('Economic calendar');
     expect(e?.long).toMatch(/not what|never what/i);
+  });
+});
+
+describe('Options', () => {
+  const H = 3_600_000;
+  const AT = 10 * H + 30 * 60_000;
+  const OPTION_TERMS = [
+    'option',
+    'call',
+    'put',
+    'strike',
+    'premium',
+    'in-the-money',
+    'out-of-the-money',
+    'intrinsic-value',
+    'time-value',
+    'implied-volatility',
+    'realised-volatility',
+    'volatility-premium',
+    'skew',
+    'delta',
+    'gamma',
+    'theta',
+    'vega',
+    'delta-hedge',
+    'put-call-parity',
+    'conversion',
+    'the-crush',
+    'cash-settlement',
+  ];
+  let shared: ReturnType<typeof createStore> | undefined;
+  /** Free play (every desk open), stepped to 10:30 on Monday: a second at a time, the last minute a tick at a time. */
+  function optionsAt() {
+    if (shared) return shared;
+    const store = createStore(CONTENT, null, 61);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    act(() => {
+      while (store.game.now < AT - 60_000) store.game.step(1000);
+      while (store.game.now < AT) store.game.step();
+      store.publish();
+    });
+    shared = store;
+    return store;
+  }
+  const chainEl = () => screen.getByRole('region', { name: 'Index options' });
+  const termIds = (el: Element) =>
+    [...el.querySelectorAll('button.term')].map((b) => GLOSSARY_BY_SHORT.get(b.getAttribute('title') ?? '') ?? '?');
+  const GLOSSARY_BY_SHORT = new Map(OPTION_TERMS.map((id) => [glossary(id)?.short ?? id, id]));
+  const todays = (s: Snapshot) =>
+    s.stocks.filter((x) => x.option && x.option.expiry === s.stocks.find((y) => y.option)!.option!.expiry);
+
+  it('names the desk Options, opens it in free play, and groups its three blocks on the Strategy page', () => {
+    expect(DESK_NAMES.options).toBe('Options');
+    const store = optionsAt();
+    expect(store.game.market.isDeskOpen('options')).toBe(true);
+    render(<App store={store} />);
+    goTo('Strategy');
+    expect(listedBlocks()).toEqual(expect.arrayContaining(['Option maker', 'Put-call parity', 'Event volatility']));
+  }, 120_000);
+
+  it('shows the chain on the Market page: rows by strike, a call and a put for each expiry, bid and ask, volatility and delta', () => {
+    render(<App store={optionsAt()} />);
+    goTo('Market');
+    const chain = chainEl();
+    const tables = [...chain.querySelectorAll('table.chain-table')];
+    expect(tables).toHaveLength(2);
+    for (const t of tables) {
+      const rows = [...t.querySelectorAll('tbody tr')];
+      expect(rows).toHaveLength(3);
+      const strikes = rows.map((r) => Number(r.getAttribute('data-strike')));
+      expect(strikes).toEqual([...strikes].sort((a, b) => a - b));
+      // The same four figures on each side of the strike: bid, ask, implied volatility and delta.
+      for (const side of ['call', 'put']) {
+        for (const col of ['bid', 'ask', 'iv', 'delta'])
+          expect(rows[0]!.querySelectorAll(`td.${side}.${col}`), `${side} ${col}`).toHaveLength(1);
+      }
+      expect(rows[0]!.querySelector('td.strike')!.textContent).toMatch(/^\$\d+\.\d\d$/);
+    }
+    // Every option the sim lists is a cell, by symbol.
+    const s = optionsAt().getSnapshot();
+    for (const st of s.stocks.filter((x) => x.option))
+      expect(chain.querySelector(`td[data-symbol="${st.symbol}"].bid`), st.symbol).not.toBeNull();
+    // A quoted at-the-money call shows its prices and a volatility in per cent.
+    const any = todays(s).find((x) => x.option!.right === 'call' && x.bid !== null && x.ask !== null)!;
+    expect(chain.querySelector(`td[data-symbol="${any.symbol}"].bid`)!.textContent).toBe(price(any.bid, 2));
+    expect(chain.querySelector(`td[data-symbol="${any.symbol}"].ask`)!.textContent).toBe(price(any.ask, 2));
+    const iv = chain.querySelector(`td[data-symbol="${any.symbol}"].iv`)!.textContent;
+    expect(iv).toMatch(/^\d+(\.\d)?%$/);
+    expect(chain.querySelector(`td[data-symbol="${any.symbol}"].delta`)!.textContent).toMatch(/^-?[01]\.\d\d$/);
+  }, 120_000);
+
+  it('says how long each expiry has to go, and the move the straddle says the market expects by the close', () => {
+    render(<App store={optionsAt()} />);
+    goTo('Market');
+    const chain = chainEl();
+    const left = [...chain.querySelectorAll('.chain-left')].map((e) => e.textContent);
+    expect(left).toHaveLength(2);
+    expect(left[0]).toBe('5h 30m to go');
+    expect(left[1]).toMatch(/^\d+h \d+m to go$/);
+    // The time of the close is said once in a heading, not twice.
+    for (const h of chain.querySelectorAll('.chain-head')) expect(h.textContent.match(/16:00/g)).toHaveLength(1);
+    const line = chain.querySelector('.straddle-line')!;
+    expect(line.textContent).toMatch(/expects a move of ±\$\d+\.\d\d by the close/);
+    // The figure is the straddle's price: a call and a put at the strike nearest the index.
+    const dollars = Number(/±\$(\d+\.\d\d)/.exec(line.textContent)![1]);
+    expect(dollars).toBeGreaterThan(0.2);
+    expect(dollars).toBeLessThan(1.5);
+    expect(termIds(line)).toEqual(expect.arrayContaining(['premium']));
+    expect(chain.querySelector('.vol-line')!.textContent).toMatch(/implied .*%.*realised .*%/);
+  }, 120_000);
+
+  it('keeps every cell’s room when a quote is missing: the slot stays, empty as a dash', () => {
+    const s = optionsAt().getSnapshot();
+    const bare: Snapshot = { ...s, stocks: s.stocks.map((x) => (x.option ? { ...x, bid: null, ask: null } : x)) };
+    const store = optionsAt();
+    render(<MarketPanel s={bare} store={store} picked={null} onPick={() => undefined} />);
+    const chain = chainEl();
+    const bids = [...chain.querySelectorAll('td.bid')];
+    expect(bids).toHaveLength(12);
+    expect(bids.every((b) => b.textContent === '—')).toBe(true);
+    expect([...chain.querySelectorAll('td.iv')].every((b) => b.textContent === '—')).toBe(true);
+    expect([...chain.querySelectorAll('td.delta')].every((b) => b.textContent === '—')).toBe(true);
+    // Still the same grid: three rows of two tables, a watch box on each side.
+    expect(chain.querySelectorAll('tbody tr')).toHaveLength(6);
+    expect(chain.querySelectorAll('input[type="checkbox"]')).toHaveLength(12);
+  }, 120_000);
+
+  it('keeps the options out of the watchlist: the chain is where they are watched and picked', () => {
+    render(<App store={optionsAt()} />);
+    goTo('Market');
+    const rows = [...document.querySelectorAll('.watchlist tbody tr strong')].map((e) => e.textContent);
+    expect(rows).toContain('IDX');
+    expect(rows.filter((r) => /^O[CP]/.test(r))).toEqual([]);
+    expect([...document.querySelectorAll('.watchlist .desk-row')].map((e) => e.textContent)).not.toContain('Options');
+  }, 120_000);
+
+  it('lets the player watch an option from the chain, and says when the computer has no room', () => {
+    const store = optionsAt();
+    // The laptop follows four symbols and they are the first four: every option is out and the box is full.
+    render(<App store={store} />);
+    goTo('Market');
+    const box = (sym: string) => screen.getByLabelText<HTMLInputElement>(`Watch ${sym}`);
+    expect(store.getSnapshot().watching).toEqual({ count: 4, max: 4 });
+    expect(box('OC00').checked).toBe(false);
+    expect(box('OC00').disabled).toBe(true);
+    // Free a place on the watchlist and the chain's box takes it.
+    const first = store.getSnapshot().stocks.find((x) => x.watched)!.symbol;
+    fireEvent.click(screen.getByLabelText(`Watch ${first}`));
+    expect(box('OC00').disabled).toBe(false);
+    fireEvent.click(box('OC00'));
+    expect(box('OC00').checked).toBe(true);
+    expect(store.getSnapshot().stocks.find((x) => x.symbol === 'OC00')!.watched).toBe(true);
+    expect(store.getSnapshot().watching.count).toBe(4);
+    // And off again.
+    fireEvent.click(box('OC00'));
+    expect(store.getSnapshot().stocks.find((x) => x.symbol === 'OC00')!.watched).toBe(false);
+    fireEvent.click(screen.getByLabelText(`Watch ${first}`));
+    expect(store.getSnapshot().stocks.find((x) => x.symbol === first)!.watched).toBe(true);
+  }, 120_000);
+
+  it('watches the whole chain in one click, the index and its futures first, and says what it let go', () => {
+    const store = createStore(CONTENT, null, 62);
+    store.setTutorial({ state: 'done' });
+    act(() => store.setReveal(true));
+    act(() => {
+      store.game.firm.infra = infrastructureFrom(CONTENT, {
+        location: 'colo-prairie',
+        network: 'microwave',
+        computer: 'rack',
+      });
+      store.game.skipToOpen();
+      store.publish();
+    });
+    const before = store.getSnapshot();
+    // What a player on the Prairie rack finds when the desk opens and the list was never set: no option, one future.
+    expect(before.watching).toEqual({ count: 20, max: 20 });
+    expect(before.stocks.filter((x) => x.option && x.watched)).toHaveLength(0);
+    render(<App store={store} />);
+    goTo('Market');
+    expect(screen.getByLabelText('Watch OC00')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Watch the chain/ }));
+    const after = store.getSnapshot();
+    expect(after.stocks.filter((x) => x.option && x.watched)).toHaveLength(12);
+    for (const sym of ['IDX', 'IXF0', 'IXF1']) expect(after.stocks.find((x) => x.symbol === sym)!.watched).toBe(true);
+    expect(after.watching).toEqual({ count: 20, max: 20 });
+    const note = chainEl().querySelector('.chain-watch-note')!;
+    expect(note.textContent).toMatch(/Watching the chain/);
+    expect(note.textContent).toContain('GRD');
+    expect(note.textContent).toContain('XAG');
+    expect(screen.queryByRole('button', { name: /Watch the chain/ })).toBeNull();
+  }, 120_000);
+
+  it('lets a click on a cell pick the option and show its books', () => {
+    render(<App store={optionsAt()} />);
+    goTo('Market');
+    fireEvent.click(chainEl().querySelector('td[data-symbol="OC00"].bid')!);
+    const head = document.querySelector('.stock-head')!;
+    expect(head.textContent).toContain('OC00');
+    expect(head.textContent).toMatch(/call/);
+    expect(head.textContent).toMatch(/strike \$\d+\.\d\d/);
+    expect(termIds(head)).toEqual(expect.arrayContaining(['option']));
+    expect(document.querySelectorAll('table.quotes tbody tr')).toHaveLength(1);
+  }, 120_000);
+
+  describe('the desk in Position', () => {
+    /** Run `fn` with the firm short ten calls and ten puts at the money today, and put the positions back. */
+    function holding<T>(qty: number, fn: (s: Snapshot, store: ReturnType<typeof createStore>) => T): T {
+      const store = optionsAt();
+      const s0 = store.getSnapshot();
+      const today = s0.stocks.filter(
+        (x) => x.option && x.option.expiry === s0.stocks.find((y) => y.option)!.option!.expiry,
+      );
+      const mid = [...new Set(today.map((x) => x.option!.strike))].sort((a, b) => a - b)[1]!;
+      const call = today.find((x) => x.option!.right === 'call' && x.option!.strike === mid)!.symbol;
+      const put = today.find((x) => x.option!.right === 'put' && x.option!.strike === mid)!.symbol;
+      act(() => {
+        store.game.firm.positions.set(call, { qty, avgCost: 30 });
+        store.game.firm.positions.set(put, { qty, avgCost: 30 });
+        // A tick, so the game's version moves and the store sees the positions.
+        store.game.step();
+        store.publish();
+      });
+      try {
+        return fn(store.getSnapshot(), store);
+      } finally {
+        act(() => {
+          store.game.firm.positions.delete(call);
+          store.game.firm.positions.delete(put);
+          store.game.step();
+          store.publish();
+        });
+      }
+    }
+
+    it('totals the desk’s greeks: delta in index units and as futures to hedge, gamma, theta a day and vega a point', () => {
+      holding(-10, (s) => {
+        render(<App store={optionsAt()} />);
+        const g = screen.getByTestId('options-greeks');
+        const gr = s.options!.greeks;
+        const text = (label: string) => g.querySelector(`[data-greek="${label}"]`)!.textContent;
+        expect(text('delta')).toMatch(/^-?[\d,]+(\.\d)? units$/);
+        expect(Math.abs(gr.delta)).toBeLessThan(500);
+        expect(text('hedge')).toMatch(/^(buy|sell) [\d.]+ futures?$|^flat$/);
+        expect(text('gamma')).toBe(`${Math.round(gr.gamma).toLocaleString('en-US')} units a dollar`);
+        expect(text('delta')).toBe(`${Math.round(gr.delta).toLocaleString('en-US')} units`);
+        // A short straddle: gamma against it, theta for it, vega against it.
+        expect(gr.gamma).toBeLessThan(0);
+        expect(gr.theta).toBeGreaterThan(0);
+        expect(gr.vega).toBeLessThan(0);
+        expect(text('theta')).toBe(`${money(gr.theta, true)} a day`);
+        expect(text('vega')).toBe(`${money(gr.vega, true)} a point`);
+        expect(termIds(g)).toEqual(expect.arrayContaining(['delta', 'gamma', 'theta', 'vega', 'delta-hedge']));
+      });
+    }, 120_000);
+
+    it('says the desk is flat when it holds no option, with zeros rather than a gap', () => {
+      render(<App store={optionsAt()} />);
+      const g = screen.getByTestId('options-greeks');
+      expect(g.textContent).toMatch(/no options held/i);
+      expect(g.querySelector('[data-greek="theta"]')!.textContent).toBe('$0.00 a day');
+      expect(g.querySelector('[data-greek="hedge"]')!.textContent).toBe('flat');
+    }, 120_000);
+
+    it('is not there while the desk is closed', () => {
+      const store = createStore(CONTENT, null, 63);
+      store.setTutorial({ state: 'done' });
+      render(<App store={store} />);
+      expect(screen.queryByTestId('options-greeks')).toBeNull();
+    });
+
+    it('shows the what-if at plus and minus 2% on the index and 5 points of volatility, from the model alone', () => {
+      holding(-10, (s, store) => {
+        render(<App store={store} />);
+        const o = s.options!;
+        const ctx = { spot: o.spot, rate: o.rate, now: s.now };
+        const index = screen.getByLabelText<HTMLInputElement>('Index move');
+        const vol = screen.getByLabelText<HTMLInputElement>('Volatility move');
+        const pnl = () => screen.getByTestId('scenario-pnl').textContent;
+        expect([index.min, index.max, vol.min, vol.max]).toEqual(['-2', '2', '-5', '5']);
+        expect(pnl()).toBe(money(0, true));
+        for (const [i, v] of [
+          [2, 0],
+          [-2, 0],
+          [0, 5],
+          [0, -5],
+          [2, 5],
+          [-2, -5],
+        ] as const) {
+          fireEvent.change(index, { target: { value: String(i) } });
+          fireEvent.change(vol, { target: { value: String(v) } });
+          expect(pnl(), `${i}% ${v} pts`).toContain(money(scenario(o.held, i / 100, v, ctx), true));
+        }
+        // Short straddle: the index either way hurts, and so does a rise in volatility.
+        fireEvent.change(index, { target: { value: '2' } });
+        fireEvent.change(vol, { target: { value: '0' } });
+        expect(pnl()).toMatch(/^-\$/);
+        fireEvent.change(index, { target: { value: '-2' } });
+        expect(pnl()).toMatch(/^-\$/);
+        fireEvent.change(index, { target: { value: '0' } });
+        fireEvent.change(vol, { target: { value: '5' } });
+        expect(pnl()).toMatch(/^-\$/);
+        fireEvent.change(vol, { target: { value: '-5' } });
+        expect(pnl()).toMatch(/^\+\$/);
+        // The sim is not touched: the same time, the same positions.
+        expect(store.getSnapshot().now).toBe(s.now);
+        expect(store.getSnapshot().options!.held).toEqual(o.held);
+        expect(termIds(screen.getByTestId('scenario'))).toEqual(expect.arrayContaining(['gamma', 'vega']));
+      });
+    }, 120_000);
+  });
+
+  describe('the expiry in the day’s report', () => {
+    function reportStore(extra: Partial<DayReport>) {
+      const store = createStore(CONTENT, null, 64);
+      store.setTutorial({ state: 'done' });
+      act(() => {
+        store.game.days.push({
+          day: 0,
+          week: 1,
+          weekday: 'Mon',
+          pnl: 5000,
+          equityAtClose: 5000,
+          byBlock: {},
+          bySymbol: {},
+          races: { won: 0, beaten: 0, missed: 0 },
+          fees: 0,
+          fines: 0,
+          headlines: [],
+          latency: {},
+          rivals: [],
+          ...extra,
+        });
+        store.game.step();
+        store.publish();
+      });
+      return store;
+    }
+    const call = {
+      symbol: 'OC00',
+      right: 'call' as const,
+      strike: 5300,
+      qty: 10,
+      settled: 40,
+      cash: 40_000,
+      made: 5000,
+    };
+
+    it('lists each option held to the close, puts the desk in By desk with the expiry’s result, and names the expiry as the cause', () => {
+      const store = reportStore({
+        expired: [call, { ...call, symbol: 'OP00', right: 'put', qty: -2, settled: 0, cash: 0, made: 0 }],
+        byDesk: { stocks: { fills: 1, realised: 0, fees: 1 }, options: { fills: 0, realised: 5000, fees: 0 } },
+      });
+      render(<App store={store} />);
+      goTo('Reports');
+      fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+      const report = document.querySelector('.report')!;
+      const lines = [...report.querySelectorAll('.expiry-lines li')].map((l) => l.textContent);
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toMatch(/OC00/);
+      expect(lines[0]).toContain('$400.00');
+      expect(lines[0]).toContain('+$50.00');
+      expect(lines[1]).toMatch(/OP00/);
+      expect(lines[1]).toMatch(/out of the money|nothing/i);
+      expect(termIds(report.querySelector('.expiry-lines')!)).toEqual(
+        expect.arrayContaining(['cash-settlement', 'in-the-money', 'out-of-the-money']),
+      );
+      const row = [...report.querySelectorAll('.by-desk tbody tr')].find(
+        (r) => r.firstElementChild!.textContent === 'Options',
+      )!;
+      expect(row).toBeDefined();
+      expect(row.lastElementChild!.textContent).toBe('+$50.00');
+      expect(report.querySelector('.day-cause')!.textContent).toMatch(/expiry/i);
+      expect(report.querySelector('.day-cause')!.textContent).toContain('$50.00');
+    });
+
+    it('says nothing of the expiry on a day with none held', () => {
+      const store = reportStore({});
+      render(<App store={store} />);
+      goTo('Reports');
+      fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+      expect(document.querySelector('.report .expiry-lines')).toBeNull();
+    });
+  });
+
+  describe('the glossary', () => {
+    it('has an entry, short and long, for each of the twenty-two concepts', () => {
+      expect(OPTION_TERMS).toHaveLength(22);
+      for (const id of OPTION_TERMS) {
+        const g = glossary(id);
+        expect(g, id).toBeDefined();
+        expect(g!.short.length, id).toBeGreaterThan(10);
+        expect(g!.long.length, id).toBeGreaterThan(100);
+      }
+      expect(glossary('the-crush')!.long).toMatch(/release/i);
+      expect(glossary('cash-settlement')!.long).toMatch(/intrinsic/i);
+    });
+
+    it('links every one where the page uses it: the chain, the greeks with the what-if, and the report', () => {
+      const linked = new Set<string>();
+      const store = optionsAt();
+      const { unmount } = render(<App store={store} />);
+      goTo('Market');
+      for (const id of termIds(chainEl())) linked.add(id);
+      goTo('Overview');
+      for (const id of termIds(screen.getByTestId('options-greeks'))) linked.add(id);
+      for (const id of termIds(screen.getByTestId('scenario'))) linked.add(id);
+      unmount();
+      const reports = createStore(CONTENT, null, 65);
+      reports.setTutorial({ state: 'done' });
+      act(() => {
+        reports.game.days.push({
+          day: 0,
+          week: 1,
+          weekday: 'Mon',
+          pnl: 5000,
+          equityAtClose: 5000,
+          byBlock: {},
+          bySymbol: {},
+          races: { won: 0, beaten: 0, missed: 0 },
+          fees: 0,
+          fines: 0,
+          headlines: [],
+          latency: {},
+          rivals: [],
+          expired: [
+            { symbol: 'OC00', right: 'call', strike: 5300, qty: 10, settled: 40, cash: 40_000, made: 5000 },
+            { symbol: 'OP00', right: 'put', strike: 5300, qty: 2, settled: 0, cash: 0, made: -300 },
+          ],
+        });
+        reports.game.step();
+        reports.publish();
+      });
+      render(<App store={reports} />);
+      goTo('Reports');
+      fireEvent.click(screen.getByRole('tab', { name: /^Days/ }));
+      for (const id of termIds(document.querySelector('.report')!)) linked.add(id);
+      const missing = OPTION_TERMS.filter((id) => !linked.has(id));
+      expect(missing).toEqual([]);
+    }, 120_000);
   });
 });

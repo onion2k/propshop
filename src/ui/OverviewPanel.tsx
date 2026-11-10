@@ -10,6 +10,7 @@ import { balance, money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
 import { Section } from './OverviewSection';
 import { Legend, LineChart, PnlChart, lineStyle, type Line } from './OverviewCharts';
+import { OptionsPosition } from './OptionsPosition';
 import { Releases } from './Releases';
 import { Targets } from './Targets';
 import type { Met, Store } from './store';
@@ -173,6 +174,8 @@ function Position({ s, met, stage }: { s: Snapshot; met: Met; stage: StageId }) 
       </p>
       {/* Appended below the yesterday line; it grows downward as stages open. */}
       <Targets s={s} met={met} stage={stage} />
+      {/* The options desk, once it is open, below the targets: it adds to the page and moves nothing. */}
+      <OptionsPosition s={s} />
     </Section>
   );
 }

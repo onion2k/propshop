@@ -21,6 +21,8 @@ const S1 = ['home', 'seat'];
 const S2 = ['gap', 'race', 'cost'];
 const S3 = ['maker', 'noise'];
 const S4 = ['hand', 'used', 'week'];
+// Stage 5 asks for the futures desk's three lessons before stage 6, which they teach the expiry and margin for.
+const S5 = ['basis', 'overnight', 'lead'];
 
 describe('stageOf', () => {
   it('opens stage n only when stage n-1 is open and all its lessons are done', () => {
@@ -34,6 +36,10 @@ describe('stageOf', () => {
     expect(stageOf(done(...S1, ...S2, ...S3))).toBe(4);
     expect(stageOf(done(...S1, ...S2, ...S3, 'hand', 'used'))).toBe(4);
     expect(stageOf(done(...S1, ...S2, ...S3, ...S4))).toBe(5);
+    // Stage 6, Volatility, needs the futures desk's three as well.
+    expect(stageOf(done(...S1, ...S2, ...S3, ...S4, 'basis', 'overnight'))).toBe(5);
+    expect(stageOf(done(...S1, ...S2, ...S3, ...S4, ...S5))).toBe(6);
+    expect(stageOf(done(...S1, ...S2, ...S3, ...S4, ...S5, 'fix', 'curve'))).toBe(6);
   });
 
   it('does not skip: a later stage’s lessons without the earlier ones stay where they are', () => {
@@ -42,6 +48,20 @@ describe('stageOf', () => {
     expect(stageOf(done(...S1, ...S3))).toBe(2);
     expect(stageOf(done(...S1, ...S3, ...S4))).toBe(2);
     expect(stageOf(done(...S1, ...S2, ...S4))).toBe(3);
+    expect(stageOf(done(...S1, ...S2, ...S3, ...S5))).toBe(4);
+    expect(stageOf(done(...S1, ...S2, ...S3, ...S5, 'hand', 'used'))).toBe(4);
+  });
+
+  it('ends at Volatility: six stages, the sixth with no lessons of its own and the fifth needing the futures three', () => {
+    expect(LAST_STAGE).toBe(6);
+    expect(STAGES).toHaveLength(6);
+    expect(STAGES[5]!.name).toBe('Volatility');
+    expect(STAGES[5]!.lessons).toEqual([]);
+    expect(STAGES[4]!.needs).toEqual(S5);
+    expect(introSteps(6).length).toBeGreaterThan(0);
+    // The needed lessons stay the futures desk's, shown at its stage; they do not move to stage 5.
+    expect(lessonStage('basis')).toBe(3);
+    expect(DESK_LESSONS.futures).toEqual(S5);
   });
 
   it('puts week in stage 4, and stage 5 needs it', () => {
@@ -62,6 +82,7 @@ describe('stageOf', () => {
     for (const id of ['pips', 'triangle', 'refused', 'rollover']) expect(lessonStage(id)).toBe(4);
     const stocks = Object.fromEntries(STAGES.flatMap((s) => s.lessons).map((id) => [id, 1]));
     expect(stageOf(stocks)).toBe(5);
+    expect(stageOf({ ...stocks, ...done(...S5) })).toBe(6);
   });
 });
 
@@ -95,14 +116,18 @@ describe('shows', () => {
     ['block:curve', 5],
     ['block:fixArb', 5],
     ['block:crossPairs', 5],
+    ['desk:options', 6],
+    ['block:optionMaker', 6],
+    ['block:parity', 6],
+    ['block:eventVol', 6],
   ];
   it.each(table)('%s opens at stage %i and not before', (feature, at) => {
-    for (let stage = 1; stage <= 5; stage++) expect(shows(feature, stage as 1)).toBe(stage >= at);
+    for (let stage = 1; stage <= 6; stage++) expect(shows(feature, stage as 1)).toBe(stage >= at);
   });
 
   it('places every block the sim has', () => {
     for (const b of BLOCKS) {
-      expect(shows(`block:${b.spec.id}`, 5)).toBe(true);
+      expect(shows(`block:${b.spec.id}`, LAST_STAGE)).toBe(true);
       expect(shows(`block:${b.spec.id}`, 1)).toBe(b.spec.id === 'momentum');
     }
   });
@@ -117,16 +142,38 @@ describe('shows', () => {
     for (const d of desks) expect(placed(`desk:${d}`), d).toBe(true);
     expect(placed('desk:nowhere')).toBe(false);
     expect(featureStage('desk:metals')).toBe(5);
+    expect(featureStage('desk:options')).toBe(6);
   });
 
-  it('keeps the options desk closed in every game until its stage is written', () => {
-    // Built and closed (plans/desk-options.md 7b): placed one past the last stage, so not even Free play opens it.
-    expect(featureStage('desk:options')).toBeGreaterThan(LAST_STAGE);
-    expect(shows('desk:options', LAST_STAGE)).toBe(false);
+  it('opens the options desk at stage 6 and in free play, and at no stage before it', () => {
+    expect(featureStage('desk:options')).toBe(6);
+    expect(featureStage('desk:options')).toBe(LAST_STAGE);
+    expect(shows('desk:options', 5)).toBe(false);
+    expect(shows('desk:options', 6)).toBe(true);
+    const staged = createStore(CONTENT, null, 1);
+    expect(staged.game.market.isDeskOpen('options')).toBe(false);
     const store = createStore(CONTENT, null, 1);
     store.setReveal(true);
     expect(store.game.market.isDeskOpen('metals')).toBe(true);
-    expect(store.game.market.isDeskOpen('options')).toBe(false);
+    expect(store.game.market.isDeskOpen('options')).toBe(true);
+    // The options desk needs the futures desk, and it is open with it.
+    expect(store.game.market.isDeskOpen('futures')).toBe(true);
+  });
+
+  it('opens the options desk when the sixth stage is reached by the lessons, and not at the fifth', () => {
+    const storage = memory();
+    storage.data.set(PROGRESS_KEY, JSON.stringify(done(...S1, ...S2, ...S3, ...S4)));
+    const five = createStore(CONTENT, storage, 1);
+    expect(five.getStage()).toBe(5);
+    expect(five.game.market.isDeskOpen('options')).toBe(false);
+    const other = memory();
+    other.data.set(PROGRESS_KEY, JSON.stringify(done(...S1, ...S2, ...S3, ...S4, ...S5)));
+    // The intros are told in turn: the fifth's has been seen, so the sixth's is the one due.
+    other.data.set(STAGES_KEY, '{"seen":5}');
+    const six = createStore(CONTENT, other, 1);
+    expect(six.getStage()).toBe(6);
+    expect(six.game.market.isDeskOpen('options')).toBe(true);
+    expect(six.getIntro()).toBe(6);
   });
 
   it('opens the metals desk after every stocks lesson is done, and not before', () => {
@@ -190,7 +237,7 @@ describe('the store and the stages', () => {
     void old.save();
     storage.data.delete(STAGES_KEY);
     const store = createStore(CONTENT, storage, 4);
-    expect(store.getStage()).toBe(5);
+    expect(store.getStage()).toBe(LAST_STAGE);
     expect(store.getIntro()).toBeNull();
     // Still the old game, so the key is not written over it.
     expect(storage.data.has(STAGES_KEY)).toBe(false);
@@ -206,7 +253,7 @@ describe('the store and the stages', () => {
     storage.data.delete(STAGES_KEY);
     storage.data.set(PROGRESS_KEY, JSON.stringify(done('gap', 'race', 'home')));
     const store = createStore(CONTENT, storage, 4);
-    expect(store.getStage()).toBe(5);
+    expect(store.getStage()).toBe(LAST_STAGE);
   });
 
   it('keeps show everything across a reload and across Start again', () => {
@@ -214,12 +261,12 @@ describe('the store and the stages', () => {
     const store = createStore(CONTENT, storage, 5);
     expect(store.getReveal()).toBe(false);
     store.setReveal(true);
-    expect(store.getStage()).toBe(5);
+    expect(store.getStage()).toBe(LAST_STAGE);
     expect(storage.data.get(REVEAL_KEY)).toBe('1');
-    expect(createStore(CONTENT, storage, 6).getStage()).toBe(5);
+    expect(createStore(CONTENT, storage, 6).getStage()).toBe(LAST_STAGE);
     store.reset(7);
     expect(store.getReveal()).toBe(true);
-    expect(store.getStage()).toBe(5);
+    expect(store.getStage()).toBe(LAST_STAGE);
     expect(storage.data.get(REVEAL_KEY)).toBe('1');
     store.setReveal(false);
     expect(store.getStage()).toBe(1);

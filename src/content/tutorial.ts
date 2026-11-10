@@ -198,6 +198,18 @@ const INTRO: TutorialStep[] = [
     target: 'strategy',
     enter: { speed: 0 },
   },
+  {
+    id: 'stage6-vol',
+    title: 'Volatility',
+    text:
+      'The options desk is open. The Market page has a chain of calls and puts on the index that expire at the ' +
+      'close, with the price of each, the volatility it implies and its delta. The straddle line says how far the ' +
+      'market expects the index to move by then. Tick the options to watch them, or watch the whole chain in one ' +
+      'click: your blocks see only what is watched. Position has the desk’s greeks and a what-if.',
+    page: 'market',
+    target: 'options',
+    enter: { speed: 0 },
+  },
 ];
 
 /** The intro cards of a stage, in order. */

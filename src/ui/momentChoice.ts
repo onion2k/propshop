@@ -5,15 +5,24 @@ import { MOMENT_WORDS, shows, type Feature, type Place, type StageId } from '../
 import type { GameEvent } from '../sim';
 import { money } from './format';
 
-export type MomentKind = 'margin' | 'fine' | 'halt' | 'delivery' | 'round' | 'race' | 'unlock';
+export type MomentKind = 'margin' | 'fine' | 'halt' | 'delivery' | 'expiry' | 'round' | 'race' | 'unlock';
 
 /**
  * Highest first. A margin call is the firm being sold out of what it holds, so it outranks all; a fine and a halt
  * are the two other things that cost the player money or stop the trading; a delivery changes what the firm holds
- * without its asking; a closed round, the day's first race won and an unlock are good news, in that order of how
+ * without its asking, as does an option settled in cash at its expiry; a closed round, the day's first race won and an unlock are good news, in that order of how
  * much there is to learn from them. A draft, held by nothing.
  */
-export const MOMENT_RANK: readonly MomentKind[] = ['margin', 'fine', 'halt', 'delivery', 'round', 'race', 'unlock'];
+export const MOMENT_RANK: readonly MomentKind[] = [
+  'margin',
+  'fine',
+  'halt',
+  'delivery',
+  'expiry',
+  'round',
+  'race',
+  'unlock',
+];
 
 /** How long a moment stays on the line, in wall milliseconds. */
 export const MOMENT_HOLD_MS = 6000;
@@ -38,6 +47,7 @@ const WHERE: Record<MomentKind, { place: Place; term: string; feature: Feature |
   fine: { place: { page: 'reports', tab: 'dark' }, term: 'insider', feature: 'tab:dark' },
   halt: { place: { page: 'strategy', target: 'risk' }, term: 'risk-limits', feature: null },
   delivery: { place: { page: 'market', target: 'firm' }, term: 'delivery', feature: 'desk:metals' },
+  expiry: { place: { page: 'market', target: 'options' }, term: 'cash-settlement', feature: 'desk:options' },
   round: { place: { page: 'strategy', target: 'strategy' }, term: 'triangular-arbitrage', feature: 'block:triangle' },
   race: { place: { page: 'market', target: 'firm' }, term: 'latency', feature: 'races' },
   unlock: { place: { page: 'reports', tab: 'dark' }, term: 'insider', feature: 'tab:dark' },
@@ -74,6 +84,19 @@ function momentOf(e: GameEvent): Moment | null {
       return make('halt', e.at, MOMENT_WORDS.halt(e.reason));
     case 'delivery':
       return make('delivery', e.at, MOMENT_WORDS.delivery(Math.abs(e.units), e.symbol, money(e.value), e.units >= 0));
+    case 'expiry':
+      return make(
+        'expiry',
+        e.at,
+        MOMENT_WORDS.expiry(
+          e.symbol,
+          Math.abs(e.qty),
+          e.qty > 0,
+          money(Math.abs(e.cash)),
+          money(Math.abs(e.made)),
+          e.made >= 0,
+        ),
+      );
     case 'round':
       return make('round', e.at, MOMENT_WORDS.round(money(Math.abs(e.net)), e.net >= 0));
     case 'unlock':

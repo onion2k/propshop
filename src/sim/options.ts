@@ -2,6 +2,8 @@
 // volatility that makes a price (by bisection), and the skew. Pure floats in and out; the book rounds. Time is in
 // years, volatility an annual share, theta a year's worth and vega a whole unit of volatility's: the callers scale.
 
+import { MS_PER_YEAR, TRADING_YEAR_MS, openMsBetween } from './clock';
+
 export type Right = 'call' | 'put';
 
 /** The most steps `impliedFrom` takes. Each halves a bracket of five units of volatility, so sixty reach 1e-18. */
@@ -134,4 +136,63 @@ export function skewed(atm: number, k: number, forward: number, slope: number): 
 /** What an option pays at expiry, in the underlying's price points: how far in the money it is, else nothing. */
 export function intrinsic(right: Right, spot: number, strike: number): number {
   return right === 'call' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+}
+
+/** An option the firm holds, as the page values it: its terms, the contracts held (negative where short) and its volatility. */
+export interface HeldOption {
+  symbol: string;
+  right: Right;
+  strike: number;
+  /** Simulated ms. */
+  expiry: number;
+  qty: number;
+  multiplier: number;
+  /** The model's volatility for it now, as the market prices it. */
+  vol: number;
+}
+
+/**
+ * The desk's sensitivities, totalled over what is held. `delta` is in units of the underlying (a contract is its
+ * multiplier of them), `gamma` the units of delta gained for a dollar (a hundred price points) of the underlying,
+ * `theta` the cents lost to a calendar day passing, `vega` the cents gained for a point of volatility.
+ */
+export interface Greeks {
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+}
+
+/** The underlying's price points in a dollar: its prices are cents. */
+const POINTS_PER_DOLLAR = 100;
+
+/**
+ * The greeks of a set of options at the underlying's price `spot` now: the model at each one's own volatility, summed
+ * over the contracts and their multipliers. Pure, and meant to be asked for once a snapshot, never a tick.
+ */
+export function totalGreeks(held: readonly HeldOption[], spot: number, rate: number, now: number): Greeks {
+  const out: Greeks = { delta: 0, gamma: 0, theta: 0, vega: 0 };
+  for (const o of held) {
+    const n = o.qty * o.multiplier;
+    const t = Math.max(0, o.expiry - now) / MS_PER_YEAR;
+    out.delta += n * delta(o.right, spot, o.strike, t, o.vol, rate);
+    out.gamma += n * gamma(spot, o.strike, t, o.vol, rate) * POINTS_PER_DOLLAR;
+    out.theta += (n * theta(o.right, spot, o.strike, t, o.vol, rate)) / 365;
+    out.vega += (n * vega(spot, o.strike, t, o.vol, rate)) / 100;
+  }
+  return out;
+}
+
+/**
+ * An implied volatility quoted on the trading clock, where the realised figure is. The model prices on calendar years
+ * (`impliedFrom` is given the time that way), but the market's variance to an expiry counts trading time (open hours in
+ * full, shut ones at `closedWeight`, over a trading year of 252 sessions): the same total variance over the longer
+ * trading time is the smaller volatility `ivCalendar * sqrt(calendar years / trading years)`. With hours of session to
+ * go it is a half to a third of the calendar figure. No time to go: unchanged.
+ */
+export function tradingVol(ivCalendar: number, from: number, to: number, closedWeight: number): number {
+  if (to <= from) return ivCalendar;
+  const open = openMsBetween(from, to);
+  const trading = (open + closedWeight * (to - from - open)) / TRADING_YEAR_MS;
+  return trading <= 0 ? ivCalendar : ivCalendar * Math.sqrt((to - from) / MS_PER_YEAR / trading);
 }

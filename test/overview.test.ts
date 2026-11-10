@@ -1,6 +1,7 @@
 import { SAME_CENTS } from '../src/content/experiments';
 import { glossary } from '../src/content';
-import type { DayReport, Snapshot, UpgradeOffer } from '../src/sim';
+import { MS_PER_YEAR, type DayReport, type Snapshot, type UpgradeOffer } from '../src/sim';
+import { delta, price, totalGreeks, type HeldOption } from '../src/sim/options';
 import type { Night, StoredMeasures } from '../src/ui/nights';
 import {
   SESSION_MINUTES,
@@ -9,6 +10,9 @@ import {
   blockVerdict,
   comingLine,
   dayCause,
+  deskGreeks,
+  expiryLines,
+  scenario,
   progressText,
   ordersToday,
   rivalLines,
@@ -584,5 +588,146 @@ describe('rivals as characters', () => {
     });
     expect(rows[0]!.today).toEqual({ count: 3, cents: 200 });
     expect(rows[0]!.week).toEqual({ count: 3, cents: 200 });
+  });
+});
+
+describe('the options desk’s expiry in the day', () => {
+  const t = (realised: number, fees: number, fills = 5) => ({ fills, realised, fees });
+  const line = (made: number, symbol = 'OC00') => ({
+    symbol,
+    right: 'call' as const,
+    strike: 5300,
+    qty: 10,
+    settled: 40,
+    cash: 40_000,
+    made,
+  });
+
+  it('names the expiry when it is the largest loss of a day that lost, or the largest gain of one that earned', () => {
+    const lost = dayCause(
+      day(1, { pnl: -9000, fees: 100, expired: [line(-8000)], byBlock: { momentum: t(-500, 10) } }),
+    );
+    expect(lost.kind).toBe('expiry');
+    expect(lost.amount).toBe(-8000);
+    expect(lost.text).toContain('$80.00');
+    expect(lost.text).toMatch(/expiry/i);
+    expect(lost.term).toBe('cash-settlement');
+    const won = dayCause(day(1, { pnl: 9000, fees: 100, expired: [line(7000), line(2000, 'OP00')] }));
+    expect(won.kind).toBe('expiry');
+    expect(won.amount).toBe(9000);
+    expect(won.text).toMatch(/earned|paid/);
+  });
+
+  it('is not named when something bigger lost, nor when it is on the wrong side of the day', () => {
+    expect(dayCause(day(1, { pnl: -9000, expired: [line(-100)], byBlock: { momentum: t(-8000, 10) } })).kind).toBe(
+      'block',
+    );
+    expect(dayCause(day(1, { pnl: -9000, fees: 7000, expired: [line(500)] })).kind).toBe('fees');
+    expect(glossary(dayCause(day(1, { pnl: -9000, expired: [line(-8000)] })).term!)).toBeDefined();
+  });
+
+  it('puts each option held to the close in a line: what it was, what it settled at, what it paid', () => {
+    const lines = expiryLines(
+      day(1, { expired: [line(1234), { ...line(-500, 'OP00'), right: 'put', qty: -3, cash: 0, settled: 0 }] }),
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.symbol).toBe('OC00');
+    expect(lines[0]!.text).toMatch(/10 .*call/i);
+    expect(lines[0]!.text).toContain('$400.00');
+    expect(lines[0]!.text).toContain('+$12.34');
+    expect(lines[1]!.text).toMatch(/short 3|3 short/i);
+    expect(lines[1]!.text).toMatch(/nothing|worthless|out of the money/i);
+    expect(expiryLines(day(1))).toEqual([]);
+  });
+});
+
+describe('the options desk’s greeks and the what-if', () => {
+  const S = 5300;
+  const R = 0.035;
+  const T = 0.5 / 365;
+  const NOW = 2_000_000;
+  const o = (right: 'call' | 'put', qty: number, strike = 5300, vol = 0.22): HeldOption => ({
+    symbol: `${right}${strike}`,
+    right,
+    strike,
+    expiry: NOW + T * MS_PER_YEAR,
+    qty,
+    multiplier: 100,
+    vol,
+  });
+  const ctx = { spot: S, rate: R, now: NOW };
+
+  it('is nought for nothing moved, or nothing held', () => {
+    expect(scenario([o('call', 10)], 0, 0, ctx)).toBe(0);
+    expect(scenario([], 0.02, 5, ctx)).toBe(0);
+  });
+
+  it('revalues a long call at the model: the index up 2% gains what the model says', () => {
+    const want = 10 * 100 * (price('call', S * 1.02, 5300, T, 0.22, R) - price('call', S, 5300, T, 0.22, R));
+    const got = scenario([o('call', 10)], 0.02, 0, ctx);
+    expect(got).toBeCloseTo(want, 6);
+    expect(got).toBeGreaterThan(0);
+    expect(scenario([o('call', 10)], -0.02, 0, ctx)).toBeLessThan(0);
+    // And the same for a put the other way about.
+    expect(scenario([o('put', 10)], 0.02, 0, ctx)).toBeLessThan(0);
+    expect(scenario([o('put', 10)], -0.02, 0, ctx)).toBeGreaterThan(0);
+  });
+
+  it('moves the volatility in points: five up gains a long option what the model says, and costs a short', () => {
+    const want = 10 * 100 * (price('call', S, 5300, T, 0.27, R) - price('call', S, 5300, T, 0.22, R));
+    expect(scenario([o('call', 10)], 0, 5, ctx)).toBeCloseTo(want, 6);
+    expect(scenario([o('call', 10)], 0, 5, ctx)).toBeGreaterThan(0);
+    expect(scenario([o('call', -10)], 0, 5, ctx)).toBeCloseTo(-want, 6);
+    expect(scenario([o('call', 10)], 0, -5, ctx)).toBeLessThan(0);
+  });
+
+  it('hurts a short straddle whichever way the index goes, and a long one gains: gamma', () => {
+    const short = [o('call', -10), o('put', -10)];
+    const long = [o('call', 10), o('put', 10)];
+    for (const move of [-0.05, -0.02, 0.02, 0.05]) {
+      expect(scenario(short, move, 0, ctx), String(move)).toBeLessThan(0);
+      expect(scenario(long, move, 0, ctx), String(move)).toBeGreaterThan(0);
+    }
+    // Both are hurt more by five points of volatility than by none.
+    expect(scenario(short, 0.02, 5, ctx)).toBeLessThan(scenario(short, 0.02, 0, ctx));
+    expect(scenario(short, 0, -5, ctx)).toBeGreaterThan(0);
+  });
+
+  it('agrees with delta for a small move, and leaves its inputs alone', () => {
+    const held = [o('call', 10)];
+    const frozen = JSON.stringify(held);
+    const small = scenario(held, 0.0005, 0, ctx);
+    const viaDelta = 10 * 100 * delta('call', S, 5300, T, 0.22, R) * S * 0.0005;
+    expect(small / viaDelta).toBeGreaterThan(0.97);
+    expect(small / viaDelta).toBeLessThan(1.03);
+    expect(JSON.stringify(held)).toBe(frozen);
+  });
+
+  it('keeps the volatility above nought however far down it is moved, and values an expired option at its worth', () => {
+    expect(Number.isFinite(scenario([o('call', 10, 5300, 0.03)], 0, -50, ctx))).toBe(true);
+    const gone = { ...o('call', 10, 5200), expiry: NOW };
+    expect(scenario([gone], 0, 5, ctx)).toBe(0);
+    expect(scenario([gone], 0.02, 0, ctx)).toBeCloseTo(10 * 100 * S * 0.02, 6);
+  });
+
+  it('works the desk’s greeks from the snapshot: delta in index units, the futures that hedge it, gamma, theta, vega', () => {
+    const held = [o('call', 10), o('put', -4)];
+    const g = totalGreeks(held, S, R, NOW);
+    const s = {
+      options: { underlying: 'IDX', spot: S, rate: R, held, greeks: g },
+      stocks: [{ symbol: 'IXF0', contract: { underlying: 'IDX', multiplier: 100 } }],
+    } as unknown as Snapshot;
+    const out = deskGreeks(s)!;
+    expect(out.delta).toBeCloseTo(g.delta, 9);
+    // A hundred to a contract of the future: sell as many as the delta is long.
+    expect(out.hedge).toBeCloseTo(-g.delta / 100, 9);
+    expect(out.gamma).toBe(g.gamma);
+    expect(out.theta).toBe(g.theta);
+    expect(out.vega).toBe(g.vega);
+    expect(out.held).toBe(2);
+    // The multiplier is the future's own, and a hundred where none is listed.
+    const lone = { ...s, stocks: [] } as unknown as Snapshot;
+    expect(deskGreeks(lone)!.hedge).toBeCloseTo(-g.delta / 100, 9);
+    expect(deskGreeks({ ...s, options: undefined })).toBeNull();
   });
 });

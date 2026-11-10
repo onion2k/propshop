@@ -59,15 +59,22 @@ http://localhost:5181.
   delivered, and metal costs storage every night. Twice a morning the
   London-like market runs the fix, a call auction at one price. A gold miner
   on the stocks desk moves with the metal.
-- **An options desk, being built.** Daily calls and puts on the index,
+- **An options desk, last.** Daily calls and puts on the index,
   three strikes a side, settled in cash at each day's close, priced from the
   index's own volatility with a premium over it, a little skew, and a rise
-  into each public release that falls away once it lands. A short option is
-  held on margin. It has three blocks (an option maker that quotes from the
-  book's own volatility and hedges its delta in the index future, put-call
-  parity, and a straddle bought into a release) and a rival, Bluestem
-  Volatility, on the Prairie rack. It is in the simulator and closed: no game
-  opens it yet.
+  into each public release that falls away once it lands. The Market page has
+  the chain: a row a strike, a call and a put for each of two expiries, with
+  bid and ask, implied volatility and delta, the time to go and what the
+  straddle says the market expects the index to move by the close. Position
+  has the desk's greeks (delta, the futures that would hedge it, gamma, theta
+  a day, vega a point) and a what-if with two sliders, the index up or down 2%
+  and the volatility up or down 5 points, which revalues the desk without
+  touching the game. A short option is held on margin, and the day's report
+  lists each option held through the close and what it settled for. It has
+  three blocks (an option maker that quotes from the book's own volatility and
+  hedges its delta in the index future, put-call parity, and a straddle bought
+  into a release) and a rival, Bluestem Volatility, on the Prairie rack. It
+  opens at the last stage, Volatility, and in free play.
 - **Strategy blocks and a script.** Cross-exchange arbitrage, market
   making, momentum, mean reversion, a stale-quote sniper, pairs, index
   arbitrage and news reaction, each with explained parameters and the day
@@ -94,13 +101,13 @@ http://localhost:5181.
   quote stuffing and order floods are noticed at the close.
 - **A game that opens a stage at a time.** It starts with one block,
   momentum, on a laptop. Each lesson done opens the next idea (arbitrage and
-  the race, then the day's character, then the desk, then the whole firm),
-  with a short card on what is new. A switch in the First week tab opens
+  the race, then the day's character, then the desk, then the whole firm, then
+  volatility), with a short card on what is new. A switch in the First week tab opens
   everything at once.
 - **A guided first week.** Ten things to see, grouped by stage, ticked off
   by the game as each happens, with what it meant revealed after.
-- **Moments marked.** A margin call, a fine, a halt, a delivery, a closed
-  triangle, the day's first race won and the dark web opening each put one
+- **Moments marked.** A margin call, a fine, a halt, a delivery, an option
+  settled at its expiry, a closed triangle, the day's first race won and the dark web opening each put one
   line under the top bar for a few seconds, with its figure, the concept it
   is, and a link to the place on the page.
 - **Something at stake, and something to play for.** Every office, line and
