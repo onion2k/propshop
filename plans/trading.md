@@ -2,7 +2,7 @@
 
 State: parts 1 to 6 built, 1 to 4 on 2026-11-08, 5 to 6 on 2026-11-09; the futures desk's lead check unmet, by
 Chris's choice (part 4), and the metals desk's fix-against-the-minute check too (part 6). Next: the options desk
-(part 7), to be specified. Before it, the way in (`plans/way-in.md`); what the game still wants as a game and
+(part 7), specified 2026-11-10. Before it, the way in (`plans/way-in.md`); what the game still wants as a game and
 as a lesson is noted in `plans/play-and-learn.md`.
 
 ## Context
@@ -246,7 +246,8 @@ its own. Part 1 must change nothing a player sees.
       plan's own. Built 2026-11-09 on Opus, six parts: the curve flips, delivery pays storage, `fixArb` earns from
       the Thamesford rack and not from home; the fix does not beat the continuous minute for a large gold buy,
       accepted by Chris. The tripwire with every desk open is now 35,000.
-- [ ] **7. Options desk** (`plans/desk-options.md`).
+- [ ] **7. Options desk** (`plans/desk-options.md`, specified 2026-11-10 on Opus): daily expiries, a chain of twelve
+      books quoted by a model, implied from trailing realised, and a public calendar of the market's releases.
 - [ ] **8. The firm across desks** (`plans/firm-desks.md`).
 - [ ] **9. The words**: README and CLAUDE.md say "a game about trading", the cover's tagline and the game's
       first card say so, and CLAUDE.md's layout, edge cases and what is not held have the desks.
