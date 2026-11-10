@@ -5,6 +5,7 @@ import { DESK_NAMES } from '../content';
 import { formatTime, type Published, type Snapshot } from '../sim';
 import { money, pointsInCents } from './format';
 import { Term } from './Glossary';
+import { Releases } from './Releases';
 
 export function NewsPanel({ s }: { s: Snapshot }) {
   const items: { h: Published; desk: string | null }[] = [
@@ -22,6 +23,7 @@ export function NewsPanel({ s }: { s: Snapshot }) {
         Headlines as they land. A headline reads up or down; whether the market agrees is another matter. See{' '}
         <Term id="news">news and pricing in</Term>.
       </p>
+      <Releases s={s} />
       {items.length === 0 && <p className="muted">Nothing yet today.</p>}
       <ul>
         {items.map(({ h, desk }) => {

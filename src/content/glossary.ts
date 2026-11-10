@@ -822,15 +822,26 @@ export const GLOSSARY: GlossaryEntry[] = [
       'the gap between them opens and closes. Pairs across desks trades the miner against the metal on that gap.',
   },
   {
+    id: 'economic-calendar',
+    term: 'Economic calendar',
+    short: 'The times of the day’s market-wide releases, published each morning. Not what they say.',
+    long:
+      'Rate decisions, inflation prints and the like are scheduled, and everyone knows the time. The game lists the ' +
+      'day’s market-wide headlines by time as a market release, never what they say: not what the figure is, not ' +
+      'which way the market will take it, not how far. A company’s or a sector’s headline is not on the calendar; ' +
+      'those arrive without warning. Knowing when is worth something, because traders and prices behave differently ' +
+      'around a release: they wait, then move. Watch mode slows down for one.',
+  },
+  {
     id: 'watch-mode',
     term: 'Watch mode',
     short: 'A speed that runs fast through the quiet and slows to 1× around the moments worth seeing.',
     long:
       'Pick watch and the game runs at the top speed while little is happening, then drops to real time five ' +
-      'seconds before a time everyone can see coming (the open, the close, a fix, a contract’s expiry) and ' +
+      'seconds before a time everyone can see coming (the open, the close, a fix, a contract’s expiry, a market release on the economic calendar) and ' +
       'stays there for ten seconds after it. It also drops to real time for ten seconds after a headline lands. ' +
-      'It never slows before a headline: when news is coming is not something the market tells you, so watch ' +
-      'cannot either. The line beside the speeds says what is next, and what is being watched while it is slow.',
+      'It never slows before an unannounced headline: a company’s or a sector’s news is not something the market ' +
+      'tells you ahead of time, so watch cannot either. The line beside the speeds says what is next, and what is being watched while it is slow.',
   },
 ];
 

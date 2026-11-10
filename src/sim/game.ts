@@ -45,6 +45,7 @@ import type { Fix } from './exchange';
 import type { Level } from './orderbook';
 import type { Indicative } from './strategy/types';
 import { Market, type HistoryPoint, type SavedMarket } from './market';
+import { calendarOf, CALENDAR_LABEL, isMarketWide, type CalendarItem } from './calendar';
 import { DeskNews, News, type Published, type SavedDeskNews, type SavedNews } from './news';
 import { Random, deriveStreams, loadStreams, saveStreams, type SavedStreams, type Streams } from './random';
 import { driftPerMs, driftSign, regimeFor } from './regime';
@@ -75,11 +76,11 @@ export const MAX_TICKS_PER_ADVANCE = 15000;
 /** When jumping over closed hours, how big a step the sim takes. */
 const JUMP_STEP = MS_PER_MINUTE;
 
-/** A public time the game is heading for: the stocks' open or close, a fix, or a contract's expiry. */
+/** A public time the game is heading for: the stocks' open or close, a fix, a contract's expiry or a market release. */
 export interface NextMoment {
   /** Simulated ms; always after now. */
   at: number;
-  kind: 'open' | 'close' | 'fix' | 'expiry';
+  kind: 'open' | 'close' | 'fix' | 'expiry' | 'release';
   /** What to call it, plainly: "The close", "The Thamesford fix", "GCZ6 expiry". */
   label: string;
 }
@@ -297,6 +298,8 @@ export interface Snapshot {
   nextChange: number;
   /** The kind of day it is, once the market has opened on it. */
   regime: RegimeSpec | null;
+  /** Today's market-wide releases (their times and a neutral label, never what they say), public from the day's start. */
+  releases: CalendarItem[];
   speed: Speed;
   cash: number;
   equity: number;
@@ -1043,8 +1046,9 @@ export class Game {
 
   /**
    * The next public time, strictly after now: the stocks' open (closed) or close (open), a fix of a venue of an open
-   * desk (none at the weekend, nor where the venue is shut at the fix) and the soonest expiry among the live contracts
-   * of open desks. It is the schedule alone, worked out from the clock and the listing: no headline, tip or anything
+   * desk (none at the weekend, nor where the venue is shut at the fix), the soonest expiry among the live contracts
+   * of open desks and the next market-wide release (the public calendar: company and sector headlines and a desk's
+   * own news are not in it). It is the schedule alone, worked out from the clock and the listing: no headline, tip or anything
    * drawn from a stream is in it, it draws nothing and changes nothing. Null if there is nothing (never, in practice).
    */
   nextMoment(): NextMoment | null {
@@ -1068,6 +1072,12 @@ export class Game {
       if (s.expiry !== undefined && s.expiry > now && s.expiry < best.at)
         best = { at: s.expiry, kind: 'expiry', label: `${s.symbol} expiry` };
     }
+    // A market-wide release is public a day ahead (the calendar); a company's or a sector's headline is not. It is a
+    // moment only where a venue of an open desk is open at it: before the stocks' open with no other desk, nothing
+    // could trade on it, and watch mode would slow for nothing.
+    for (const h of this.news.scheduled)
+      if (isMarketWide(h) && h.at > now && h.at < best.at && this.market.exchanges.some((e) => e.isOpen(h.at)))
+        best = { at: h.at, kind: 'release', label: CALENDAR_LABEL };
     return best;
   }
 
@@ -1203,6 +1213,7 @@ export class Game {
       calendar: calendar(now),
       open,
       nextChange: open ? nextClose(now) : nextOpen(now),
+      releases: calendarOf(this, calendar(now).day),
       regime: open || this.days.some((d) => d.day === calendar(now).day) ? this.market.regime : null,
       speed: this.speed,
       cash: firm.cash,

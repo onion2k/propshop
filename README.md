@@ -78,6 +78,8 @@ http://localhost:5181.
 - **News, real and noise.** Headlines move a stock's fair value over
   seconds; some read like news and move nothing. The dark web will sell you
   tomorrow's headlines, some of them lies, and the regulator keeps a file.
+  Market-wide releases are on a public calendar, by time only (never what
+  they say), and watch mode slows down for one.
 - **A risk officer and a regulator.** A daily loss limit halts you for the
   day; a leverage cap refuses an order that would carry more than you can;
   quote stuffing and order floods are noticed at the close.

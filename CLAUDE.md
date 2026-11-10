@@ -76,14 +76,21 @@ measure; they hold nothing.
   stage hides spent and not marked. The words are `MOMENT_WORDS` (`signals.ts`).
 - **Watch mode** (a speed beside 1× to 300×): `game.nextMoment()` (`game.ts`) is a pure read of the public schedule
   (the stocks' open or close, a fix of an open desk's venue, none at the weekend, the soonest expiry of the live
-  contracts of open desks) and nothing drawn; `src/ui/watch.ts` is `watchSpeed(now, next, lastMoment, lastHeadline)`,
+  contracts of open desks, and the next market-wide `release`) and nothing drawn; `src/ui/watch.ts` is `watchSpeed(now, next, lastMoment, lastHeadline)`,
   pure: 300× through the quiet, 1× from `WATCH_LEAD` (5 s) before a moment to `WATCH_TAIL` (10 s) after it and after a
-  `news` event, never ahead of a headline. The store (`setWatching`, `getWatching`, `getWatchState`) keeps the choice
+  `news` event, never ahead of an unannounced headline (a company's or a sector's; a market release is public). The store (`setWatching`, `getWatching`, `getWatchState`) keeps the choice
   under `propshop.watch.v1` and sets the game's speed to 300 (so a save and an old reader see the top speed); it holds
   only while the game is at 300, so a pause or another speed ends it. In `pump` the wall time is spent in segments,
   each at the speed it is worth there, and `runTicks` (given the speed it holds) cuts its chunk to land on a lead or a
   tail's end and returns when the answer changes; the budget, the pins and the night's pump are as before. The top
   bar's `.watching` slot keeps its room; its words are `WATCH_WORDS`, glossary `watch-mode`.
+  **The economic calendar** (`src/sim/calendar.ts`, plans/desk-options.md 7a): `calendarOf(game, day)` is the day's
+  market-wide headlines (those with `sector === null`: no company, no sector) by time, from `news.published` and
+  `news.scheduled`, as `{ at, label: CALENDAR_LABEL }`, never the text, direction or size; the schedule is kept a day
+  ahead (`LOOKAHEAD`), so the day is whole from the first minute of a game. The snapshot's `releases` is today's (not
+  `calendar`, which is the clock). The page's line "Releases today: 10:42, 14:05" (`Releases.tsx`, `releaseTimes` in
+  `overview.ts`, `CALENDAR_WORDS`, glossary `economic-calendar`) is in Today and on the News tab, in fixed room.
+  Nothing the firm or a block does reads it; it draws nothing.
 - **Rivals as characters:** `Fill.against` is the other side's owner (from `Trade.buyer`/`seller`, through
   `Firm.onTrade`), and `Fill.resting` marks a fill of a resting order that the other side crossed to take (never at a
   fix). In `Game.step`, a resting fill against a named rival (the crowd, `bg`, and the firm's own `firm` are not) is
@@ -221,7 +228,10 @@ For anything new, check what it does:
   each firm's orders, so the books differ, and the result page says so.
 - **a slow firm:** latency of twenty ticks sees the past and arrives late; a colocated one is one tick.
 - **watch mode:** closed hours run at 300× to the open's lead (skip to open as before); two moments inside one tail
-  stay at 1× through both; a desk not open has no fix or expiry moments; held, nothing advances; the night's tests
+  stay at 1× through both; a desk not open has no fix or expiry moments; a release (the calendar) is a moment only while a venue of an
+  open desk is open at it, so with the stocks alone the overnight ones (06:00 to 09:30) do not slow it, and with the
+  futures desk open they do; the release's own headline then starts a headline
+  tail as any headline does; held, nothing advances; the night's tests
   get the frame's leftover budget as always.
 - **the night's tests:** they run in closed hours, after the close, over the three pins of the day just traded;
   skipping to the open does not wait for them, and the results arrive labelled with their day. A reload mid-day

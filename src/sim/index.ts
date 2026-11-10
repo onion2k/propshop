@@ -91,6 +91,8 @@ export {
 } from './firm';
 export type { Tip, Fine } from './darkweb';
 export type { Published } from './news';
+export { calendarOf, CALENDAR_LABEL, isMarketWide } from './calendar';
+export type { CalendarItem } from './calendar';
 export { DESK_FEED_LENGTH, MAX_DESK_NEWS_PER_DAY } from './news';
 export type { HistoryPoint } from './market';
 export type { Level, Quote } from './orderbook';
@@ -128,6 +130,7 @@ export {
   formatTime,
   formatSpan,
   isMarketOpen,
+  isWeekday,
   nextOpen,
   nextClose,
   MARKET_OPEN,

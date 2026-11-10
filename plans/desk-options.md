@@ -1,6 +1,6 @@
 # The options desk: part 7 of the trading roadmap
 
-State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
+State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a built 2026-11-10, 7b next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
 and looked at headless by this session, committed and pushed on its own before the next part starts. The house rule
 is to build on `sonnet`; the metals desk was built on Opus at Chris's word, and the model menu is his.
 
@@ -338,3 +338,57 @@ What the code does not do, and this plan must add:
   - for 7f, one session with the hedged maker, read through the page.
 - `CLAUDE.md`, `README.md`, the glossary and `docs/measured.md` brought up to date in each part's commit. The part's
   result in `plans/desk-options.md` says what was not checked.
+
+## Result for 7a
+
+(Built 2026-11-10, on sonnet by the `builder` agent, not committed.)
+
+**Built.** `src/sim/calendar.ts` (`calendarOf(game, day)`, `CALENDAR_LABEL`, `isMarketWide`), exported through
+`src/sim/index.ts` (with `isWeekday`). A headline is market-wide when `sector === null`: `Scheduled` carries no
+`scope`, and adding one would have changed the saved news, so the existing field is read instead. `Game.nextMoment()`
+gains kind `release` (the next market-wide headline in `news.scheduled`, strictly after now). The snapshot carries
+`releases: { at, label }[]` for today. The page: `Releases.tsx`, in Today and on the News tab, a `min-height` line
+"Releases today: 10:42, 14:05" (or "none"), its heading linking the new glossary entry `economic-calendar`;
+`releaseTimes` in `overview.ts`, `CALENDAR_WORDS` in `signals.ts`, `WATCH_WORDS.termOf.release`. `watchSpeed` needed
+no change (it does not look at the kind); only its comment, now "never ahead of an unannounced headline". CLAUDE.md
+and README updated. Nothing the firm or a block does reads the calendar; nothing is drawn from any stream.
+
+**What the plan got wrong.**
+
+- The snapshot already has a `calendar` (the clock: `calendar(now)`), so the new field is `releases`.
+- The day is whole at the open, and also at the first step of a new game (the constructor schedules days 0 and 1;
+  the schedule is always filled to `now + LOOKAHEAD` and a day is scheduled in full at once). After `skipToOpen`
+  the day, and the next, are whole. No work-around was needed.
+- Overnight headlines (06:00 to 09:30) are in the day's calendar and have already landed by the open, so "Releases
+  today" at 09:30 can list a time that has passed. It is the day's list, not what is left.
+- A release is now a moment, so `nextMoment()` is a release (not the open) when one falls overnight. Four tests in
+  `test/watch.test.ts` and one in `test/ui.test.tsx` that assert the stocks-only open or close now clear the market
+  releases from the schedule first (`quiet`); their assertions are unchanged.
+
+**Tests (written failing first).** `test/calendar.test.ts` (12): the calendar equals the day's market-scope
+headlines at the open for seeds 1, 2 and 3 over five days, from the first minute for days 0 and 1, company and
+sector headlines left out, only `at` and `label` carried, weekend empty, snapshot equals `calendarOf`, reading
+changes nothing (save and fingerprint bit-identical), `nextMoment` reports a release (never passing one over) and
+`watchSpeed` slows from the lead before it. `test/ui.test.tsx` "Part 7a" (3): the line, its fixed room across an
+hour, "none", and the glossary entry.
+
+**Checks.** Node 24.21 (the default shell had 23.4; `.nvmrc` wants 24). `npm run check` green: 46 files passed,
+811 tests passed, 6 skipped (the harnesses), the floors 2 of 2 (83,249 ticks/s with no desk open against 75,000;
+38,202 with futures, fx and metals open against 35,000; a second run 83,666 and 38,236). `test/instruments.test.ts`
+(fingerprints) and `test/experiments.test.ts` (pinned figures) pass unchanged, bit for bit, as the sim step is
+untouched and `nextMoment` and the snapshot only read.
+
+**Not checked.** The look of the line at 375 and 1280 wide (not looked at headless; no dev server was started). Watch
+mode through the store with a real release was tested only at `nextMoment` and `watchSpeed`, not by a `createStore`
+pump. The TopBar's text for a release ("A market release in 12 s", linked to the glossary) is untested beyond the
+`termOf` entry. The calendar is not saved or reloaded as such: it is read from the saved news schedule.
+
+Reviewed after the hand-back (2026-11-10): a release is a moment only while a venue of an open desk is open at it.
+As built, watch mode slowed to 1× at 06:00 for an overnight release in a game of the stocks alone, where nothing could
+trade on it; now it does so only where the futures desk (or another trading at that hour) is open. A test holds both
+sides (`test/calendar.test.ts`, "a release in closed hours"). The `quiet` step in the watch tests is kept: with the
+futures desk open those tests would still meet the release first.
+Looked at headless (2026-11-10, 1280 and 375): "Releases today: 11:41, 11:44, 12:45, 15:02" in Today on a staged
+game, the same line on the News tab in Free play, no overflow, no console errors. Watch mode from 30 s before the
+11:41 release ran fast to the lead and then at 1× through it, the bar reading "Watching: A market release". The
+gate: 812 tests, the floors 83,528 and 37,994.

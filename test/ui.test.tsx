@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { CONTENT, DESK_NAMES, LESSONS, glossary, type Lesson } from '../src/content';
-import { TICK_MS, type DayReport, type OrderStory, type Snapshot } from '../src/sim';
+import { TICK_MS, formatTime, type DayReport, type OrderStory, type Snapshot } from '../src/sim';
 import { MarketPanel } from '../src/ui/MarketPanel';
 import { FirmPanel } from '../src/ui/FirmPanel';
 import { ShopPanel } from '../src/ui/ShopPanel';
@@ -2435,6 +2435,8 @@ describe('Part D: watch mode, on the page', () => {
     const store = createStore(CONTENT, null, 3);
     store.setTutorial({ state: 'done' });
     store.setReveal(true);
+    // The open is the next moment: this test is of the clock, so no market release falls before it.
+    store.game.news.scheduled = store.game.news.scheduled.filter((h) => h.sector !== null);
     return store;
   };
 
@@ -2613,3 +2615,56 @@ describe('Part E: stakes and a goal, on the page', () => {
 });
 
 const TARGETS_ALL = ['day-up', 'seat-rent', 'no-halt-week', 'desk-futures', 'seat-back', 'desk-fx', 'desk-metals'];
+
+describe('Part 7a: the economic calendar, on the page', () => {
+  const start = () => {
+    const store = createStore(CONTENT, null, 3);
+    store.setTutorial({ state: 'done' });
+    store.setReveal(true);
+    return store;
+  };
+  const times = (store: ReturnType<typeof createStore>) =>
+    store.game
+      .snapshot()
+      .releases.map((c) => formatClock(c.at))
+      .join(', ');
+  const formatClock = (at: number) => formatTime(at).slice(0, 5);
+
+  it('says the day’s release times in Today, in a line of fixed room, with a glossary link', () => {
+    const store = start();
+    render(<App store={store} />);
+    const line = screen.getByTestId('releases-today');
+    expect(store.game.snapshot().releases.length).toBeGreaterThan(0);
+    expect(line).toHaveTextContent(`Releases today: ${times(store)}`);
+    expect(within(line).getByRole('button', { name: 'Releases today' })).toBeInTheDocument();
+    // Time moving on changes nothing about the line: it is the day's, not what is left.
+    act(() => {
+      store.game.step(60_000 * 60);
+      store.publish();
+    });
+    expect(screen.getByTestId('releases-today')).toBe(line);
+    expect(line).toHaveTextContent(`Releases today: ${times(store)}`);
+  });
+
+  it('says it too on the News tab, and "none" when the day has none', () => {
+    const store = start();
+    store.game.news.scheduled = store.game.news.scheduled.filter((h) => h.sector !== null);
+    store.game.news.published = store.game.news.published.filter((h) => h.sector !== null);
+    const s = store.game.snapshot();
+    expect(s.releases).toEqual([]);
+    const { unmount } = render(<NewsPanel s={s} />);
+    expect(screen.getByTestId('releases-today')).toHaveTextContent('Releases today: none');
+    unmount();
+    const full = start().game.snapshot();
+    render(<NewsPanel s={full} />);
+    expect(screen.getByTestId('releases-today')).toHaveTextContent(
+      `Releases today: ${full.releases.map((c) => formatClock(c.at)).join(', ')}`,
+    );
+  });
+
+  it('has a glossary entry for the economic calendar that says what is and is not told', () => {
+    const e = glossary('economic-calendar');
+    expect(e?.term).toBe('Economic calendar');
+    expect(e?.long).toMatch(/not what|never what/i);
+  });
+});

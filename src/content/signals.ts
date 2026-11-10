@@ -2,7 +2,7 @@
 // it was seen at, why it matters, and what would test it. Pure, from the day reports and the snapshot. The words
 // are drafts for the author to edit. A signal never names a block or feature the stage hides.
 
-import { BLOCKS, type CompetitorSpec, type DayReport, type Snapshot } from '../sim';
+import { BLOCKS, CALENDAR_LABEL, type CompetitorSpec, type DayReport, type Snapshot } from '../sim';
 import type { Feature } from './stages';
 import { COMPETITORS } from './upgrades';
 
@@ -440,7 +440,8 @@ export const MOMENT_WORDS = {
 export const WATCH_WORDS = {
   button: 'watch',
   /** Why the button is there, for its tooltip. */
-  title: 'Run fast through the quiet and slow down for the open, the close, a fix, an expiry and after a headline.',
+  title:
+    'Run fast through the quiet and slow down for the open, the close, a fix, an expiry, a market release on the calendar and after a headline.',
   until: (span: string) => ` in ${span}`,
   watchingMoment: (label: string) => `Watching: ${label.replace(/^The /, 'the ')}`,
   watchingHeadline: 'Watching: a headline',
@@ -448,7 +449,19 @@ export const WATCH_WORDS = {
   nothing: 'Nothing scheduled',
   term: 'watch-mode',
   /** The glossary entry each kind of moment links to, where there is one. */
-  termOf: { open: null, close: null, fix: 'fix', expiry: 'expiry' } as const,
+  termOf: { open: null, close: null, fix: 'fix', expiry: 'expiry', release: 'economic-calendar' } as const,
+} as const;
+
+/** The economic calendar: the day's market-wide releases, told by time and never by what they say. */
+export const CALENDAR_WORDS = {
+  /** What one release is called: the sim's, so the snapshot and the watch line agree. */
+  label: CALENDAR_LABEL,
+  /** The line in Today and on the News tab, "Releases today: 10:42, 14:05" (the heading links to the glossary). */
+  heading: 'Releases today',
+  none: 'none',
+  term: 'economic-calendar',
+  /** Under the line, once: what the calendar does and does not say. */
+  note: 'The times of the market-wide headlines are public; what they say and which way they move the market are not.',
 } as const;
 
 /** The rent, in the shop, in Position and on the Friday's report. */

@@ -10,6 +10,7 @@ import { balance, money, moneyShort, ms } from './format';
 import { Term } from './Glossary';
 import { Section } from './OverviewSection';
 import { Legend, LineChart, PnlChart, lineStyle, type Line } from './OverviewCharts';
+import { Releases } from './Releases';
 import { Targets } from './Targets';
 import type { Met, Store } from './store';
 import {
@@ -206,6 +207,7 @@ function Today({ s, stage }: { s: Snapshot; stage: number }) {
         </p>
       }
     >
+      <Releases s={s} />
       {pts.length === 0 ? (
         <p className="ov-empty muted">
           {s.open

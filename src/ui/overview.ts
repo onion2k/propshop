@@ -3,6 +3,7 @@
 
 import {
   BLOCK_VERDICT_WORDS,
+  CALENDAR_WORDS,
   DAY_CAUSE_TERM,
   DAY_CAUSE_WORDS,
   OVERVIEW_COMING_WORDS,
@@ -16,6 +17,7 @@ import { answerOf, type Answer } from '../content/experiments';
 import {
   BLOCKS,
   STOCKS_DESK,
+  formatTime,
   paramChangeLabel,
   type DayReport,
   type Measures,
@@ -616,4 +618,10 @@ export function rivalRows(s: Pick<Snapshot, 'competitors' | 'takenToday' | 'days
 export function progressText(p: TargetProgress): string {
   if (p.unit === 'cents') return `${money(p.have)} of ${money(p.of)}`;
   return `${p.have} of ${p.of} ${p.of === 1 ? 'day' : 'days'}`;
+}
+
+/** The day's market releases as the page says them: "10:42, 14:05", or `none` when the day has none. */
+export function releaseTimes(releases: readonly { at: number }[]): string {
+  if (releases.length === 0) return CALENDAR_WORDS.none;
+  return releases.map((r) => formatTime(r.at).slice(0, 5)).join(', ');
 }

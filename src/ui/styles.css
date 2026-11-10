@@ -1445,6 +1445,10 @@ code {
   min-height: 2.8em;
   margin: 4px 0;
 }
+.releases {
+  min-height: 2.8em;
+  margin: 4px 0;
+}
 .ov-empty {
   min-height: 3em;
   margin: 4px 0;

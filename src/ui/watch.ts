@@ -1,7 +1,8 @@
 // Watch mode: the speed that runs fast through the quiet and slows for the moments worth seeing. Pure: the store
 // asks it, with the clock and the sim's public schedule, and runs the sim as it says. It is told when headlines
-// landed, never when they will: the schedule is the sim's, and slowing ahead of news would tell the player it
-// was coming.
+// landed, never ahead of an unannounced headline (when one will): the schedule is the sim's, and slowing ahead of company or sector news
+// would tell the player it was coming. A market-wide release is different: its time is public (the economic
+// calendar), so it is a moment like a fix.
 
 import type { NextMoment } from '../sim';
 

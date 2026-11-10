@@ -17,9 +17,18 @@ const run = (g: Game, until: number, stride = 1000) => {
   while (g.now < until) g.step(Math.min(stride, until - g.now));
 };
 
+/**
+ * A game without the market releases already on its schedule: these tests are of the clock, the fix and the expiry,
+ * and a release (the economic calendar, `test/calendar.test.ts`) is a moment too, and may fall before them.
+ */
+const quiet = (g: Game): Game => {
+  g.news.scheduled = g.news.scheduled.filter((h) => h.sector !== null);
+  return g;
+};
+
 describe('nextMoment: the next public time', () => {
   it('is the open when closed and the close when open, the stocks alone', () => {
-    const g = new Game(CONTENT, 1);
+    const g = quiet(new Game(CONTENT, 1));
     run(g, at(0, 4 * H), 60_000);
     expect(g.nextMoment()).toEqual({ at: at(0, MARKET_OPEN), kind: 'open', label: 'The open' });
     run(g, at(0, 12 * H), 60_000);
@@ -39,13 +48,13 @@ describe('nextMoment: the next public time', () => {
   });
 
   it('does not count a fix of a desk that is not open', () => {
-    const g = new Game(CONTENT, 1);
+    const g = quiet(new Game(CONTENT, 1));
     run(g, at(0, 4 * H), 60_000);
     expect(g.nextMoment()?.kind).toBe('open');
   });
 
   it('counts the fix of an open desk, and the day after it is done', () => {
-    const g = new Game(CONTENT, 1);
+    const g = quiet(new Game(CONTENT, 1));
     g.openDesk(METALS_DESK);
     // A new game starts at 06:00 on Monday, after the morning fix.
     expect(g.nextMoment()).toMatchObject({ at: at(0, MARKET_OPEN), kind: 'open' });
@@ -108,9 +117,9 @@ describe('nextMoment: the next public time', () => {
   });
 
   it('is on no stream: it names the schedule and not a headline', () => {
-    const g = new Game(CONTENT, 3);
+    const g = quiet(new Game(CONTENT, 3));
     run(g, at(0, 10 * H), 60_000);
-    const kinds = new Set<NextMoment['kind']>(['open', 'close', 'fix', 'expiry']);
+    const kinds = new Set<NextMoment['kind']>(['open', 'close', 'fix', 'expiry', 'release']);
     expect(kinds.has(g.nextMoment()!.kind)).toBe(true);
   });
 });
