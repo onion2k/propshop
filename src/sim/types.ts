@@ -232,6 +232,14 @@ export interface ExchangeSpec {
    */
   lastLook?: { holdMs: number; refuseTicks: number };
   /**
+   * A model quoter in place of the ordinary crowd's quoting: each book rests one bid and one ask of `size` units at
+   * its belief (which follows the fair value with `lag`, as the crowd's does) less and plus a half-spread of
+   * `halfSpreadVol` volatility points, turned into price by the instrument's vega (the market supplies it), and
+   * re-posts only when either rounded price moves. Customer takers arrive at `takeRate` a second at full activity,
+   * each taking up to `size` at the touch, drawn from the venue's own crowd stream. No depth, no stale sweep.
+   */
+  quoter?: { halfSpreadVol: number; size: number; takeRate: number };
+  /**
    * Its fixes: call auctions at these times of day (the sim's clock), Monday to Friday, while it is open at `at`. For
    * `callMs` before each, nothing matches on its books: orders rest uncrossed, a firm's immediate-or-cancel order is
    * refused, and the crowd's takers rest at their limit; at `at` each book uncrosses at one price. A call may not

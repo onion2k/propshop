@@ -1,6 +1,6 @@
 # The options desk: part 7 of the trading roadmap
 
-State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a and 7b built 2026-11-10, 7c next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
+State: specified 2026-11-10 on Opus, in plan mode, and agreed; 7a to 7c built 2026-11-10, 7d next. Built a part at a time (7a to 7f) by the `builder` agent, tests first, then reviewed
 and looked at headless by this session, committed and pushed on its own before the next part starts. The house rule
 is to build on `sonnet`; the metals desk was built on Opus at Chris's word, and the model menu is his.
 
@@ -486,3 +486,71 @@ and 35,409 with all four desks open, 1.2% over the tripwire: it will fail under 
 `OPTION_REPRICE_MS` (100 ms) or on a move of `OPTION_REPRICE_CENTS` (0.2) in the index, so an option's fair value
 can trail the index by up to 100 ms; the crowd's lag is longer than that, so nothing a player sees depends on it.
 The premium over realised is not there yet in the straddle measure (a fair price on average); 7f tunes it.
+
+## Result for 7c
+
+(Built 2026-11-10, on sonnet by the `builder` agent, not committed.)
+
+**Built.** `ExchangeSpec.quoter` (`halfSpreadVol`, `size`, `takeRate`, `types.ts`), set on POX only
+(`src/content/options.ts`: 1 volatility point, 1,000 contracts a side, one taker a second a book). `Exchange.step`
+takes the market's half-spreads and, on a venue with a quoter, runs `quoterTurn` in place of `crowd`: the belief moves
+as before (same lag, same noise draw); the quoter finds its own bid and ask in the book (`OrderBook.firstOf`, so it
+keeps no state and nothing is saved by the exchange), keeps each while it is at the price the belief gives and holds at
+least half its size, and otherwise cancels and posts again, tucked inside a firm's quote as the crowd's posts are. The
+bid is `floor((belief - half) / tick)`, the ask `ceil((belief + half) / tick)`, at least a tick over the bid; a bid at
+or under nought is not posted. The half-spread in price points is `halfSpreadVol` × 0.01 × vega, worked out with the
+option's price in `Market.optionFair` (vega at the same skewed volatility and time, so no extra volatility read), kept
+in `quoteHalf` (twelve entries at most) and saved as `half` beside `vol`, so a save loads to the same future. Takers:
+one `chance` a turn from `crowd:POX` (not drawn at rate 0), then a side and a size from 1 to `size`, an IOC at the
+touch, whoever rests there.
+
+**The numbers, and why.** Half-spread 1 volatility point: vega at the money is about 53 a unit of volatility today
+(0.5 cent a point) and about 120 tomorrow, on a one-cent tick, so the spread comes out 1 to 3 cents, a firm's quote
+across a stale one still has room, and a far option is the tick. 1,000 contracts a side is the size of the old crowd's
+touch (100 to 5,000 in orders of 100 to 500). One taker a second (the old crowd's was 3 a second at full activity) is
+enough to wear a side under half its size every few seconds and make the quoter re-post, without flooding the tape.
+All drafts.
+
+**Books at seed 1, 10:30 on day 0** (the options alone open with the futures, player's blocks off, no rivals). Before
+(ordinary crowd): about 45 orders a book, spread one cent everywhere, three levels of 1,000 to 5,000. After: two orders
+a book.
+
+| option                               | fair  | bid x size | ask x size |
+| ------------------------------------ | ----- | ---------- | ---------- |
+| OC00 5300 call, today (at the money) | 10.20 | 9 x 1000   | 11 x 1000  |
+| OC01 5300 call, tomorrow             | 19.71 | 18 x 1000  | 21 x 1000  |
+| OP00 5300 put, today                 | 44.66 | 44 x 813   | 46 x 882   |
+| OPm0 5200 put, today (far)           | 6.65  | 6 x 1000   | 7 x 1000   |
+| OCp0 5400 call, today (far)          | 0.03  | none       | 1 x 1000   |
+
+Mean spread over the twelve: 2.1 cents (1.0 before). The fair values are the same as before to the bit: a book does
+not feed the price.
+
+**Step rate.** Interleaved, the tree at HEAD then this one, three times, `npm run floors` alone, all four desks open
+(none open in brackets): HEAD 35,909 / 36,187 / 35,709 (89,272 / 89,441 / 88,919); this tree 36,920 / 36,871 / 36,825
+(90,352 / 89,072 / 88,475). Taken in turn earlier, before any change: 38,554 / 38,193 / 37,912 (94,235 / 94,472 /
+94,019), and after: 36,562 / 37,153 / 36,515 (89,278 / 89,040 / 88,434): the machine drifted about 5% between those
+two sets (the none-open figure, which the change does not touch, moved with it), so the interleaved pair is the
+comparison: about 2.6% saved (+940 ticks a second), the floor 5.2% to 5.5% over 35,000. Futures, fx and
+metals alone, in the same minutes as this tree's four-desk figure: 38,700 to 39,000 against 36,800 to 37,600, so
+the options desk now costs about 4% of the rate, where it cost 7 to 8%. The profile of this tree (esbuild bundle, seed
+12, `node --cpu-prof`, four minutes): `quoterTurn` and its helpers are not among the first thirty frames; what is
+left is the strategy views (`build`, `decide`), the other desks' crowds (`cancelWhere`, `crowd`, `aggregate`) and the
+normal draws. The floors pass, so the tripwire stays at 35,000.
+
+**Tests (written before the code; the first run of them was cut short and they were first seen to pass once the code
+existed, so none was seen to fail).** `test/quoter.test.ts` (14): the bid and ask at the belief and the half-spread;
+two orders a book at most; re-posts exactly when a rounded price moves; stale with the lag (a fast firm lifts the old
+ask 100 cents under fair, the quote catches up in a second); no bid at or under nought; ask over bid under a tick;
+refill after a taker; the stream drawn once a turn and nothing for a re-post; the quoter on POX only; the games' books
+two-sided with spreads that differ; closed hours empty; takers from `crowd:POX` alone (every other stream, fair
+value, volatility, news and venue's saved book the same as with takers off); replay; a save from the previous tick
+loads to the same future, mid-quote and across the 16:00 close. Held to the bit: every fingerprint in
+`test/instruments.test.ts` and `test/metalblocks.test.ts` and `test/experiments.test.ts` (the options desk is closed
+in all). `npm run check` green: 862 passed, 6 skipped (the harnesses).
+
+**Not checked.** A firm trading the options (no block yet: 7d); the look; the quoter's real spread against a maker's
+edge (7d, 7f); the margin of 5.2% on a loaded machine (it was 1.2% at 7b and drifts 5% on this one with the day);
+a firm's order across the belief makes the quoter re-post that side every turn until the belief catches up (cheap, and
+it ends with the lag, but not measured); partial fills are topped up by re-posting at the same price, losing the queue
+place, which no block yet sees.

@@ -528,3 +528,23 @@ test/nightpace.test.ts` (seed 1, Monday, the starting setup), the JSON identical
   `cancelWhere` +113 ms of a 6.9 s window, the exchange step +36, `walk`/`quote`/`aggregate` +65, the normal draws.
   With the options venue's crowd switched off (a throwaway test) the rate was 38,000 to 38,100, so the quoter of 7c
   can save at most about 7% (2,600 ticks a second).
+
+## The model quoter and the step rate (plans/desk-options.md 7c, 2026-11-10)
+
+- **The step rate,** `npm run floors` alone (all four desks open; none open in brackets), interleaved on an otherwise
+  idle machine, HEAD of 7b then the 7c tree, three times: HEAD 35,909 / 36,187 / 35,709 (89,272 / 89,441 / 88,919);
+  7c 36,920 / 36,871 / 36,825 (90,352 / 89,072 / 88,475). In turn the same morning, before any change 38,554 /
+  38,193 / 37,912 (94,235 / 94,472 / 94,019) and after 36,562 / 37,153 / 36,515 (89,278 / 89,040 / 88,434): the
+  machine drifted about 5% between the sets (the none-open figure moved with it), hence the interleaved pair; 7b's
+  recorded 35,438 to 35,473 was a slower hour again. The quoter saves about 2.6% (940 ticks a second), and the
+  options desk costs about 4% of the rate (a script of 4 minutes' stepping, seed 12, with the desk shut 38,631 to
+  39,002, open 36,805 to 37,624).
+- **The profile** (esbuild bundle of that script, `node --cpu-prof`): `quoterTurn` is below the first thirty frames;
+  the top are `build`/`decide` (the player's blocks' views), `cancelWhere` and `crowd` (the other venues), `aggregate`
+  and `logQuotes`, the normal draws and the collector.
+- **The books** (seed 1, 10:30, options and futures open, no rivals, blocks off), before and after:
+  about 45 orders a book and a one-cent spread everywhere, to two orders a book and a mean spread of 2.1 cents
+  (at the money today 9 / 11 around a fair 10.20, tomorrow 18 / 21 around 19.71, a far call no bid and an ask of 1).
+  The option's fair values are unchanged to the bit.
+- **Command** for the books: an esbuild bundle of a short script stepping a `Game` to 10:30 and printing each option
+  book's quote and depth (not kept).

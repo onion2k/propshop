@@ -426,6 +426,12 @@ export class OrderBook {
     return n;
   }
 
+  /** The owner's order nearest the touch on a side, or null: a walk from the touch that stops at the first. */
+  firstOf(owner: string, side: Side): Order | null {
+    for (const o of side === 'buy' ? this.bids : this.asks) if (o.owner === owner) return o;
+    return null;
+  }
+
   resting(owner?: string): Order[] {
     const all = [...this.bids, ...this.asks];
     return owner === undefined ? all : all.filter((o) => o.owner === owner);

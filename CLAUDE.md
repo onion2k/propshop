@@ -150,8 +150,16 @@ measure; they hold nothing.
   volatility, a premium, the wander (an expiry's variance counts trading time, `Market.tradingYears`), the event variance of each market-wide release before its expiry (`releasesBetween`
   in `src/sim/calendar.ts`, the 7a calendar) and a fixed skew; it draws nothing. The desk needs the futures desk
   (`DESK_REQUIRES`): opening one opens both, and a save with options and not futures loads with both. Tests:
-  `test/optionsmodel.test.ts`, `test/options.test.ts`. No quoter, block, rival, page or stage yet (7c to 7f); the
-  ordinary crowd quotes the books, and `'desk:options'` is placed one stage past the last, so it opens nowhere.
+  `test/optionsmodel.test.ts`, `test/options.test.ts`. **The model quoter (7c):** POX has `ExchangeSpec.quoter`
+  (`halfSpreadVol`, `size`, `takeRate`) and `Exchange.step` runs `quoterTurn` for its books in place of the crowd: the
+  belief follows the fair value with the venue's lag as before; one bid and one ask of `size` rest at the belief less
+  and plus a half-spread, rounded outward, found in the book each turn (nothing is kept, so nothing is saved by the
+  exchange) and re-posted only when a rounded price moves or an order is worn under half its size; a bid at or under
+  nought is not posted; no depth, no sweep. The half-spread in price points is worked out with the option's price in
+  `Market.optionFair` (`quoterVolPoints` × a hundredth of `vega`), kept in `quoteHalf` (a book a listed option) and
+  saved as `half` beside `vol`. Takers come at `takeRate` a second at full activity, each up to `size` at the touch,
+  drawn from `crowd:POX` only (none drawn at rate 0). Tests: `test/quoter.test.ts`. No block, rival, page or stage
+  yet (7d to 7f); `'desk:options'` is placed one stage past the last, so it opens nowhere.
 - `src/content/` is stocks, exchanges, news templates, upgrades, glossary, the lessons, the tutorial and
   `stages.ts`: the stage table, `stageOf(progress)` and `shows(feature, stage)`, pure. Stages hide things in
   the UI only; the sim keeps every block. A new game's blocks come from content `START`. The browser keeps
@@ -277,7 +285,10 @@ For anything new, check what it does:
   index's measured day (variance ratios near one from a minute to a session, so the second-sampled realised figure
   is sound; quoted on a trading year and counted in trading time). Seller's split by regime and the ratios are in
   `docs/measured.md`; tuned further in 7f, held by nothing. The options are re-priced each `OPTION_REPRICE_MS`
-  (100) or when the index has moved `OPTION_REPRICE_CENTS` (0.2), and not while the stocks are shut.
+  (100) or when the index has moved `OPTION_REPRICE_CENTS` (0.2), and not while the stocks are shut. The quoter's
+  numbers (half-spread one volatility point, size 1,000, one taker a second a book) are drafts, as is the tick: the
+  options trade on a one-cent grid, so a far option's spread is the tick whatever the half-spread, and a quote tucked
+  inside a firm's across the belief is re-posted every turn until the belief catches up.
 - **The rents:** drafts (about 2% of a price a week, a point less for the dearest, the metals racks $50), measured against what each seat earns a
   week by the PACE harness and held by nothing; `docs/measured.md` has the figures. The pace harness understates
   momentum, so the starting rung's cover is read from whole days.

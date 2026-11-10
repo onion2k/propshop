@@ -30,7 +30,7 @@ import {
   type FxPair,
   type Rate,
 } from './instrument';
-import { price as optionPrice, skewed } from './options';
+import { price as optionPrice, skewed, vega as optionVega } from './options';
 import type { Random } from './random';
 import type { ContractView, PairView, RolloverView } from './strategy';
 import type {
@@ -101,6 +101,8 @@ export interface SavedMarket {
   strikes?: Record<string, number>;
   /** The options desk's volatility state; absent while the desk is closed, and in every save from before it. */
   vol?: VolState;
+  /** Each listed option's quoter half-spread, price points; absent where the options venue has no quoter. */
+  half?: Record<string, number>;
 }
 
 /**
@@ -252,6 +254,17 @@ export class Market {
   private readonly venueCache = new Map<string, Exchange[]>();
   /** The instruments of open desks that are derived, in the content's order: what `settleDerived` follows. */
   private derived: StockSpec[] = [];
+  /**
+   * The options venue's quoter's half-spread in volatility points, where it has one (`ExchangeSpec.quoter`).
+   * Fixed by the content.
+   */
+  private readonly quoterVolPoints: number | undefined;
+  /**
+   * Each listed option's half-spread in price points, worked out with its price (vega times the quoter's volatility
+   * points), so the options venue's quoter reads a number and works nothing out. One a listed option, twelve at most
+   * (the series' `live` bound), saved with the pricing state as the fair values are.
+   */
+  private readonly quoteHalf = new Map<string, number>();
   /** The expiries priced this tick, with the time left and the at-the-money volatility to it: a few, reused. */
   private readonly expiryPrices: { expiry: number; t: number; vol: number }[] = [];
 
@@ -265,6 +278,7 @@ export class Market {
   ) {
     this.series = series;
     this.optionsSpec = options;
+    this.quoterVolPoints = options ? exchanges.find((e) => e.desk === options.desk)?.quoter?.halfSpreadVol : undefined;
     if (options) this.volatility.variance = (options.startVol * options.startVol) / (TRADING_YEAR_MS / 1000);
     this.currencyPairs(stocks, currencies);
     this.instruments = [...stocks];
@@ -560,6 +574,7 @@ export class Market {
         this.drifts,
         this.rootOf,
         this.optionSpecs,
+        this.quoteHalf,
       ])
         m.delete(s.symbol);
     }
@@ -718,7 +733,7 @@ export class Market {
     for (const e of this.exchanges) {
       const stream = crowd[e.id];
       if (!stream) throw new Error(`No crowd stream for ${e.id}`);
-      e.step(now, dt, this.fair, e.session ? e.activity(now) : act, stream);
+      e.step(now, dt, this.fair, e.session ? e.activity(now) : act, stream, this.quoteHalf);
     }
     // Each venue closes on its own hours: its books empty and the orders go back to their owners.
     let closed: { symbol: string; owner: string; id: number }[] | null = null;
@@ -879,7 +894,13 @@ export class Market {
     const t = found?.t ?? Math.max(0, (s.expiry ?? now) - now) / MS_PER_YEAR;
     const atm = found?.vol ?? (t > 0 ? Math.sqrt(this.expiryVariance(s.expiry!, now) / t) : this.atmVol());
     const spot = this.fair.get(s.underlying ?? '') ?? 0;
-    return optionPrice(s.right!, spot, s.strike!, t, this.skewedVol(s, atm, t), o.rate);
+    const vol = this.skewedVol(s, atm, t);
+    // The venue's quoter rests its quotes this far (in price points) either side of the belief; vega is a whole unit of
+    // volatility's, a point a hundredth of it.
+    if (this.quoterVolPoints !== undefined) {
+      this.quoteHalf.set(s.symbol, this.quoterVolPoints * 0.01 * optionVega(spot, s.strike!, t, vol, o.rate));
+    }
+    return optionPrice(s.right!, spot, s.strike!, t, vol, o.rate);
   }
 
   /**
@@ -1032,6 +1053,7 @@ export class Market {
         : {}),
       // The volatility moves only while the desk is open, and only then is saved.
       ...(this.optionsOpen ? { vol: { ...this.volatility } } : {}),
+      ...(this.optionsOpen && this.quoteHalf.size > 0 ? { half: Object.fromEntries(this.quoteHalf) } : {}),
     };
   }
 
@@ -1080,5 +1102,6 @@ export class Market {
       if (c) c.strike = k;
     }
     if (saved.vol) Object.assign(this.volatility, saved.vol);
+    for (const [m, h] of Object.entries(saved.half ?? {})) if (this.optionSpecs.has(m)) this.quoteHalf.set(m, h);
   }
 }

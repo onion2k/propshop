@@ -10,7 +10,10 @@ export const OPTIONS_DESK = 'options';
 
 /**
  * Stocks' hours (09:30 to 16:00, Monday to Friday: no `session`), in the Prairie Board's building. The same fee and
- * lag as the Board's, for now: the crowd that quotes it is the ordinary one until the model quoter (plans/desk-options.md 7c).
+ * lag as the Board's. Its books are quoted by a model quoter, not the ordinary crowd (plans/desk-options.md 7c): one
+ * bid and one ask of 1,000 contracts a book, at the belief less and plus a half-spread of one volatility point (about
+ * half a cent at the money today, a cent and a bit tomorrow; the tick is a cent, so a far option's is the tick),
+ * and customers taking up to the quoter's size at the touch about once a second a book. Drafts, tuned in 7f.
  */
 export const POX: ExchangeSpec = {
   id: 'POX',
@@ -20,6 +23,7 @@ export const POX: ExchangeSpec = {
   lag: 50,
   noise: 0.3,
   desk: OPTIONS_DESK,
+  quoter: { halfSpreadVol: 1, size: 1000, takeRate: 1 },
 };
 
 /**

@@ -636,7 +636,14 @@ export class Exchange {
    * One tick. The crowd's belief drifts toward the true fair value at the exchange's own pace with its own noise,
    * and the crowd quotes around that belief, pulls what is stale, and now and then crosses the spread.
    */
-  step(now: number, dt: number, fair: ReadonlyMap<string, number>, activity: number, random: Random): void {
+  step(
+    now: number,
+    dt: number,
+    fair: ReadonlyMap<string, number>,
+    activity: number,
+    random: Random,
+    halfSpreads?: ReadonlyMap<string, number>,
+  ): void {
     this.tickTrades = [];
     if (this.pending.length > 0) this.release(now);
     if (this.rules.batchMs > 0 && Math.round(now / dt) % Math.max(1, Math.round(this.rules.batchMs / dt)) === 0) {
@@ -663,8 +670,63 @@ export class Exchange {
       const lag = this.spec.lag * (s.index ? INDEX_LAG : 1);
       const pull = Math.min(1, span / lag);
       s.belief += (target - s.belief) * pull + this.spec.noise * Math.sqrt(span / 1000) * random.normal();
-      if (activity > 0) this.crowd(symbol, s, now, span, activity, random, sweep, inCall);
+      if (activity <= 0) continue;
+      if (this.spec.quoter) this.quoterTurn(symbol, s, now, span, activity, random, halfSpreads?.get(symbol));
+      else this.crowd(symbol, s, now, span, activity, random, sweep, inCall);
     }
+  }
+
+  /**
+   * A model quoter's turn for one book, in place of the crowd's: the order it rests on each side is found in the book
+   * (so nothing is kept to save), kept while it is at the price the belief gives and still holds half its size, and
+   * otherwise cancelled and posted again. The bid is the belief less the half-spread and the ask the belief plus it,
+   * each rounded away from the belief to the grid, the ask at least a tick over the bid; no bid is posted at or under
+   * nought. A post is tucked inside a firm's quote as the crowd's is, never across it. Then, with chance `takeRate` a
+   * second (at full activity), a customer takes up to the quoter's size at the touch on a side, whoever rests there.
+   * Draws one chance a turn, and a side and a size when a customer comes; nothing for a re-post. A book the market
+   * has priced no half-spread for keeps what rests and is only taken from.
+   */
+  private quoterTurn(
+    symbol: string,
+    s: StockState,
+    now: number,
+    dt: number,
+    activity: number,
+    random: Random,
+    half: number | undefined,
+  ): void {
+    const quoter = this.spec.quoter!;
+    const tick = tickOf(s, this.rules.tickSize);
+    if (half !== undefined) {
+      const bidP = Math.floor((s.belief - half) / tick) * tick;
+      const askP = Math.max(Math.ceil((s.belief + half) / tick) * tick, bidP + tick);
+      const b = s.book.firstOf(BACKGROUND, 'buy');
+      const a = s.book.firstOf(BACKGROUND, 'sell');
+      const fresh = (o: typeof b, p: number) => o !== null && o.price === p && o.remaining * 2 >= quoter.size;
+      const keepB = bidP <= 0 ? b === null : fresh(b, bidP);
+      const keepA = fresh(a, askP);
+      if (!keepB && b) s.book.cancel(b.id);
+      if (!keepA && a) s.book.cancel(a.id);
+      if (!keepB && bidP > 0) this.quoteAt(symbol, s, 'buy', bidP, tick, now, quoter.size);
+      if (!keepA) this.quoteAt(symbol, s, 'sell', askP, tick, now, quoter.size);
+    }
+    if (quoter.takeRate > 0 && random.chance((quoter.takeRate * activity * dt) / 1000)) {
+      const side = random.chance(0.5) ? 'buy' : 'sell';
+      const q = s.book.quote();
+      const touch = side === 'buy' ? q.ask : q.bid;
+      const size = random.int(1, quoter.size);
+      if (touch !== null) this.submit(symbol, { owner: BACKGROUND, side, price: touch, size, ioc: true }, now);
+    }
+  }
+
+  /** One quoter order, tucked inside the other side's touch (a firm's order, say) rather than across it. */
+  private quoteAt(symbol: string, s: StockState, side: Side, price: number, tick: number, now: number, size: number) {
+    const q = s.book.quote();
+    if (side === 'buy' && q.ask !== null) price = Math.min(price, q.ask - tick);
+    if (side === 'sell' && q.bid !== null) price = Math.max(price, q.bid + tick);
+    if (price <= 0) return;
+    const result = this.addMarked(symbol, { owner: BACKGROUND, side, price, size }, now);
+    this.record(symbol, result.trades);
   }
 
   private crowd(
